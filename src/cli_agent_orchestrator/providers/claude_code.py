@@ -81,6 +81,8 @@ def _real_response_matches(output: str) -> list[re.Match[str]]:
             continue
         matches.append(match)
     return matches
+
+
 # Match Claude Code processing spinners:
 # - Old format: "✽ Cooking… (esc to interrupt)" / "✶ Thinking… (esc to interrupt)"
 # - New format: "✽ Cooking… (6s · ↓ 174 tokens · thinking)"

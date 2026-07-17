@@ -39,9 +39,7 @@ def test_restore_rearms_pipe_and_seeds_status(
     mock_fifo.create_reader.assert_called_once()
     backend.pipe_pane.assert_called_once()
     mock_provider_manager.get_provider.assert_called_once_with("abc12345")
-    mock_status_monitor.restore_snapshot.assert_called_once_with(
-        "abc12345", "rendered idle prompt"
-    )
+    mock_status_monitor.restore_snapshot.assert_called_once_with("abc12345", "rendered idle prompt")
     backend.send_special_key.assert_not_called()
 
 
