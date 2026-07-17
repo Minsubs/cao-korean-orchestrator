@@ -15,7 +15,7 @@ CAO fork를 "채팅 중심 멀티 에이전트 오케스트레이션 작업대 +
 ## 3. ⚠️ 실행 환경 함정 (반드시 숙지)
 1. **`uv run`은 반드시 `--no-sync`** — 맨 uv run이 .venv를 재동기화하며 macOS hidden 플래그를 재적용 → editable .pth 무시 → `.venv/bin/cao-mcp-server`가 ModuleNotFoundError로 즉사 → **이 서버가 만든 모든 에이전트의 assign/handoff/send_message가 조용히 전멸**(서버·pytest는 PYTHONPATH=src라 멀쩡해 보임). 재발 시 `chflags -R nohidden .venv`.
 2. pytest: `PYTHONPATH=src uv run --no-sync pytest test/ -q --no-cov -m 'not e2e' --ignore=test/e2e --ignore=test/providers/test_kiro_cli_integration.py`
-3. 서버: `PYTHONPATH=src uv run --no-sync cao-server --host 127.0.0.1 --port 9889` — 현재 백그라운드에 떠 있을 수 있음(포트 확인). uv tool 설치본(옛 코드)과 동시 기동 금지(pipe-pane 이중 연결).
+3. 서버(main에서): `uv run --no-sync cao-server --host 127.0.0.1 --port 9889` — 현재 백그라운드에 떠 있을 수 있음(포트 확인). uv tool 설치본(옛 코드)과 동시 기동 금지(pipe-pane 이중 연결). ※worktree는 삭제됨 — PYTHONPATH=src 불필요(main은 editable 정상), --no-sync 습관은 유지.
 4. 웹 게이트: `cd web && npx tsc --noEmit && npm test && npm run build`
 5. e2e(실서버 필요): `PYTHONPATH=src uv run --no-sync pytest -m e2e test/e2e/... -v` — 전제 프로필 data_analyst/report_generator/analysis_supervisor/data_analyst_codex는 `~/.aws/cli-agent-orchestrator/agent-store/`에 설치돼 있음(임시 — 검증 끝나면 제거 가능). 크로스 검증 스크립트: `scripts/dev/xprov_check.py`(서버 떠 있을 때 `PYTHONPATH=src uv run --no-sync python scripts/dev/xprov_check.py`).
 
