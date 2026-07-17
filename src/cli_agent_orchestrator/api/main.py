@@ -35,6 +35,7 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from cli_agent_orchestrator.api import env_router, tooling_router, ui_features_router
 from cli_agent_orchestrator.backends import TerminalBackendError, TerminalNotFoundError
 from cli_agent_orchestrator.backends.herdr_backend import HerdrBackend
 from cli_agent_orchestrator.backends.registry import get_backend
@@ -107,11 +108,19 @@ from cli_agent_orchestrator.services.fifo_reader import fifo_manager
 from cli_agent_orchestrator.services.herdr_inbox_registry import set_herdr_inbox_service
 from cli_agent_orchestrator.services.herdr_inbox_service import HerdrInboxService
 from cli_agent_orchestrator.services.inbox_service import inbox_service
-from cli_agent_orchestrator.services.install_service import InstallResult, install_agent
+from cli_agent_orchestrator.services.install_service import (
+    InstallResult,
+    install_agent,
+    install_agent_content,
+)
 from cli_agent_orchestrator.services.log_writer import log_writer
 from cli_agent_orchestrator.services.status_monitor import status_monitor
 from cli_agent_orchestrator.services.step_output_store import _validate_key_part
 from cli_agent_orchestrator.services.terminal_service import OutputMode, TerminalInputBlockedError
+from cli_agent_orchestrator.services.ui_event_service import RING_CAPACITY as UI_RING_CAPACITY
+from cli_agent_orchestrator.services.ui_event_service import (
+    UI_EVENT_TYPES,
+)
 from cli_agent_orchestrator.utils.agent_profiles import load_agent_profile, resolve_provider
 from cli_agent_orchestrator.utils.logging import setup_logging
 from cli_agent_orchestrator.utils.skills import (
@@ -447,6 +456,42 @@ class CreateFlowRequest(BaseModel):
         return v
 
 
+async def ui_event_consumer() -> None:
+    """Forward terminal status/output bus events into the UI event ring.
+
+    Additive, always-on consumer for the Phase 2 chat workspace. It subscribes
+    to the existing ``terminal.{id}.status`` and ``terminal.{id}.output`` topics
+    (the only two-segment ``terminal.*`` topics) with a single wildcard queue —
+    mirroring the StatusMonitor/LogWriter single-queue consumer pattern — and
+    forwards them to the UI event log as ``status_changed`` / throttled
+    ``activity`` events. It never mutates the existing pipeline: StatusMonitor,
+    LogWriter and InboxService keep their own independent subscriptions. Raw
+    output bytes are never forwarded (``activity`` is a bare heartbeat).
+    """
+    from cli_agent_orchestrator.services.ui_event_service import (
+        TerminalEventForwarder,
+        get_ui_event_log,
+    )
+    from cli_agent_orchestrator.utils.event import terminal_id_from_topic
+
+    forwarder = TerminalEventForwarder(get_ui_event_log())
+    queue = bus.subscribe("terminal.*.*")
+    logger.info("UI event consumer started")
+    try:
+        while True:
+            event = await queue.get()
+            topic = event["topic"]
+            terminal_id = terminal_id_from_topic(topic)
+            if topic.endswith(".status"):
+                new_status = event["data"].get("status")
+                if isinstance(new_status, str):
+                    forwarder.handle_status(terminal_id, new_status)
+            elif topic.endswith(".output"):
+                forwarder.handle_output(terminal_id)
+    finally:
+        bus.unsubscribe("terminal.*.*", queue)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
@@ -472,7 +517,10 @@ async def lifespan(app: FastAPI):
     status_monitor_task = asyncio.create_task(status_monitor.run())
     log_writer_task = asyncio.create_task(log_writer.run())
     inbox_service_task = asyncio.create_task(inbox_service.run(registry))
-    logger.info("Event bus consumers started (StatusMonitor, LogWriter, InboxService)")
+    # Additive UI event consumer (Phase 2 chat workspace). Independent of the
+    # default-off MCP Apps event pipeline; always on.
+    ui_event_task = asyncio.create_task(ui_event_consumer())
+    logger.info("Event bus consumers started (StatusMonitor, LogWriter, InboxService, UiEvents)")
 
     # Give consumers one loop turn to register their subscriptions, then
     # reconnect output monitoring for tmux panes that survived a server
@@ -524,6 +572,7 @@ async def lifespan(app: FastAPI):
     status_monitor_task.cancel()
     log_writer_task.cancel()
     inbox_service_task.cancel()
+    ui_event_task.cancel()
     # Cancel daemon on shutdown
     daemon_task.cancel()
 
@@ -532,6 +581,7 @@ async def lifespan(app: FastAPI):
             status_monitor_task,
             log_writer_task,
             inbox_service_task,
+            ui_event_task,
             daemon_task,
             return_exceptions=True,
         )
@@ -612,6 +662,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(tooling_router.router)
+app.include_router(ui_features_router.router)
+app.include_router(env_router.router)
 
 
 @app.exception_handler(RequestValidationError)
@@ -795,6 +849,168 @@ async def events_history(
 mount_widget_static(app)
 
 
+# ---------------------------------------------------------------------------
+# Phase 2 chat-workspace additive surface: UI event stream + read-only fs list.
+# Always on (independent of the default-off MCP Apps ``/events`` surface). Same
+# auth gate as the rest of the read surface (read is the floor). Preserves the
+# original CAO event vocabulary — no six-primitive abridging.
+# ---------------------------------------------------------------------------
+
+
+@app.get("/ui/events")
+async def ui_events_stream(
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_READ, SCOPE_WRITE, SCOPE_ADMIN)),
+):
+    """Stream live UI workspace events as Server-Sent Events (original vocabulary).
+
+    Events come from the always-on in-process ``UiEventLog`` (fed by the
+    ``UiEventPublisher`` plugin and the ``ui_event_consumer`` task). The ring is
+    drop-on-slow with a bounded per-subscriber queue, so one stalled browser tab
+    never back-pressures the orchestration core; gaps are backfilled via
+    ``/ui/events/history``. Frame format matches ``/events``: ``data: {json}\\n\\n``.
+
+    When auth is enabled, any of ``cao:read`` / ``cao:write`` / ``cao:admin`` is
+    required (read is the floor).
+    """
+    from fastapi.responses import StreamingResponse
+
+    from cli_agent_orchestrator.services.ui_event_service import get_ui_event_log
+
+    async def event_generator():
+        async for event in get_ui_event_log().subscribe():
+            yield f"data: {json.dumps(event)}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.get("/ui/events/history")
+async def ui_events_history(
+    limit: int = Query(default=UI_RING_CAPACITY, ge=0, le=UI_RING_CAPACITY),
+    since_id: Optional[int] = Query(default=None, ge=0),
+    types: Optional[str] = None,
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_READ, SCOPE_WRITE, SCOPE_ADMIN)),
+) -> Dict:
+    """Replay retained UI workspace events from the ring buffer (JSON, oldest-first).
+
+    ``types`` is an optional comma-separated filter validated against the closed
+    UI event vocabulary — an unknown type is rejected with 400 rather than
+    silently matching nothing. ``since_id`` is an exclusive lower bound on the
+    monotonic event id. ``limit`` is clamped to ``[0, RING_CAPACITY]`` by the
+    Query bounds (the buffer is bounded anyway).
+    """
+    from cli_agent_orchestrator.services.ui_event_service import get_ui_event_log
+
+    types_filter = [t.strip() for t in types.split(",") if t.strip()] if types else None
+    if types_filter:
+        invalid = [t for t in types_filter if t not in UI_EVENT_TYPES]
+        if invalid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Invalid event type(s): {', '.join(invalid)}. "
+                    f"Valid types: {', '.join(UI_EVENT_TYPES)}"
+                ),
+            )
+    events = get_ui_event_log().history(limit=limit, since_id=since_id, types=types_filter)
+    return {"events": events}
+
+
+# Read-only directory listing for the workspace project/group sidebar. The
+# renderer never touches the filesystem directly; this scans one level of
+# subfolders, confined to the user's home directory.
+_FS_MARKER_NAMES = (
+    "package.json",
+    "pyproject.toml",
+    "CMakeLists.txt",
+    "Makefile",
+    "go.mod",
+    "Cargo.toml",
+    ".git",
+)
+_FS_LIST_MAX_ENTRIES = 200
+
+
+def _fs_detect_markers(dir_path: Path) -> List[str]:
+    """Return which project markers exist directly under ``dir_path``.
+
+    ``.git`` is detected even though it is a hidden entry (it never appears in
+    the listing itself). Per-marker OSErrors are swallowed (treated as absent).
+    """
+    found: List[str] = []
+    for marker in _FS_MARKER_NAMES:
+        try:
+            if (dir_path / marker).exists():
+                found.append(marker)
+        except OSError:
+            continue
+    return found
+
+
+def _fs_scan_directory(resolved: Path) -> List[Dict]:
+    """List non-hidden entries (depth 1, <=200) with per-directory markers.
+
+    Runs off the event loop (blocking fs I/O). Hidden entries (name starting
+    with ``.``) are excluded; ``PermissionError`` propagates to the caller.
+    """
+    entries: List[Dict] = []
+    for child in sorted(resolved.iterdir(), key=lambda p: p.name):
+        if child.name.startswith("."):
+            continue
+        try:
+            is_dir = child.is_dir()
+        except OSError:
+            is_dir = False
+        entries.append(
+            {
+                "name": child.name,
+                "is_dir": is_dir,
+                "markers": _fs_detect_markers(child) if is_dir else [],
+            }
+        )
+        if len(entries) >= _FS_LIST_MAX_ENTRIES:
+            break
+    return entries
+
+
+@app.get("/fs/list")
+async def fs_list(
+    path: str = Query(...),
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_READ, SCOPE_WRITE, SCOPE_ADMIN)),
+) -> Dict:
+    """List one level of a directory under the user's home (read-only).
+
+    Security: ``~`` is expanded and the path is realpath-normalized (resolving
+    symlinks and ``..``); anything outside the user's home directory — including
+    a symlink whose target escapes home — is rejected with 403. Hidden entries
+    are excluded, results are capped at 200, depth is 1. 404 if the path does
+    not exist, 400 if it is a file, 403 on permission errors.
+    """
+    home = Path.home().resolve()
+    try:
+        resolved = Path(os.path.expanduser(path)).resolve()
+    except (OSError, ValueError, RuntimeError):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid path")
+
+    if not resolved.is_relative_to(home):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Path is outside the home directory",
+        )
+    if not resolved.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Path not found")
+    if not resolved.is_dir():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Path is not a directory"
+        )
+
+    try:
+        entries = await asyncio.to_thread(_fs_scan_directory, resolved)
+    except PermissionError:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
+
+    return {"path": str(resolved), "entries": entries}
+
+
 @app.get("/agents/profiles")
 async def list_agent_profiles_endpoint() -> List[Dict]:
     """List all available agent profiles from all configured directories."""
@@ -821,6 +1037,44 @@ async def get_agent_profile_endpoint(name: str) -> Dict:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except RuntimeError as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+class InstallAgentProfileContentRequest(BaseModel):
+    """Request body for installing an agent profile from uploaded content.
+
+    ``content`` is the full profile ``.md`` text (frontmatter + system prompt).
+    It travels in the JSON body — never a query parameter — so prompt text is
+    not written to HTTP access logs. Validation (name charset, size cap,
+    frontmatter parse) lives in ``install_agent_content``.
+    """
+
+    name: str
+    content: str
+    provider: Optional[str] = None
+    overwrite: bool = False
+
+
+@app.post("/agents/profiles", response_model=InstallResult)
+async def install_agent_profile_content_endpoint(
+    request: InstallAgentProfileContentRequest,
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_WRITE, SCOPE_ADMIN)),
+) -> InstallResult:
+    """Install an agent profile from uploaded ``.md`` content.
+
+    Complements ``POST /agents/profiles/install`` (bare name / https URL):
+    this is the path the web UI's "에이전트 추가" modal uses to save a profile
+    it composed client-side. The name is sanitised to a bare stem before any
+    path is built, so the write cannot leave the local agent store.
+    """
+    result = install_agent_content(
+        name=request.name,
+        content=request.content,
+        provider=request.provider,
+        overwrite=request.overwrite,
+    )
+    if not result.success:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.message)
+    return result
 
 
 @app.post("/agents/profiles/install")
@@ -1040,7 +1294,20 @@ async def create_session(
                 if session_name.startswith(SESSION_PREFIX)
                 else f"{SESSION_PREFIX}{session_name}"
             )
-            validate_tmux_name(effective, "session_name")
+            try:
+                validate_tmux_name(effective, "session_name")
+            except ValueError:
+                # tmux uses ':' and '.' as target delimiters and treats a
+                # leading '-' as a flag, so session names are restricted to an
+                # ASCII allowlist (see validate_tmux_name). Non-ASCII input
+                # (e.g. 한글), spaces, and punctuation are rejected. Translate
+                # the validator's terse "Invalid session_name: ..." into
+                # actionable guidance; the web client mirrors the same rule for
+                # inline validation. Raising ValueError keeps the 400 mapping.
+                raise ValueError(
+                    "세션 이름은 영문·숫자로 시작하고, 그다음은 영문·숫자·밑줄(_)·"
+                    "하이픈(-)만 쓸 수 있어요. 한글·공백·특수문자는 쓸 수 없어요 (최대 60자)."
+                )
         # Parse comma-separated allowed_tools string into list
         allowed_tools_list = allowed_tools.split(",") if allowed_tools else None
 

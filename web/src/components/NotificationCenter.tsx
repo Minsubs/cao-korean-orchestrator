@@ -1,12 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, Bell, BellOff, CheckCircle2, X, XCircle } from 'lucide-react'
+import { AlertTriangle, Bell, BellOff, CheckCircle2, Clock, X, XCircle } from 'lucide-react'
 import { api, Session } from '../api'
 import { useStore } from '../store'
+import { displaySessionName } from '../features/workspace/displayName'
 
 const ENABLED_KEY = 'cao:notifications:enabled'
 const ALERTS_KEY = 'cao:notifications:history:v1'
 
-type AlertKind = 'completed' | 'approval' | 'error'
+// 'waiting_input'/'stall' are the Phase 2b Orchestration Workspace additions
+// (spec §7): a per-terminal "needs your attention" ping (any terminal, not
+// just the session's orchestrator) and a stall-detected ping. Both fold into
+// this same store/localStorage schema — additive only, existing 'completed'
+// | 'approval' | 'error' alerts and their stored shape are unchanged.
+type AlertKind = 'completed' | 'approval' | 'error' | 'waiting_input' | 'stall'
+const KNOWN_ALERT_KINDS: AlertKind[] = ['completed', 'approval', 'error', 'waiting_input', 'stall']
 
 interface AgentAlert {
   kind: AlertKind
@@ -17,8 +24,33 @@ interface AgentAlert {
 interface StoredAlert extends AgentAlert {
   id: string
   terminalId: string
+  /**
+   * Session this alert is about (feedback #17) — lets the notification
+   * center offer a "jump to this session" click. Optional so the existing
+   * localStorage schema (and any alert already stored before this field
+   * existed) stays valid: an alert with no `sessionName` just renders
+   * non-clickable with an explanatory title instead of guessing.
+   */
+  sessionName?: string
   createdAt: string
   read: boolean
+}
+
+/** One listener per mounted NotificationCenter (normally exactly one, in AppShell's top bar). */
+type WorkspaceAlertListener = (alert: AgentAlert, terminalId: string, sessionName?: string) => void
+const workspaceAlertListeners = new Set<WorkspaceAlertListener>()
+
+/**
+ * Entry point for the Orchestration Workspace feature (features/workspace/**)
+ * to raise a 'waiting_input' or 'stall' alert without importing React state
+ * from this component. Safe to call even if no NotificationCenter is mounted
+ * (the alert is simply dropped — same as any notification with nobody home).
+ * `sessionName` is optional (trailing param) so every existing call site —
+ * including this module's own tests — keeps compiling unchanged; omitting it
+ * just means that alert won't be clickable (see `sessionName` docstring above).
+ */
+export function emitWorkspaceAlert(kind: 'waiting_input' | 'stall', title: string, body: string, terminalId: string, sessionName?: string): void {
+  workspaceAlertListeners.forEach(listener => listener({ kind, title, body }, terminalId, sessionName))
 }
 
 function normalizeStatus(status: string | null): string {
@@ -76,7 +108,7 @@ function loadStoredAlerts(): StoredAlert[] {
     if (!Array.isArray(parsed)) return []
     return parsed.filter((alert: any) => (
       typeof alert?.id === 'string'
-      && ['completed', 'approval', 'error'].includes(alert?.kind)
+      && KNOWN_ALERT_KINDS.includes(alert?.kind)
       && typeof alert?.title === 'string'
       && typeof alert?.body === 'string'
       && typeof alert?.terminalId === 'string'
@@ -90,7 +122,8 @@ function loadStoredAlerts(): StoredAlert[] {
 
 function alertIcon(kind: AlertKind) {
   if (kind === 'completed') return <CheckCircle2 size={16} className="text-emerald-400" />
-  if (kind === 'approval') return <AlertTriangle size={16} className="text-amber-400" />
+  if (kind === 'approval' || kind === 'waiting_input') return <AlertTriangle size={16} className="text-amber-400" />
+  if (kind === 'stall') return <Clock size={16} className="text-amber-400" />
   return <XCircle size={16} className="text-red-400" />
 }
 
@@ -104,11 +137,12 @@ export function NotificationCenter({ sessions }: { sessions: Session[] }) {
   ))
   const statuses = useRef<Record<string, string>>({})
 
-  const emitAlert = (alert: AgentAlert, terminalId: string) => {
+  const emitAlert = (alert: AgentAlert, terminalId: string, sessionName?: string) => {
     const storedAlert: StoredAlert = {
       ...alert,
       id: `${terminalId}-${alert.kind}-${Date.now()}`,
       terminalId,
+      sessionName,
       createdAt: new Date().toISOString(),
       read: false,
     }
@@ -127,6 +161,32 @@ export function NotificationCenter({ sessions }: { sessions: Session[] }) {
       window.focus()
       notification.close()
     }
+  }
+
+  // `emitAlert` closes over `enabled`/`showSnackbar` and is redefined every
+  // render — keep a ref so the module-level listener set (which subscribes
+  // once) always calls the latest version, never a stale closure.
+  const emitAlertRef = useRef(emitAlert)
+  emitAlertRef.current = emitAlert
+
+  useEffect(() => {
+    const listener: WorkspaceAlertListener = (alert, terminalId, sessionName) => emitAlertRef.current(alert, terminalId, sessionName)
+    workspaceAlertListeners.add(listener)
+    return () => {
+      workspaceAlertListeners.delete(listener)
+    }
+  }, [])
+
+  // Feedback #17: click an alert to jump straight to its session. Workspace.tsx
+  // already listens for this exact event (Command Palette "select session"
+  // seam) and switches its own selected session — but that listener only
+  // exists inside the Workspace *view*; if the user is on a different rail
+  // item (Profiles/Tooling/...) when they click, nothing visibly happens
+  // until they switch back. AppShell.tsx (view-switching) is out of this
+  // change's ownership — flagged in the handoff report, not fixed here.
+  const goToSession = (sessionName: string) => {
+    window.dispatchEvent(new CustomEvent('cao:select-session', { detail: sessionName }))
+    setOpen(false)
   }
 
   useEffect(() => {
@@ -169,7 +229,7 @@ export function NotificationCenter({ sessions }: { sessions: Session[] }) {
             // Completion/error alerts require a real transition to avoid noise on load.
             const alert = alertForStatusTransition(sessions[index].name, previousStatus, currentStatus)
             if (alert && (previousStatus !== undefined || alert.kind === 'approval')) {
-              emitAlert(alert, orchestrator.id)
+              emitAlert(alert, orchestrator.id, sessions[index].name)
             }
           })
           .catch(() => {})
@@ -289,18 +349,42 @@ export function NotificationCenter({ sessions }: { sessions: Session[] }) {
                 <p className="text-sm text-gray-400">아직 알림이 없습니다.</p>
                 <p className="text-[11px] text-gray-600 mt-1">작업이 완료되거나 승인이 필요하면 여기에 표시됩니다.</p>
               </div>
-            ) : alerts.map(alert => (
-              <div key={alert.id} className="flex gap-3 px-4 py-3 border-b border-gray-800/70 last:border-b-0 bg-gray-900">
-                <div className="mt-0.5 shrink-0">{alertIcon(alert.kind)}</div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs font-medium text-gray-200">{alert.title}</p>
-                  <p className="text-[11px] text-gray-400 mt-1 leading-relaxed">{alert.body}</p>
-                  <p className="text-[10px] text-gray-600 mt-1.5">
-                    {new Date(alert.createdAt).toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                  </p>
+            ) : alerts.map(alert => {
+              const clickable = !!alert.sessionName
+              return (
+                <div
+                  key={alert.id}
+                  role={clickable ? 'button' : undefined}
+                  tabIndex={clickable ? 0 : undefined}
+                  onClick={clickable ? () => goToSession(alert.sessionName!) : undefined}
+                  onKeyDown={
+                    clickable
+                      ? e => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            goToSession(alert.sessionName!)
+                          }
+                        }
+                      : undefined
+                  }
+                  title={clickable ? `${displaySessionName(alert.sessionName!)} 세션으로 이동` : '이 알림은 세션 정보가 없어 이동할 수 없어요'}
+                  aria-label={clickable ? `${displaySessionName(alert.sessionName!)} 세션으로 이동 — ${alert.title}` : undefined}
+                  className={`flex gap-3 px-4 py-3 border-b border-gray-800/70 last:border-b-0 bg-gray-900 ${
+                    clickable ? 'cursor-pointer hover:bg-gray-800/70' : 'cursor-default'
+                  }`}
+                >
+                  <div className="mt-0.5 shrink-0">{alertIcon(alert.kind)}</div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-medium text-gray-200">{alert.title}</p>
+                    <p className="text-[11px] text-gray-400 mt-1 leading-relaxed">{alert.body}</p>
+                    <p className="text-[10px] text-gray-600 mt-1.5">
+                      {new Date(alert.createdAt).toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      {!clickable && ' · 세션 이동 불가'}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}

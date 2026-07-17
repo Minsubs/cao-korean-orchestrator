@@ -1,0 +1,267 @@
+// Pure event → UI mapping for the Orchestration Thread (spec §3, unit-tested
+// in test/workspace-reducer.test.ts). Two data sources feed the same card:
+//
+//   - REST (session terminals list): authoritative for identity/location —
+//     always available, even when the event stream is down entirely.
+//   - `/ui/events` (SSE + history): enriches with instruction summaries,
+//     inner-agent messages and system lines that REST alone cannot provide.
+//
+// Card position in the thread is fixed at first appearance and never moves;
+// later signals only mutate the existing card object ("카드 추가 금지" for
+// status_changed/activity — no matching card means the event is dropped).
+import type { TerminalMeta } from '../../api'
+import type {
+  ChatEntry,
+  DelegationCard,
+  InnerMessage,
+  MessageSentDetail,
+  SessionCreatedDetail,
+  SessionKilledDetail,
+  StatusChangedDetail,
+  TerminalCreatedDetail,
+  TerminalKilledDetail,
+  ThreadItem,
+  UiEvent,
+} from './types'
+
+function parseTs(iso: string): number {
+  const value = Date.parse(iso)
+  return Number.isNaN(value) ? Date.now() : value
+}
+
+export function buildCardFromTerminalCreated(detail: TerminalCreatedDetail, ts: number): DelegationCard {
+  return {
+    terminalId: detail.terminal_id,
+    sessionId: detail.session_id ?? null,
+    agentName: detail.agent_name ?? null,
+    provider: detail.provider ?? null,
+    callerId: null,
+    callerAgentName: null,
+    status: null,
+    prevStatus: null,
+    location: null,
+    locationLoaded: false,
+    instruction: null,
+    instructionType: null,
+    instructionFromId: null,
+    killed: false,
+    lastActivityAt: null,
+    lastOutputAt: null,
+    firstSeenAt: ts,
+    hasSignal: true,
+  }
+}
+
+/** Seed a card straight from the existing session-detail REST terminal list — the no-events fallback. */
+export function seedCardFromTerminalMeta(
+  terminal: TerminalMeta,
+  extra?: { callerId?: string | null; lastOutputAt?: string | null; location?: string | null },
+): DelegationCard {
+  return {
+    terminalId: terminal.id,
+    sessionId: null,
+    agentName: terminal.agent_profile ?? null,
+    provider: terminal.provider ?? null,
+    callerId: extra?.callerId ?? null,
+    callerAgentName: null,
+    status: null,
+    prevStatus: null,
+    location: extra?.location ?? null,
+    locationLoaded: extra?.location !== undefined,
+    instruction: null,
+    instructionType: null,
+    instructionFromId: null,
+    killed: false,
+    lastActivityAt: extra?.lastOutputAt ? parseTs(extra.lastOutputAt) : null,
+    lastOutputAt: extra?.lastOutputAt ?? null,
+    firstSeenAt: terminal.created_at ? parseTs(terminal.created_at) : Date.now(),
+    hasSignal: true,
+  }
+}
+
+/** REST is authoritative for identity/location; event-derived fields on `existing` (instruction, status, killed…) are preserved. */
+export function mergeSeededCard(existing: DelegationCard | undefined, seeded: DelegationCard): DelegationCard {
+  if (!existing) return seeded
+  return {
+    ...existing,
+    agentName: seeded.agentName ?? existing.agentName,
+    provider: seeded.provider ?? existing.provider,
+    sessionId: seeded.sessionId ?? existing.sessionId,
+    callerId: existing.callerId ?? seeded.callerId,
+    location: seeded.location ?? existing.location,
+    locationLoaded: existing.locationLoaded || seeded.locationLoaded,
+    lastOutputAt: seeded.lastOutputAt ?? existing.lastOutputAt,
+    lastActivityAt: Math.max(existing.lastActivityAt ?? 0, seeded.lastActivityAt ?? 0) || existing.lastActivityAt,
+    firstSeenAt: Math.min(existing.firstSeenAt, seeded.firstSeenAt),
+    hasSignal: true,
+  }
+}
+
+/** Apply exactly one `/ui/events` event to the card map. Pure — same input always yields the same output. */
+export function applyUiEventToCards(cards: Record<string, DelegationCard>, event: UiEvent): Record<string, DelegationCard> {
+  const ts = parseTs(event.ts)
+
+  switch (event.type) {
+    case 'terminal_created': {
+      const detail = event.detail as unknown as TerminalCreatedDetail
+      if (!detail?.terminal_id) return cards
+      const existing = cards[detail.terminal_id]
+      const next = existing
+        ? {
+            ...existing,
+            agentName: existing.agentName ?? detail.agent_name ?? null,
+            provider: existing.provider ?? detail.provider ?? null,
+            sessionId: existing.sessionId ?? detail.session_id ?? null,
+            firstSeenAt: Math.min(existing.firstSeenAt, ts),
+            hasSignal: true,
+          }
+        : buildCardFromTerminalCreated(detail, ts)
+      return { ...cards, [detail.terminal_id]: next }
+    }
+
+    case 'status_changed': {
+      const detail = event.detail as unknown as StatusChangedDetail
+      const existing = detail?.terminal_id ? cards[detail.terminal_id] : undefined
+      if (!existing) return cards // "카드 추가 금지" — status alone never creates a card
+      return {
+        ...cards,
+        [detail.terminal_id]: {
+          ...existing,
+          status: detail.status ?? existing.status,
+          prevStatus: detail.prev ?? existing.prevStatus,
+          hasSignal: true,
+        },
+      }
+    }
+
+    case 'terminal_killed': {
+      const detail = event.detail as unknown as TerminalKilledDetail
+      const existing = detail?.terminal_id ? cards[detail.terminal_id] : undefined
+      if (!existing) return cards
+      return { ...cards, [detail.terminal_id]: { ...existing, killed: true } }
+    }
+
+    case 'message_sent': {
+      const detail = event.detail as unknown as MessageSentDetail
+      if (detail?.orchestration_type !== 'assign' && detail?.orchestration_type !== 'handoff') return cards
+      const existing = detail?.receiver ? cards[detail.receiver] : undefined
+      if (!existing) return cards
+      return {
+        ...cards,
+        [detail.receiver]: {
+          ...existing,
+          instruction: detail.message ?? existing.instruction,
+          instructionType: detail.orchestration_type,
+          instructionFromId: detail.sender ?? existing.instructionFromId,
+          callerId: existing.callerId ?? detail.sender ?? null,
+          hasSignal: true,
+        },
+      }
+    }
+
+    case 'activity': {
+      const detail = event.detail as unknown as { terminal_id?: string }
+      const existing = detail?.terminal_id ? cards[detail.terminal_id] : undefined
+      if (!existing) return cards
+      return {
+        ...cards,
+        [detail.terminal_id as string]: { ...existing, lastActivityAt: Math.max(existing.lastActivityAt ?? 0, ts) },
+      }
+    }
+
+    default:
+      return cards
+  }
+}
+
+export function applyUiEvents(cards: Record<string, DelegationCard>, events: UiEvent[]): Record<string, DelegationCard> {
+  return events.reduce(applyUiEventToCards, cards)
+}
+
+/** Resolve each card's caller/parent display name once the caller's own card (or itself) is known. */
+export function withCallerNames(cards: Record<string, DelegationCard>): Record<string, DelegationCard> {
+  const next: Record<string, DelegationCard> = {}
+  for (const [id, card] of Object.entries(cards)) {
+    const caller = card.callerId ? cards[card.callerId] : undefined
+    next[id] = { ...card, callerAgentName: caller?.agentName ?? card.callerAgentName }
+  }
+  return next
+}
+
+// ── Thread item assembly (cards + events + local chat → one ordered list) ──
+
+interface Positionable {
+  ts: number
+  sortKey: number
+  render:
+    | { kind: 'chat'; entry: ChatEntry }
+    | { kind: 'system'; id: string; text: string }
+    | { kind: 'card-first'; card: DelegationCard }
+    | { kind: 'inner'; message: InnerMessage }
+}
+
+export function buildThreadItems(params: {
+  events: UiEvent[]
+  chat: ChatEntry[]
+  cards: Record<string, DelegationCard>
+}): ThreadItem[] {
+  const { events, chat, cards } = params
+  const items: Positionable[] = []
+
+  chat.forEach((entry, index) => items.push({ ts: entry.ts, sortKey: index, render: { kind: 'chat', entry } }))
+
+  events.forEach(event => {
+    const ts = parseTs(event.ts)
+    if (event.type === 'session_created') {
+      const d = event.detail as unknown as SessionCreatedDetail
+      items.push({ ts, sortKey: event.id, render: { kind: 'system', id: `sys-${event.id}`, text: `세션 ${d.session_name}을(를) 시작했어요` } })
+    } else if (event.type === 'session_killed') {
+      const d = event.detail as unknown as SessionKilledDetail
+      items.push({ ts, sortKey: event.id, render: { kind: 'system', id: `sys-${event.id}`, text: `세션 ${d.session_name}을(를) 종료했어요` } })
+    } else if (event.type === 'message_sent') {
+      const d = event.detail as unknown as MessageSentDetail
+      if (d.orchestration_type === 'send_message') {
+        items.push({
+          ts,
+          sortKey: event.id,
+          render: { kind: 'inner', message: { id: `msg-${event.id}`, sender: d.sender, receiver: d.receiver, message: d.message, ts } },
+        })
+      }
+    }
+  })
+
+  // One "first appearance" slot per card, fixed at its original position; the
+  // (possibly since-updated) card object is read fresh each call.
+  Object.values(cards).forEach(card => {
+    items.push({ ts: card.firstSeenAt, sortKey: -1, render: { kind: 'card-first', card } })
+  })
+
+  items.sort((a, b) => (a.ts - b.ts) || (a.sortKey - b.sortKey))
+
+  const result: ThreadItem[] = []
+  let runningInner: InnerMessage[] = []
+  const flushInner = () => {
+    if (runningInner.length === 0) return
+    const first = runningInner[0]
+    result.push({ kind: 'inner-group', id: `inner-${first.id}`, ts: first.ts, messages: runningInner })
+    runningInner = []
+  }
+
+  for (const item of items) {
+    if (item.render.kind === 'inner') {
+      runningInner.push(item.render.message)
+      continue
+    }
+    flushInner()
+    if (item.render.kind === 'chat') {
+      result.push({ kind: 'chat', id: item.render.entry.id, ts: item.ts, entry: item.render.entry })
+    } else if (item.render.kind === 'system') {
+      result.push({ kind: 'system', id: item.render.id, ts: item.ts, text: item.render.text })
+    } else {
+      result.push({ kind: 'card', id: item.render.card.terminalId, ts: item.ts, card: item.render.card })
+    }
+  }
+  flushInner()
+
+  return result
+}

@@ -1,9 +1,30 @@
+@import './theme.generated.css';
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* Feedback #10: native form widgets (select/option/input/checkbox/etc.) pick
+   their own light/dark rendering from the `color-scheme` CSS property, not
+   from our `--*` theme variables — without this, a browser that defaults to
+   dark UI chrome renders those controls dark even while `data-theme="light"`
+   is active everywhere else. theme.ts always stamps an explicit
+   `data-theme` on <html> (see theme.ts's DEFAULT_PREFERENCE), so the
+   `[data-theme]` rules below are what actually govern in practice; the bare
+   `:root` rule is just the pre-hydration/no-JS fallback. This lives here
+   (not theme.generated.css, which is generated — see design-tokens/gen.mjs). */
+:root {
+  color-scheme: light;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
 body {
-  background: #0f0f14;
+  background: var(--bg, #0f0f14);
+  color: var(--text, #e5e7eb);
   font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Segoe UI', Roboto, sans-serif;
 }
 

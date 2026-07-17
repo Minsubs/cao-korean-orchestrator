@@ -235,6 +235,66 @@ def _build_provider_config(
     )
 
 
+# Upload size ceiling for install_agent_content — far above any real profile
+# (the largest bundled agent-store profile is ~8KB) but small enough that the
+# HTTP surface cannot be used to fill the disk.
+_MAX_PROFILE_CONTENT_BYTES = 64 * 1024
+
+
+def install_agent_content(
+    name: str,
+    content: str,
+    provider: Optional[str] = None,
+    overwrite: bool = False,
+) -> InstallResult:
+    """Save uploaded profile content into the local store, then install it.
+
+    The HTTP-reachable twin of the CLI's copy-local-file-then-install flow:
+    ``name`` must pass ``_PROFILE_NAME_RE`` (no separators or dots, so the
+    write cannot escape ``LOCAL_AGENT_STORE_DIR``) and ``content`` is
+    size-capped before any disk I/O. Parsing, validation, and provider
+    registration are delegated to ``install_agent(name)`` so both entry
+    points share one downstream contract. A freshly written file is removed
+    again when that downstream install rejects it, so a failed upload cannot
+    leave a broken profile behind in the store.
+    """
+    if not _PROFILE_NAME_RE.fullmatch(name):
+        return InstallResult(
+            success=False,
+            message=(
+                f"Invalid profile name '{name}'. Expected a name matching [A-Za-z0-9_-]{{1,64}}."
+            ),
+        )
+    if len(content.encode("utf-8")) > _MAX_PROFILE_CONTENT_BYTES:
+        return InstallResult(
+            success=False,
+            message="Profile content exceeds the 64KB limit.",
+        )
+    if not content.strip():
+        return InstallResult(success=False, message="Profile content is empty.")
+
+    LOCAL_AGENT_STORE_DIR.mkdir(parents=True, exist_ok=True)
+    dest = LOCAL_AGENT_STORE_DIR / f"{name}.md"
+    existed_before = dest.exists()
+    if existed_before and not overwrite:
+        return InstallResult(
+            success=False,
+            message=f"Profile '{name}' already exists. Pass overwrite=true to replace it.",
+        )
+
+    previous_content = dest.read_text(encoding="utf-8") if existed_before else None
+    dest.write_text(content, encoding="utf-8")
+
+    result = install_agent(source=name, provider=provider)
+    if not result.success:
+        # Roll the store back so a rejected upload leaves no trace.
+        if previous_content is None:
+            dest.unlink(missing_ok=True)
+        else:
+            dest.write_text(previous_content, encoding="utf-8")
+    return result
+
+
 def install_agent(
     source: str,
     provider: Optional[str] = None,

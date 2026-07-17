@@ -447,6 +447,52 @@ class TestListAgentProfiles:
         assert names == ["alpha", "middle", "zebra"]
 
 
+class TestListAgentProfilesBuiltinAdditive:
+    """Built-in profiles carry additive provider/model and Korean descriptions (#6).
+
+    Uses the REAL packaged built-in store (only the on-disk stores are stubbed
+    empty), so this pins the actual agent_store/*.md frontmatter — including the
+    Korean description rewrite and the null provider/model contract the web UI
+    consumes."""
+
+    @pytest.fixture
+    def only_builtin(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "cli_agent_orchestrator.utils.agent_profiles.LOCAL_AGENT_STORE_DIR",
+            tmp_path / "empty-local",
+        )
+        monkeypatch.setattr(
+            "cli_agent_orchestrator.services.settings_service.get_agent_dirs", lambda: {}
+        )
+        monkeypatch.setattr(
+            "cli_agent_orchestrator.services.settings_service.get_extra_agent_dirs", lambda: []
+        )
+
+    def test_builtins_expose_null_provider_model_and_additive_keys(self, only_builtin):
+        from cli_agent_orchestrator.utils.agent_profiles import list_agent_profiles
+
+        by_name = {p["name"]: p for p in list_agent_profiles()}
+        assert "developer" in by_name  # sanity: real built-in store was scanned
+        for name in ("code_supervisor", "developer", "reviewer", "memory_manager"):
+            profile = by_name[name]
+            assert profile["source"] == "built-in"
+            # Additive keys always present; built-ins declare neither, so null.
+            assert profile["provider"] is None
+            assert profile["model"] is None
+
+    def test_builtin_descriptions_are_korean(self, only_builtin):
+        from cli_agent_orchestrator.utils.agent_profiles import list_agent_profiles
+
+        by_name = {p["name"]: p for p in list_agent_profiles()}
+        # The old English descriptions ("... Agent in a multi-agent system") were
+        # replaced with natural Korean (#6); assert the Korean is present.
+        assert "개발자" in by_name["developer"]["description"]
+        assert "리뷰어" in by_name["reviewer"]["description"]
+        assert "총괄" in by_name["code_supervisor"]["description"]
+        # And they are no longer the English originals.
+        assert "multi-agent system" not in by_name["developer"]["description"]
+
+
 class TestScanDirectory:
     """Tests for _scan_directory helper function."""
 
@@ -511,6 +557,80 @@ class TestScanDirectory:
         # Should retain the original profile
         assert profiles["existing"]["description"] == "Original version"
         assert profiles["existing"]["source"] == "built-in"
+
+    def test_scan_directory_flat_md_extracts_provider_and_model(self, tmp_path):
+        """Additive fields (#6): flat .md profiles expose provider + model."""
+        from cli_agent_orchestrator.utils.agent_profiles import _scan_directory
+
+        (tmp_path / "codex-agent.md").write_text(
+            "---\nname: codex-agent\ndescription: Codex worker\n"
+            "provider: codex\nmodel: gpt-5-codex\n---\nPrompt"
+        )
+        profiles: dict = {}
+        _scan_directory(tmp_path, "local", profiles)
+
+        assert profiles["codex-agent"]["provider"] == "codex"
+        assert profiles["codex-agent"]["model"] == "gpt-5-codex"
+
+    def test_scan_directory_provider_model_null_when_absent(self, tmp_path):
+        """Profiles without provider/model frontmatter expose them as None."""
+        from cli_agent_orchestrator.utils.agent_profiles import _scan_directory
+
+        (tmp_path / "plain.md").write_text("---\nname: plain\ndescription: Plain\n---\nPrompt")
+        profiles: dict = {}
+        _scan_directory(tmp_path, "local", profiles)
+
+        assert profiles["plain"]["provider"] is None
+        assert profiles["plain"]["model"] is None
+
+    def test_scan_directory_subdir_extracts_provider_model(self, tmp_path):
+        """Subdirectory (agent.md) profiles also expose provider + model."""
+        from cli_agent_orchestrator.utils.agent_profiles import _scan_directory
+
+        agent_dir = tmp_path / "sub-agent"
+        agent_dir.mkdir()
+        (agent_dir / "agent.md").write_text(
+            "---\nname: sub-agent\ndescription: Sub\nprovider: claude_code\n---\nPrompt"
+        )
+        profiles: dict = {}
+        _scan_directory(tmp_path, "kiro", profiles)
+
+        assert profiles["sub-agent"]["provider"] == "claude_code"
+        assert profiles["sub-agent"]["model"] is None
+
+
+class TestExtractProfileFields:
+    """Tests for the _extract_profile_fields frontmatter helper (#6)."""
+
+    def test_extracts_description_provider_model(self):
+        from cli_agent_orchestrator.utils.agent_profiles import _extract_profile_fields
+
+        result = _extract_profile_fields(
+            "---\ndescription: D\nprovider: codex\nmodel: gpt-5\n---\nbody"
+        )
+        assert result == ("D", "codex", "gpt-5")
+
+    def test_absent_provider_model_are_none(self):
+        from cli_agent_orchestrator.utils.agent_profiles import _extract_profile_fields
+
+        assert _extract_profile_fields("---\ndescription: D\n---\nbody") == ("D", None, None)
+
+    def test_non_string_values_treated_as_absent(self):
+        from cli_agent_orchestrator.utils.agent_profiles import _extract_profile_fields
+
+        # A numeric YAML value must not leak a non-string onto the wire shape.
+        desc, provider, model = _extract_profile_fields(
+            "---\ndescription: D\nprovider: 123\nmodel: 4.5\n---\nbody"
+        )
+        assert provider is None
+        assert model is None
+
+    def test_parse_failure_yields_empty_fields(self):
+        from cli_agent_orchestrator.utils.agent_profiles import _extract_profile_fields
+
+        # frontmatter.loads never raises on plain text (no frontmatter block) —
+        # it yields empty metadata, so description falls back to "".
+        assert _extract_profile_fields("not a profile") == ("", None, None)
 
 
 class TestLoadAgentProfileEnvResolution:

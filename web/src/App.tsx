@@ -1,26 +1,10 @@
-import { useEffect, useState, Suspense } from 'react'
-import { api } from './api'
+import { useEffect } from 'react'
 import { useStore } from './store'
-import { ErrorBoundary } from './components/ErrorBoundary'
-import { DashboardHome } from './components/DashboardHome'
-import { AgentPanel } from './components/AgentPanel'
-import { FlowsPanel } from './components/FlowsPanel'
-import { MemoryPanel } from './components/MemoryPanel'
-import { SettingsPanel } from './components/SettingsPanel'
-import { NotificationCenter } from './components/NotificationCenter'
-import { Bot, Home, Clock, Settings, Brain, CheckCircle, XCircle, Info, Wifi, WifiOff } from 'lucide-react'
+import { AppShell } from './app/AppShell'
+import { CheckCircle, Info, XCircle } from 'lucide-react'
 
-type TabKey = 'home' | 'agents' | 'flows' | 'settings' | 'memory'
-
-// Memory appended last so Alt+N numbering of existing tabs never shifts
-const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
-  { key: 'home', label: '홈', icon: <Home size={16} /> },
-  { key: 'agents', label: '에이전트', icon: <Bot size={16} /> },
-  { key: 'flows', label: '자동화', icon: <Clock size={16} /> },
-  { key: 'settings', label: '설정', icon: <Settings size={16} /> },
-  { key: 'memory', label: '메모리', icon: <Brain size={16} /> },
-]
-
+// Global toast overlay — unchanged from the pre-Phase-1b App.tsx, just kept
+// in this file while the actual page layout moved to app/AppShell.tsx.
 function Snackbar() {
   const { snackbar, hideSnackbar } = useStore()
 
@@ -53,106 +37,10 @@ function Snackbar() {
 }
 
 export default function App() {
-  const [tab, setTab] = useState<TabKey>('home')
-  // Default false (fail-closed): a dead backend hides the tab rather than showing a broken panel
-  const [memoryEnabled, setMemoryEnabled] = useState(false)
-  const { sessions, connected, fetchSessions } = useStore()
-
-  const visibleTabs = TABS.filter(t => t.key !== 'memory' || memoryEnabled)
-
-  useEffect(() => {
-    fetchSessions()
-    api.getMemoryStatus()
-      .then(s => setMemoryEnabled(s.enabled))
-      .catch(() => {})
-    const interval = setInterval(fetchSessions, 10000)
-    return () => clearInterval(interval)
-  }, [])
-
-  // Keyboard shortcuts: Alt+1-N over the visible tabs
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.altKey && e.key >= '1' && e.key <= String(visibleTabs.length)) {
-        e.preventDefault()
-        setTab(visibleTabs[parseInt(e.key) - 1].key)
-      }
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [memoryEnabled])
-
   return (
-    <div className="min-h-screen bg-[#0f0f14] text-gray-200">
-      {/* Header */}
-      <header className="border-b border-gray-800 bg-gray-900/80 backdrop-blur-sm sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center">
-              <Bot size={18} className="text-white" />
-            </div>
-            <h1 className="text-lg font-bold text-white">CLI 에이전트 오케스트레이터</h1>
-          </div>
-          <div className="flex items-center gap-4">
-            <NotificationCenter sessions={sessions} />
-            <span className="text-xs text-gray-500">세션 {sessions.length}개</span>
-            <div className="flex items-center gap-1.5" title={connected ? '연결됨' : '연결 끊김'}>
-              {connected ? (
-                <Wifi size={14} className="text-emerald-400" />
-              ) : (
-                <WifiOff size={14} className="text-red-400" />
-              )}
-              <span className={`text-xs ${connected ? 'text-emerald-400' : 'text-red-400'}`}>
-                {connected ? '연결됨' : '오프라인'}
-              </span>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* Tab Bar */}
-      <div className="border-b border-gray-800">
-        <div className="max-w-7xl mx-auto px-6">
-          <nav className="flex gap-1 py-2" role="tablist">
-            {visibleTabs.map((t, i) => (
-              <button
-                key={t.key}
-                role="tab"
-                aria-selected={tab === t.key}
-                onClick={() => setTab(t.key)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2 ${
-                  tab === t.key
-                    ? 'bg-gradient-to-r from-emerald-600 to-emerald-500 text-white shadow-lg shadow-emerald-500/20'
-                    : 'text-gray-400 hover:text-white hover:bg-gray-800/50'
-                }`}
-                title={`Alt+${i + 1}`}
-              >
-                {t.icon}
-                {t.label}
-                {t.key === 'agents' && sessions.length > 0 && (
-                  <span className={`px-1.5 py-0.5 text-xs rounded-full ${tab === t.key ? 'bg-white/20' : 'bg-gray-700'}`}>
-                    {sessions.length}
-                  </span>
-                )}
-              </button>
-            ))}
-          </nav>
-        </div>
-      </div>
-
-      {/* Content */}
-      <main className="max-w-7xl mx-auto px-6 py-6">
-        <ErrorBoundary>
-          <Suspense fallback={<div className="text-gray-500 text-sm py-12 text-center">불러오는 중...</div>}>
-            {tab === 'home' && <DashboardHome onNavigate={(t) => setTab(t as TabKey)} />}
-            {tab === 'agents' && <AgentPanel />}
-            {tab === 'flows' && <FlowsPanel />}
-            {tab === 'settings' && <SettingsPanel />}
-            {tab === 'memory' && <MemoryPanel />}
-          </Suspense>
-        </ErrorBoundary>
-      </main>
-
+    <>
+      <AppShell />
       <Snackbar />
-    </div>
+    </>
   )
 }

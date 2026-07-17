@@ -5,6 +5,8 @@ import { X, Send, Mail, Loader2 } from 'lucide-react'
 interface InboxPanelProps {
   terminalId: string
   onClose: () => void
+  /** Render inline (no fixed overlay/backdrop) for the Workbench dock. Default false preserves the classic modal exactly. */
+  embedded?: boolean
 }
 
 type StatusFilter = 'all' | 'pending' | 'delivered' | 'failed'
@@ -45,7 +47,7 @@ function MessageStatusBadge({ status }: { status: InboxMessage['status'] }) {
   )
 }
 
-export function InboxPanel({ terminalId, onClose }: InboxPanelProps) {
+export function InboxPanel({ terminalId, onClose, embedded = false }: InboxPanelProps) {
   const [messages, setMessages] = useState<InboxMessage[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<StatusFilter>('all')
@@ -112,6 +114,112 @@ export function InboxPanel({ terminalId, onClose }: InboxPanelProps) {
 
   const isReceiver = (msg: InboxMessage) => msg.receiver_id === terminalId
 
+  const filterTabs = (
+    <div className={`shrink-0 overflow-x-auto border-b border-gray-700/30 ${embedded ? 'px-3 py-2' : 'px-5 py-3'}`}>
+      <div className="flex gap-2">
+        {STATUS_FILTERS.map(f => (
+          <button
+            key={f.key}
+            onClick={() => setFilter(f.key)}
+            className={`px-3 py-1.5 text-xs font-medium rounded-full whitespace-nowrap transition-colors ${
+              filter === f.key
+                ? 'bg-emerald-600 text-white'
+                : 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700'
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+
+  const messageList = (
+    <div className={`flex-1 overflow-y-auto space-y-3 min-h-[200px] ${embedded ? 'px-3 py-3' : 'px-5 py-4'}`}>
+      {loading && messages.length === 0 ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 size={20} className="animate-spin text-gray-500" />
+        </div>
+      ) : messages.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+          <Mail size={32} className="mb-3 opacity-40" />
+          <p className="text-sm">아직 메시지가 없습니다</p>
+          <p className="text-xs text-gray-600 mt-1">에이전트가 handoff, assign 또는 send_message로 통신하면 여기에 표시됩니다. 아래에서 직접 메시지를 보낼 수도 있습니다.</p>
+        </div>
+      ) : (
+        messages.map(msg => {
+          const incoming = isReceiver(msg)
+          return (
+            <div
+              key={msg.id}
+              className={`flex flex-col ${incoming ? 'items-start' : 'items-end'}`}
+            >
+              <div
+                className={`max-w-[85%] rounded-xl px-3.5 py-2.5 ${
+                  incoming
+                    ? 'bg-gray-800 border border-gray-700/40'
+                    : 'bg-emerald-900/30 border border-emerald-700/30'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[10px] font-mono text-gray-500">
+                    {incoming ? msg.sender_id.slice(0, 8) : msg.receiver_id.slice(0, 8)}
+                  </span>
+                  <MessageStatusBadge status={msg.status} />
+                </div>
+                <p className="text-sm text-gray-200 whitespace-pre-wrap break-words">{msg.message}</p>
+                {msg.created_at && (
+                  <p className="text-[10px] text-gray-600 mt-1">{formatRelativeTime(msg.created_at)}</p>
+                )}
+              </div>
+            </div>
+          )
+        })
+      )}
+      <div ref={messagesEndRef} />
+    </div>
+  )
+
+  const sendForm = (
+    <div className={`shrink-0 border-t border-gray-700/50 ${embedded ? 'px-3 py-3' : 'px-5 py-4'}`}>
+      <div className="flex gap-2">
+        <input
+          ref={inputRef}
+          type="text"
+          value={sendText}
+          onChange={e => setSendText(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="메시지를 입력하세요..."
+          className="flex-1 bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2.5 focus:border-emerald-500 focus:outline-none placeholder-gray-600"
+        />
+        <button
+          onClick={handleSend}
+          disabled={!sendText.trim() || sending}
+          className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors"
+        >
+          {sending ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <Send size={14} />
+          )}
+          보내기
+        </button>
+      </div>
+    </div>
+  )
+
+  // Embedded (Workbench dock): no backdrop/modal card/header — the
+  // Workbench's own tab bar/context row already identifies this terminal.
+  if (embedded) {
+    return (
+      <div className="flex h-full w-full flex-col bg-gray-900">
+        {filterTabs}
+        {messageList}
+        {sendForm}
+      </div>
+    )
+  }
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center">
       {/* Backdrop */}
@@ -139,96 +247,9 @@ export function InboxPanel({ terminalId, onClose }: InboxPanelProps) {
           </button>
         </div>
 
-        {/* Filter Tabs */}
-        <div className="px-5 py-3 border-b border-gray-700/30 shrink-0 overflow-x-auto">
-          <div className="flex gap-2">
-            {STATUS_FILTERS.map(f => (
-              <button
-                key={f.key}
-                onClick={() => setFilter(f.key)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-full whitespace-nowrap transition-colors ${
-                  filter === f.key
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700'
-                }`}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3 min-h-[200px]">
-          {loading && messages.length === 0 ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 size={20} className="animate-spin text-gray-500" />
-            </div>
-          ) : messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-gray-500">
-              <Mail size={32} className="mb-3 opacity-40" />
-              <p className="text-sm">아직 메시지가 없습니다</p>
-              <p className="text-xs text-gray-600 mt-1">에이전트가 handoff, assign 또는 send_message로 통신하면 여기에 표시됩니다. 아래에서 직접 메시지를 보낼 수도 있습니다.</p>
-            </div>
-          ) : (
-            messages.map(msg => {
-              const incoming = isReceiver(msg)
-              return (
-                <div
-                  key={msg.id}
-                  className={`flex flex-col ${incoming ? 'items-start' : 'items-end'}`}
-                >
-                  <div
-                    className={`max-w-[85%] rounded-xl px-3.5 py-2.5 ${
-                      incoming
-                        ? 'bg-gray-800 border border-gray-700/40'
-                        : 'bg-emerald-900/30 border border-emerald-700/30'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-[10px] font-mono text-gray-500">
-                        {incoming ? msg.sender_id.slice(0, 8) : msg.receiver_id.slice(0, 8)}
-                      </span>
-                      <MessageStatusBadge status={msg.status} />
-                    </div>
-                    <p className="text-sm text-gray-200 whitespace-pre-wrap break-words">{msg.message}</p>
-                    {msg.created_at && (
-                      <p className="text-[10px] text-gray-600 mt-1">{formatRelativeTime(msg.created_at)}</p>
-                    )}
-                  </div>
-                </div>
-              )
-            })
-          )}
-          <div ref={messagesEndRef} />
-        </div>
-
-        {/* Send Form */}
-        <div className="px-5 py-4 border-t border-gray-700/50 shrink-0">
-          <div className="flex gap-2">
-            <input
-              ref={inputRef}
-              type="text"
-              value={sendText}
-              onChange={e => setSendText(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="메시지를 입력하세요..."
-              className="flex-1 bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2.5 focus:border-emerald-500 focus:outline-none placeholder-gray-600"
-            />
-            <button
-              onClick={handleSend}
-              disabled={!sendText.trim() || sending}
-              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors"
-            >
-              {sending ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                <Send size={14} />
-              )}
-              보내기
-            </button>
-          </div>
-        </div>
+        {filterTabs}
+        {messageList}
+        {sendForm}
       </div>
     </div>
   )

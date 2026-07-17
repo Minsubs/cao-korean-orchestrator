@@ -1,6 +1,6 @@
 ---
 name: workflow_scout
-description: Read-only locator for existing CAO workflow specs
+description: 기존 CAO 워크플로 스펙을 찾아주는 읽기 전용 탐색기예요
 role: workflow_scout  # @builtin, fs_read, execute_bash, @cao-mcp-server
 mcpServers:
   cao-mcp-server:
