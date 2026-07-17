@@ -1060,6 +1060,31 @@ Map<String, List<Integer>> nested = getMap();
         with pytest.raises(ValueError, match="No Claude Code response found"):
             provider.extract_last_message_from_script(output)
 
+    def test_extract_message_no_space_marker_ignores_column_positioned_effort_footer(self):
+        """Claude 2.1.211 may paint ``●OK`` and a line-start effort footer.
+
+        The adjacent response text is valid, while ``● high · /effort`` is UI
+        chrome and must not replace the actual handoff result.
+        """
+        output = (
+            "❯ smoke test\n"
+            "●OPUS_PROFILE_OK\n"
+            "✻ Cogitated for 3s\n"
+            "────────────────────────────────\n"
+            "❯ \n"
+            "────────────────────────────────\n"
+            "● high · /effort\n"
+        )
+        provider = ClaudeCodeProvider("test123", "test-session", "window-0")
+        assert provider.extract_last_message_from_script(output) == "OPUS_PROFILE_OK"
+
+    def test_effort_footer_alone_is_not_a_response(self):
+        """A column-positioned effort footer cannot complete an empty turn."""
+        output = "● high · /effort\n❯ \n"
+        provider = ClaudeCodeProvider("test123", "test-session", "window-0")
+        with pytest.raises(ValueError, match="No Claude Code response found"):
+            provider.extract_last_message_from_script(output)
+
     def test_extract_message_with_table_not_truncated(self):
         """Extraction must NOT stop at table borders containing ─ runs inside │ box chars."""
         output = (
@@ -1347,6 +1372,21 @@ class TestClaudeCodeProviderPermissionMode:
         command = provider._build_claude_command()
 
         assert "--permission-mode auto" in command
+        assert "--dangerously-skip-permissions" not in command
+
+    @patch("cli_agent_orchestrator.providers.claude_code.load_agent_profile")
+    def test_dont_ask_mode_is_forwarded_for_read_only_worker(self, mock_load):
+        mock_profile = MagicMock()
+        mock_profile.model = None
+        mock_profile.system_prompt = None
+        mock_profile.mcpServers = None
+        mock_profile.permissionMode = "dontAsk"
+        mock_load.return_value = mock_profile
+
+        provider = ClaudeCodeProvider("tid", "sess", "win", "agent")
+        command = provider._build_claude_command()
+
+        assert "--permission-mode dontAsk" in command
         assert "--dangerously-skip-permissions" not in command
 
     @patch("cli_agent_orchestrator.providers.claude_code.load_agent_profile")

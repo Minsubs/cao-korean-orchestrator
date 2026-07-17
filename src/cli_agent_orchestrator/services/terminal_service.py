@@ -33,6 +33,7 @@ from cli_agent_orchestrator.clients.database import create_terminal as db_create
 from cli_agent_orchestrator.clients.database import delete_terminal as db_delete_terminal
 from cli_agent_orchestrator.clients.database import (
     get_terminal_metadata,
+    list_all_terminals,
     update_last_active,
     update_terminal_shell_command,
 )
@@ -121,6 +122,77 @@ class OutputMode(str, Enum):
 
     FULL = "full"
     LAST = "last"
+
+
+def restore_terminal_monitors() -> int:
+    """Reconnect FIFO readers and seed statuses for surviving tmux terminals.
+
+    CAO terminal metadata and tmux sessions survive a server restart, while
+    FIFO reader threads and StatusMonitor state do not. Re-arm every live pane
+    without sending a keystroke (which could accidentally answer an interactive
+    prompt), then derive its initial status from a current pane snapshot.
+    """
+    backend = get_backend()
+    if backend.supports_event_inbox():
+        return 0
+
+    restored = 0
+    for metadata in list_all_terminals():
+        terminal_id = metadata["id"]
+        session_name = metadata["tmux_session"]
+        window_name = metadata["tmux_window"]
+        try:
+            if not backend.session_exists(session_name):
+                logger.warning(
+                    "Skipping terminal monitor restore for %s: session %s is missing",
+                    terminal_id,
+                    session_name,
+                )
+                continue
+
+            # get_history doubles as a window-existence probe and supplies the
+            # status seed that pipe-pane cannot replay by itself.
+            snapshot = backend.get_history(
+                session_name,
+                window_name,
+                tail_lines=PIPE_LIVENESS_TAIL_LINES,
+            )
+            fifo_path = FIFO_DIR / f"{terminal_id}.fifo"
+
+            # A pane has only one pipe target. Detach the inherited target
+            # before unlinking its stale FIFO, then attach a fresh reader.
+            backend.stop_pipe_pane(session_name, window_name)
+            fifo_manager.stop_reader(terminal_id)
+
+            def _probe_pane(s=session_name, w=window_name) -> str:
+                return backend.get_history(s, w, tail_lines=PIPE_LIVENESS_TAIL_LINES)
+
+            def _rearm_pipe(s=session_name, w=window_name, p=str(fifo_path)) -> None:
+                backend.stop_pipe_pane(s, w)
+                backend.pipe_pane(s, w, p)
+
+            fifo_manager.create_reader(
+                terminal_id,
+                pane_probe=_probe_pane,
+                rearm=_rearm_pipe,
+            )
+            backend.pipe_pane(session_name, window_name, str(fifo_path))
+
+            # Recreate the provider before status detection; the manager can
+            # reconstruct it from persisted metadata after a process restart.
+            provider_manager.get_provider(terminal_id)
+            status_monitor.restore_snapshot(terminal_id, snapshot)
+            restored += 1
+        except Exception:
+            logger.exception(
+                "Failed to restore terminal monitor for %s (%s:%s)",
+                terminal_id,
+                session_name,
+                window_name,
+            )
+
+    logger.info("Restored terminal monitoring for %d surviving terminals", restored)
+    return restored
 
 
 # Providers that accept a runtime skill_prompt kwarg and append it to the

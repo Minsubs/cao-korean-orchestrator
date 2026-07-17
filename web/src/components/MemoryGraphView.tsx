@@ -119,7 +119,7 @@ export function MemoryGraphView({ scope, scopeId }: MemoryGraphViewProps) {
     } catch (e) {
       const err = e as ApiError
       setSelectedNode(current => {
-        if (current === nodeId) setDetailError(err.detail || err.message || 'Failed to load memory')
+        if (current === nodeId) setDetailError(err.detail || err.message || '메모리를 불러오지 못했습니다')
         return current
       })
     }
@@ -142,16 +142,16 @@ export function MemoryGraphView({ scope, scopeId }: MemoryGraphViewProps) {
       const err = e as ApiError
       setView(null)
       if (err.status === 400) {
-        setError(err.detail || 'This scope cannot be viewed as a graph.')
+        setError(err.detail || '이 범위는 그래프로 볼 수 없습니다.')
       } else if (err.status === 404) {
-        setError(err.detail || 'Graph provider not found (is memory enabled?).')
+        setError(err.detail || '그래프 provider를 찾을 수 없습니다. 메모리가 활성화되어 있는지 확인하세요.')
       } else if (err.name === 'AbortError') {
         // The AbortController in api.ts fired after the 120s graph budget. The
         // wiki-lint projection is ~30s typical / up to ~148s under load, so a
         // full timeout usually means the CAO server is stuck or down rather
         // than merely slow.
         setError(
-          'Graph fetch timed out (waited 120s). The wiki-lint projection is ~30s typical, up to ~148s under load, so a full timeout usually means the CAO server is stuck or down. In dev the UI proxies to cao-server on :9889 — check it’s running (uv run cao-server), then Refresh.',
+          '그래프 요청 시간이 초과되었습니다(120초). wiki-lint 투영은 보통 약 30초, 부하 시 최대 약 148초가 걸립니다. :9889의 CAO 서버가 멈췄는지 확인한 뒤 새로고침하세요.',
         )
       } else if (err.status === undefined) {
         // No HTTP status = the fetch never reached a server (connection
@@ -159,10 +159,10 @@ export function MemoryGraphView({ scope, scopeId }: MemoryGraphViewProps) {
         // proxies /graph + /memory to cao-server on :9889; the bundled UI is
         // served by that same server. Either way the target isn’t answering.
         setError(
-          'Couldn’t reach the CAO server. In dev the UI proxies to cao-server on :9889 — make sure it’s running (uv run cao-server). On the bundled UI, the CAO server serves this page directly, so it should already be up.',
+          'CAO 서버에 연결할 수 없습니다. 개발 환경에서는 :9889의 cao-server가 실행 중인지 확인하세요(uv run cao-server).',
         )
       } else {
-        setError(err.detail || err.message || 'The CAO server returned an error.')
+        setError(err.detail || err.message || 'CAO 서버가 오류를 반환했습니다.')
       }
     } finally {
       // Only the latest request may flip the spinner off — a stale finally
@@ -289,21 +289,21 @@ export function MemoryGraphView({ scope, scopeId }: MemoryGraphViewProps) {
       const first = n ? ` (${res.written_files[0]})` : ''
       showSnackbar({
         type: 'success',
-        message: `Exported ${n} note${n === 1 ? '' : 's'} to vault "${res.dest}"${first}`,
+        message: `노트 ${n}개를 "${res.dest}" vault로 내보냈습니다${first}`,
       })
     } catch (e) {
       const err = e as ApiError
       let message: string
       if (err.status === 401 || err.status === 403) {
-        message = 'Export not authorized (needs cao:write). With auth off this should not happen.'
+        message = '내보내기 권한이 없습니다(cao:write 필요).'
       } else if (err.status === 422) {
         // Secret gate: err.detail names only the matched PATTERN, never the
         // content. Surface it verbatim; nothing was written.
-        message = `Export blocked by the secret gate: ${err.detail || 'a secret pattern matched'}. Nothing was written.`
+        message = `보안 검사에서 내보내기를 차단했습니다: ${err.detail || '비밀 패턴과 일치함'}. 파일은 작성되지 않았습니다.`
       } else if (err.status === 400) {
-        message = err.detail || 'Bad export destination or private scope.'
+        message = err.detail || '내보낼 위치가 잘못되었거나 비공개 범위입니다.'
       } else {
-        message = err.detail || err.message || 'Export failed.'
+        message = err.detail || err.message || '내보내기에 실패했습니다.'
       }
       showSnackbar({ type: 'error', message })
     } finally {
@@ -318,9 +318,9 @@ export function MemoryGraphView({ scope, scopeId }: MemoryGraphViewProps) {
     return (
       <div className="bg-gray-800/60 border border-gray-700/50 rounded-xl p-8 text-center">
         <Brain size={32} className="mx-auto text-gray-600 mb-3" />
-        <p className="text-gray-400 text-sm">Pick <span className="text-emerald-400">global</span> or <span className="text-emerald-400">project</span> to view the graph.</p>
+        <p className="text-gray-400 text-sm">그래프를 보려면 <span className="text-emerald-400">전역</span> 또는 <span className="text-emerald-400">프로젝트</span>를 선택하세요.</p>
         <p className="text-gray-600 text-xs mt-1">
-          The <span className="text-gray-400">All scopes</span>, <span className="text-gray-400">session</span> and <span className="text-gray-400">agent</span> tiers are private and cannot be projected as a graph.
+          <span className="text-gray-400">모든 범위</span>, <span className="text-gray-400">세션</span>, <span className="text-gray-400">에이전트</span> 계층은 비공개이므로 그래프로 표시할 수 없습니다.
         </p>
       </div>
     )
@@ -331,26 +331,26 @@ export function MemoryGraphView({ scope, scopeId }: MemoryGraphViewProps) {
       {/* Toolbar */}
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">
-          Knowledge Graph{view ? ` (${view.nodes.length} node${view.nodes.length === 1 ? '' : 's'})` : ''}
+          지식 그래프{view ? ` (노드 ${view.nodes.length}개)` : ''}
         </h3>
         <div className="flex items-center gap-2">
           <button
             onClick={fetchGraph}
             disabled={loading}
             className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-40 text-gray-200 text-sm font-medium px-3 py-2 rounded-lg transition-colors"
-            title="Rebuild the graph"
+            title="그래프 다시 만들기"
           >
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-            Refresh
+            새로고침
           </button>
           <button
             onClick={handleExport}
             disabled={!hasGraph || exporting}
             className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-sm font-medium px-3 py-2 rounded-lg transition-colors"
-            title={hasGraph ? 'Export this graph to an Obsidian vault' : 'Load a graph first'}
+            title={hasGraph ? '이 그래프를 Obsidian vault로 내보내기' : '먼저 그래프를 불러오세요'}
           >
             <Download size={14} />
-            {exporting ? 'Exporting…' : 'Export to Obsidian'}
+            {exporting ? '내보내는 중…' : 'Obsidian으로 내보내기'}
           </button>
         </div>
       </div>
@@ -362,21 +362,21 @@ export function MemoryGraphView({ scope, scopeId }: MemoryGraphViewProps) {
           {loading ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6" data-testid="graph-loading">
               <RefreshCw size={26} className="text-emerald-500 animate-spin mb-3" />
-              <p className="text-gray-300 text-sm">Building graph…</p>
-              <p className="text-gray-500 text-xs mt-1">This can take ~30s (up to ~148s under load) — the server runs wiki-lint detectors.</p>
+              <p className="text-gray-300 text-sm">그래프 만드는 중…</p>
+              <p className="text-gray-500 text-xs mt-1">서버가 wiki-lint 검사를 실행하므로 약 30초, 부하 시 최대 약 148초가 걸릴 수 있습니다.</p>
             </div>
           ) : error ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6" data-testid="graph-error">
               <X size={28} className="text-red-500 mb-3" />
               <p className="text-red-400 text-sm">{error}</p>
-              <button onClick={fetchGraph} className="mt-3 text-emerald-400 text-xs hover:underline">Retry</button>
+              <button onClick={fetchGraph} className="mt-3 text-emerald-400 text-xs hover:underline">다시 시도</button>
             </div>
           ) : !hasGraph ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6" data-testid="graph-empty">
               <Brain size={32} className="text-gray-600 mb-3" />
-              <p className="text-gray-500 text-sm">No graph for this scope.</p>
+              <p className="text-gray-500 text-sm">이 범위에는 그래프가 없습니다.</p>
               <p className="text-gray-600 text-xs mt-1">
-                Scope <code className="text-emerald-400">{scope}</code>{scopeId ? <> / <code className="text-emerald-400">{scopeId}</code></> : null} has no topics yet.
+                범위 <code className="text-emerald-400">{scope}</code>{scopeId ? <> / <code className="text-emerald-400">{scopeId}</code></> : null}에 아직 주제가 없습니다.
               </p>
             </div>
           ) : null}
@@ -395,7 +395,7 @@ export function MemoryGraphView({ scope, scopeId }: MemoryGraphViewProps) {
                 {detail && detail.id === selectedNode && (
                   <div className="text-xs text-gray-500 mt-1">
                     {detail.data.memory_type}
-                    {detail.data.updated_at ? ` · updated ${new Date(detail.data.updated_at).toLocaleString()}` : ''}
+                    {detail.data.updated_at ? ` · 수정 ${new Date(detail.data.updated_at).toLocaleString('ko-KR')}` : ''}
                   </div>
                 )}
               </div>
@@ -407,13 +407,13 @@ export function MemoryGraphView({ scope, scopeId }: MemoryGraphViewProps) {
                     {detail.data.content}
                   </div>
                 ) : (
-                  <div className="text-gray-500 text-sm">Loading “{selectedNode}”…</div>
+                  <div className="text-gray-500 text-sm">“{selectedNode}” 불러오는 중…</div>
                 )}
               </div>
             </>
           ) : (
             <div className="flex-1 flex items-center justify-center text-center px-6">
-              <p className="text-gray-500 text-sm">Click a node in the graph to read that memory.</p>
+              <p className="text-gray-500 text-sm">메모리를 읽으려면 그래프에서 노드를 클릭하세요.</p>
             </div>
           )}
         </aside>
@@ -421,10 +421,10 @@ export function MemoryGraphView({ scope, scopeId }: MemoryGraphViewProps) {
 
       {/* Legend */}
       <div className="flex flex-wrap items-center gap-4 mt-3 text-xs text-gray-500">
-        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ background: DEFAULT_NODE_COLOR }} /> topic</span>
-        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ background: ORPHAN_COLOR }} /> orphan</span>
-        <span className="flex items-center gap-1.5"><span className="w-3.5 h-3.5 rounded-full" style={{ background: DEFAULT_NODE_COLOR }} /> larger = hub</span>
-        <span className="flex items-center gap-1.5"><span className="inline-block w-3.5 h-0.5" style={{ background: CONTRADICTION_COLOR }} /> contradiction edge</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ background: DEFAULT_NODE_COLOR }} /> 주제</span>
+        <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ background: ORPHAN_COLOR }} /> 고립 노드</span>
+        <span className="flex items-center gap-1.5"><span className="w-3.5 h-3.5 rounded-full" style={{ background: DEFAULT_NODE_COLOR }} /> 클수록 허브</span>
+        <span className="flex items-center gap-1.5"><span className="inline-block w-3.5 h-0.5" style={{ background: CONTRADICTION_COLOR }} /> 모순 연결선</span>
       </div>
     </div>
   )

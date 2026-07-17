@@ -7,17 +7,18 @@ import { AgentPanel } from './components/AgentPanel'
 import { FlowsPanel } from './components/FlowsPanel'
 import { MemoryPanel } from './components/MemoryPanel'
 import { SettingsPanel } from './components/SettingsPanel'
+import { NotificationCenter } from './components/NotificationCenter'
 import { Bot, Home, Clock, Settings, Brain, CheckCircle, XCircle, Info, Wifi, WifiOff } from 'lucide-react'
 
 type TabKey = 'home' | 'agents' | 'flows' | 'settings' | 'memory'
 
 // Memory appended last so Alt+N numbering of existing tabs never shifts
 const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
-  { key: 'home', label: 'Home', icon: <Home size={16} /> },
-  { key: 'agents', label: 'Agents', icon: <Bot size={16} /> },
-  { key: 'flows', label: 'Flows', icon: <Clock size={16} /> },
-  { key: 'settings', label: 'Settings', icon: <Settings size={16} /> },
-  { key: 'memory', label: 'Memory', icon: <Brain size={16} /> },
+  { key: 'home', label: '홈', icon: <Home size={16} /> },
+  { key: 'agents', label: '에이전트', icon: <Bot size={16} /> },
+  { key: 'flows', label: '자동화', icon: <Clock size={16} /> },
+  { key: 'settings', label: '설정', icon: <Settings size={16} /> },
+  { key: 'memory', label: '메모리', icon: <Brain size={16} /> },
 ]
 
 function Snackbar() {
@@ -89,18 +90,19 @@ export default function App() {
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center">
               <Bot size={18} className="text-white" />
             </div>
-            <h1 className="text-lg font-bold text-white">CLI Agent Orchestrator</h1>
+            <h1 className="text-lg font-bold text-white">CLI 에이전트 오케스트레이터</h1>
           </div>
           <div className="flex items-center gap-4">
-            <span className="text-xs text-gray-500">{sessions.length} session{sessions.length !== 1 ? 's' : ''}</span>
-            <div className="flex items-center gap-1.5" title={connected ? 'Connected' : 'Disconnected'}>
+            <NotificationCenter sessions={sessions} />
+            <span className="text-xs text-gray-500">세션 {sessions.length}개</span>
+            <div className="flex items-center gap-1.5" title={connected ? '연결됨' : '연결 끊김'}>
               {connected ? (
                 <Wifi size={14} className="text-emerald-400" />
               ) : (
                 <WifiOff size={14} className="text-red-400" />
               )}
               <span className={`text-xs ${connected ? 'text-emerald-400' : 'text-red-400'}`}>
-                {connected ? 'Live' : 'Offline'}
+                {connected ? '연결됨' : '오프라인'}
               </span>
             </div>
           </div>
@@ -140,7 +142,7 @@ export default function App() {
       {/* Content */}
       <main className="max-w-7xl mx-auto px-6 py-6">
         <ErrorBoundary>
-          <Suspense fallback={<div className="text-gray-500 text-sm py-12 text-center">Loading...</div>}>
+          <Suspense fallback={<div className="text-gray-500 text-sm py-12 text-center">불러오는 중...</div>}>
             {tab === 'home' && <DashboardHome onNavigate={(t) => setTab(t as TabKey)} />}
             {tab === 'agents' && <AgentPanel />}
             {tab === 'flows' && <FlowsPanel />}

@@ -18,7 +18,7 @@ function Toggle({ on, onClick, disabled, label }: {
       aria-label={label}
       onClick={onClick}
       disabled={disabled}
-      title={on ? 'Enabled — click to skip this directory' : 'Disabled — click to scan this directory'}
+      title={on ? '활성화됨 — 이 디렉터리를 건너뛰려면 클릭' : '비활성화됨 — 이 디렉터리를 검색하려면 클릭'}
       className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
         on ? 'bg-emerald-600' : 'bg-gray-600'
       }`}
@@ -44,7 +44,7 @@ export function SettingsPanel() {
     try {
       setSettings(await api.getAgentDirs())
     } catch {
-      showSnackbar({ type: 'error', message: 'Failed to load settings' })
+      showSnackbar({ type: 'error', message: '설정을 불러오지 못했습니다' })
     }
   }
 
@@ -74,7 +74,7 @@ export function SettingsPanel() {
       showSnackbar({ type: 'success', message })
       refreshProfiles()
     } catch (e: any) {
-      showSnackbar({ type: 'error', message: e.message || 'Failed to update' })
+      showSnackbar({ type: 'error', message: e.message || '설정을 변경하지 못했습니다' })
       await load()
     } finally {
       setBusy(false)
@@ -82,7 +82,7 @@ export function SettingsPanel() {
   }
 
   if (!settings) {
-    return <div className="text-gray-500 text-sm py-8 text-center">Loading settings...</div>
+    return <div className="text-gray-500 text-sm py-8 text-center">설정 불러오는 중...</div>
   }
 
   const disabled = new Set(settings.disabled_dirs ?? [])
@@ -99,7 +99,7 @@ export function SettingsPanel() {
     }
     apply(
       { disabled_dirs: Array.from(next) },
-      next.has(dir) ? 'Directory disabled' : 'Directory enabled',
+      next.has(dir) ? '디렉터리를 비활성화했습니다' : '디렉터리를 활성화했습니다',
     )
   }
 
@@ -107,7 +107,7 @@ export function SettingsPanel() {
     const trimmed = newDir.trim()
     if (!trimmed || extraDirs.includes(trimmed) || defaultDirs.includes(trimmed)) return
     setNewDir('')
-    apply({ extra_dirs: [...settings.extra_dirs, trimmed] }, 'Directory added')
+    apply({ extra_dirs: [...settings.extra_dirs, trimmed] }, '디렉터리를 추가했습니다')
   }
 
   const removeDir = (dir: string) => {
@@ -116,7 +116,7 @@ export function SettingsPanel() {
         extra_dirs: settings.extra_dirs.filter(d => d !== dir),
         disabled_dirs: (settings.disabled_dirs ?? []).filter(d => d !== dir),
       },
-      'Directory removed',
+      '디렉터리를 제거했습니다',
     )
   }
 
@@ -133,16 +133,16 @@ export function SettingsPanel() {
         <FolderOpen size={14} className={off ? 'text-gray-500 shrink-0' : 'text-emerald-500 shrink-0'} />
         <span className="text-sm text-gray-300 font-mono flex-1 truncate" title={dir}>{dir}</span>
         {isDefault && (
-          <span className="text-[10px] uppercase tracking-wide text-gray-500 shrink-0">default</span>
+          <span className="text-[10px] uppercase tracking-wide text-gray-500 shrink-0">기본값</span>
         )}
-        <Toggle on={!off} onClick={() => toggle(dir)} disabled={busy} label={`Enable ${dir}`} />
+        <Toggle on={!off} onClick={() => toggle(dir)} disabled={busy} label={`${dir} 활성화`} />
         {!isDefault && (
           <button
             onClick={() => removeDir(dir)}
             disabled={busy}
             className="text-gray-500 hover:text-red-400 transition-colors shrink-0 disabled:opacity-40"
-            title="Remove directory"
-            aria-label={`Remove ${dir}`}
+            title="디렉터리 제거"
+            aria-label={`${dir} 제거`}
           >
             <X size={14} />
           </button>
@@ -156,35 +156,35 @@ export function SettingsPanel() {
       <div className="bg-gray-800/60 border border-gray-700/50 rounded-xl p-5">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">
-            Agent Profile Directories
+            에이전트 프로필 디렉터리
           </h3>
           {profileCount !== null && (
             <span className="text-xs text-gray-500" data-testid="profile-count">
-              {profileCount} profiles discovered
+              프로필 {profileCount}개 발견
             </span>
           )}
         </div>
         <p className="text-xs text-gray-500 mb-4">
-          CAO scans these directories for agent profile <code className="text-gray-400">.md</code> files.
-          Toggle a directory off to skip it during scanning without removing it — e.g. to park
-          experimental copies, or to swap between two directories of same-named agents (say, wired to
-          different providers). Built-in defaults can be disabled but not removed.
+          CAO는 이 디렉터리에서 에이전트 프로필 <code className="text-gray-400">.md</code> 파일을 검색합니다.
+          디렉터리를 삭제하지 않고 검색에서 제외하려면 토글을 끄세요. 실험용 복사본을 보관하거나
+          이름이 같은 에이전트가 있는 두 디렉터리를 전환할 때 유용합니다. 기본 제공 디렉터리는
+          비활성화할 수 있지만 제거할 수는 없습니다.
         </p>
 
         {defaultDirs.length > 0 && (
           <>
-            <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-2">Built-in</div>
+            <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-2">기본 제공</div>
             <div className="space-y-2 mb-4">{defaultDirs.map(d => row(d, true))}</div>
           </>
         )}
 
-        <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-2">Custom</div>
+        <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-2">사용자 지정</div>
         {extraDirs.length > 0 ? (
           <div className="space-y-2 mb-4">{extraDirs.map(d => row(d, false))}</div>
         ) : (
           <div className="text-center py-5 mb-4 bg-gray-900/30 border border-dashed border-gray-700 rounded-lg">
-            <p className="text-gray-500 text-sm">No custom directories.</p>
-            <p className="text-gray-600 text-xs mt-1">Add one below to discover more agent profiles.</p>
+            <p className="text-gray-500 text-sm">사용자 지정 디렉터리가 없습니다.</p>
+            <p className="text-gray-600 text-xs mt-1">더 많은 에이전트 프로필을 찾으려면 아래에서 추가하세요.</p>
           </div>
         )}
 
@@ -202,24 +202,24 @@ export function SettingsPanel() {
             disabled={!newDir.trim() || busy}
             className="flex items-center gap-1.5 bg-gray-700 hover:bg-gray-600 disabled:opacity-40 text-white text-sm px-4 py-2.5 rounded-lg transition-colors"
           >
-            <Plus size={14} /> Add
+            <Plus size={14} /> 추가
           </button>
         </div>
 
         {dupCount > 0 && (
           <p className="text-xs text-amber-400/80 mt-4" data-testid="dup-note">
-            {dupCount} profile name{dupCount === 1 ? '' : 's'} defined in more than one enabled
-            directory — the first-scanned one wins. Disable a directory to change which is active.
+            프로필 이름 {dupCount}개가 둘 이상의 활성 디렉터리에 중복되어 있습니다.
+            먼저 검색된 항목이 사용됩니다. 사용할 항목을 바꾸려면 디렉터리를 비활성화하세요.
           </p>
         )}
       </div>
 
       <div className="flex items-center gap-3">
         <button
-          onClick={() => { refreshProfiles(); showSnackbar({ type: 'info', message: 'Refreshing profiles...' }) }}
+          onClick={() => { refreshProfiles(); showSnackbar({ type: 'info', message: '프로필 새로고침 중...' }) }}
           className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white text-sm px-4 py-2.5 rounded-lg transition-colors"
         >
-          <RefreshCw size={14} /> Refresh Profiles
+          <RefreshCw size={14} /> 프로필 새로고침
         </button>
       </div>
     </div>

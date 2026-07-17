@@ -8,32 +8,32 @@ import { FALLBACK_PROVIDERS } from '../components/AgentPanel'
 describe('StatusBadge', () => {
   it('renders idle status', () => {
     render(<StatusBadge status="idle" />)
-    expect(screen.getByText('Idle')).toBeInTheDocument()
+    expect(screen.getByText('대기')).toBeInTheDocument()
   })
 
   it('renders processing status', () => {
     render(<StatusBadge status="processing" />)
-    expect(screen.getByText('Processing')).toBeInTheDocument()
+    expect(screen.getByText('작업 중')).toBeInTheDocument()
   })
 
   it('renders completed status', () => {
     render(<StatusBadge status="completed" />)
-    expect(screen.getByText('Completed')).toBeInTheDocument()
+    expect(screen.getByText('완료')).toBeInTheDocument()
   })
 
   it('renders error status', () => {
     render(<StatusBadge status="error" />)
-    expect(screen.getByText('Error')).toBeInTheDocument()
+    expect(screen.getByText('오류')).toBeInTheDocument()
   })
 
   it('renders waiting_user_answer status', () => {
     render(<StatusBadge status="waiting_user_answer" />)
-    expect(screen.getByText('Awaiting Input')).toBeInTheDocument()
+    expect(screen.getByText('입력 대기')).toBeInTheDocument()
   })
 
   it('renders null status as unknown', () => {
     render(<StatusBadge status={null} />)
-    expect(screen.getByText('Unknown')).toBeInTheDocument()
+    expect(screen.getByText('알 수 없음')).toBeInTheDocument()
   })
 })
 
@@ -53,7 +53,7 @@ describe('ErrorBoundary', () => {
         <ThrowingComponent />
       </ErrorBoundary>
     )
-    expect(screen.getByText(/something went wrong/i)).toBeInTheDocument()
+    expect(screen.getByText('문제가 발생했습니다')).toBeInTheDocument()
   })
 
   it('renders children when no error', () => {
@@ -84,7 +84,7 @@ describe('ConfirmModal', () => {
     expect(screen.getByText('Delete Item')).toBeInTheDocument()
     expect(screen.getByText('Are you sure?')).toBeInTheDocument()
     expect(screen.getByText('Delete')).toBeInTheDocument()
-    expect(screen.getByText('Cancel')).toBeInTheDocument()
+    expect(screen.getByText('취소')).toBeInTheDocument()
   })
 
   it('does not render when closed', () => {
@@ -137,7 +137,7 @@ describe('ConfirmModal', () => {
         onCancel={() => {}}
       />
     )
-    const button = screen.getByText('Closing...').closest('button')
+    const button = screen.getByText('처리 중...').closest('button')
     expect(button).toBeDisabled()
   })
 })

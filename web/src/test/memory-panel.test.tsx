@@ -48,24 +48,24 @@ describe('MemoryPanel', () => {
     render(<MemoryPanel />)
     expect(await screen.findByText('project-conventions')).toBeInTheDocument()
     expect(screen.getByText('user-preferences')).toBeInTheDocument()
-    expect(screen.getByText('global')).toBeInTheDocument()
+    expect(screen.getByText('전역')).toBeInTheDocument()
     expect(screen.getByText('style,conventions')).toBeInTheDocument()
   })
 
   it('shows empty state when no memories', async () => {
     mockListResponse([])
     render(<MemoryPanel />)
-    expect(await screen.findByText('No memories stored.')).toBeInTheDocument()
+    expect(await screen.findByText('저장된 메모리가 없습니다.')).toBeInTheDocument()
   })
 
   it('shows ConfirmModal when delete is clicked', async () => {
     mockListResponse(MEMORIES)
     render(<MemoryPanel />)
     await screen.findByText('project-conventions')
-    const deleteButtons = screen.getAllByTitle('Delete memory')
+    const deleteButtons = screen.getAllByTitle('메모리 삭제')
     fireEvent.click(deleteButtons[0])
     await waitFor(() => {
-      expect(screen.getByText(/permanently remove the memory/i)).toBeInTheDocument()
+      expect(screen.getByText(/메모리와 기록을 영구적으로 삭제합니다/)).toBeInTheDocument()
     })
     // Modal details echo the row's key (row + modal both show it)
     expect(screen.getAllByText('project-conventions').length).toBe(2)
@@ -75,7 +75,7 @@ describe('MemoryPanel', () => {
     mockListResponse(MEMORIES)
     render(<MemoryPanel />)
     await screen.findByText('project-conventions')
-    const clearButton = screen.getByText('Clear scope…').closest('button')
+    const clearButton = screen.getByText('범위 비우기…').closest('button')
     expect(clearButton).toBeDisabled()
   })
 
@@ -83,7 +83,7 @@ describe('MemoryPanel', () => {
     mockListResponse(MEMORIES)
     render(<MemoryPanel />)
     await screen.findByText('project-conventions')
-    fireEvent.change(screen.getByPlaceholderText('Filter keys...'), { target: { value: 'user-pref' } })
+    fireEvent.change(screen.getByPlaceholderText('키 검색...'), { target: { value: 'user-pref' } })
     expect(screen.queryByText('project-conventions')).not.toBeInTheDocument()
     expect(screen.getByText('user-preferences')).toBeInTheDocument()
   })

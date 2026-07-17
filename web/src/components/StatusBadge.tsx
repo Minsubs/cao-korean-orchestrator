@@ -7,6 +7,15 @@ import { STATUS_CONFIG, UNKNOWN_CONFIG } from '../status.generated'
 
 export { STATUS_CONFIG }
 
+const STATUS_LABELS: Record<string, string> = {
+  IDLE: '대기',
+  PROCESSING: '작업 중',
+  COMPLETED: '완료',
+  WAITING_USER_ANSWER: '입력 대기',
+  ERROR: '오류',
+  STOPPED: '중지됨',
+}
+
 type TerminalStatus = 'IDLE' | 'PROCESSING' | 'COMPLETED' | 'WAITING_USER_ANSWER' | 'ERROR' | string | null
 
 export function StatusBadge({ status }: { status: TerminalStatus }) {
@@ -16,7 +25,7 @@ export function StatusBadge({ status }: { status: TerminalStatus }) {
   return (
     <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full ${config.bgClass}`}>
       <span className={`w-2 h-2 rounded-full ${config.dotClass} ${config.pulse ? 'animate-pulse' : ''}`} />
-      <span className={`text-xs font-medium ${config.textClass}`}>{config.label}</span>
+      <span className={`text-xs font-medium ${config.textClass}`}>{normalized ? STATUS_LABELS[normalized] || '알 수 없음' : '알 수 없음'}</span>
     </span>
   )
 }

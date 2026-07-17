@@ -15,12 +15,12 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
       return (
         <div className="flex flex-col items-center justify-center py-12 text-gray-400">
           <AlertTriangle size={32} className="text-amber-500 mb-3" />
-          <p className="text-sm mb-2">Something went wrong</p>
+          <p className="text-sm mb-2">문제가 발생했습니다</p>
           <button
             onClick={() => this.setState({ hasError: false, error: null })}
             className="text-xs text-emerald-400 hover:text-emerald-300"
           >
-            Try again
+            다시 시도
           </button>
         </div>
       )

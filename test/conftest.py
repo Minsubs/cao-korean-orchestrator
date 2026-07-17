@@ -2,6 +2,8 @@
 
 import pytest
 
+from cli_agent_orchestrator.services import terminal_service
+
 
 @pytest.fixture(autouse=True)
 def _no_llm_compile_in_tests(monkeypatch):
@@ -14,3 +16,9 @@ def _no_llm_compile_in_tests(monkeypatch):
     var themselves or stub the ``wiki_compiler`` seams.
     """
     monkeypatch.setenv("CAO_MEMORY_COMPILE_MODE", "append")
+
+
+@pytest.fixture(autouse=True)
+def _no_live_terminal_monitor_restore(monkeypatch):
+    """Keep API lifespan tests from reconnecting real user tmux sessions."""
+    monkeypatch.setattr(terminal_service, "restore_terminal_monitors", lambda: 0)

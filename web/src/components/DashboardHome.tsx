@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useStore } from '../store'
 import { api, TerminalMeta } from '../api'
-import { Bot, Zap, Package, Monitor, Terminal as TermIcon, Trash2, Mail, FileText, LogOut, Send, ChevronRight, ChevronDown, Users, Filter, ArrowDownUp } from 'lucide-react'
+import { Bot, Zap, Package, Monitor, Terminal as TermIcon, Trash2, Mail, FileText, LogOut, Send, ChevronRight, ChevronDown, Users, Filter, ArrowDownUp, MessageCircle, Loader2 } from 'lucide-react'
 import { TerminalView } from './TerminalView'
 import { ConfirmModal } from './ConfirmModal'
 import { InboxPanel } from './InboxPanel'
 import { StatusBadge, STATUS_CONFIG } from './StatusBadge'
 import { OutputViewer } from './OutputViewer'
+import { SessionChatPanel } from './SessionChatPanel'
 
 const STATUS_ORDER = ['PROCESSING', 'IDLE', 'WAITING_USER_ANSWER', 'ERROR', 'COMPLETED', 'UNKNOWN']
 
@@ -15,28 +16,37 @@ function fmtRel(dateStr: string | null | undefined): string | null {
   const d = new Date(dateStr)
   if (isNaN(d.getTime())) return null
   const diff = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000))
-  if (diff < 60) return 'just now'
+  if (diff < 60) return '방금'
   const m = Math.floor(diff / 60)
-  if (m < 60) return `${m}m ago`
+  if (m < 60) return `${m}분 전`
   const h = Math.floor(m / 60)
   const rm = m % 60
-  if (h < 24) return rm ? `${h}h ${rm}m ago` : `${h}h ago`
+  if (h < 24) return rm ? `${h}시간 ${rm}분 전` : `${h}시간 전`
   const days = Math.floor(h / 24)
   const rh = h % 24
-  return rh ? `${days}d ${rh}h ago` : `${days}d ago`
+  return rh ? `${days}일 ${rh}시간 전` : `${days}일 전`
 }
 
 function fmtAbs(dateStr: string | null | undefined): string | null {
   if (!dateStr) return null
   const d = new Date(dateStr)
   if (isNaN(d.getTime())) return null
-  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return d.toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  PROCESSING: '작업 중',
+  IDLE: '대기',
+  WAITING_USER_ANSWER: '입력 대기',
+  ERROR: '오류',
+  COMPLETED: '완료',
+  UNKNOWN: '알 수 없음',
 }
 
 const STATUS_META: Record<string, { label: string; dot: string; text: string; pulse?: boolean }> = Object.fromEntries(
-  Object.entries(STATUS_CONFIG).map(([k, v]) => [k, { label: v.label, dot: v.dotClass, text: v.textClass, pulse: v.pulse }])
+  Object.entries(STATUS_CONFIG).map(([k, v]) => [k, { label: STATUS_LABELS[k] || v.label, dot: v.dotClass, text: v.textClass, pulse: v.pulse }])
 )
-STATUS_META['UNKNOWN'] = { label: 'Unknown', dot: 'bg-gray-500', text: 'text-gray-500' }
+STATUS_META['UNKNOWN'] = { label: STATUS_LABELS.UNKNOWN, dot: 'bg-gray-500', text: 'text-gray-500' }
 
 const STATUS_ACTIVE_BG: Record<string, string> = {
   PROCESSING: 'bg-blue-900/40 border-blue-500/50 text-blue-300',
@@ -46,6 +56,8 @@ const STATUS_ACTIVE_BG: Record<string, string> = {
   COMPLETED: 'bg-purple-900/40 border-purple-500/50 text-purple-300',
   UNKNOWN: 'bg-gray-800/40 border-gray-500/50 text-gray-300',
 }
+
+const agentTypeLabel = (value: string) => value === 'default' ? '기본값' : value
 
 function StatusSummary({ counts }: { counts: Record<string, number> }) {
   return (
@@ -90,6 +102,8 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc')
   const [pendingDeleteSession, setPendingDeleteSession] = useState<string | null>(null)
   const [deletingSession, setDeletingSession] = useState(false)
+  const [sessionChat, setSessionChat] = useState<{ sessionName: string; terminalId: string } | null>(null)
+  const [openingChat, setOpeningChat] = useState<string | null>(null)
   const seenSessionsRef = useRef<Set<string>>(new Set())
 
   const totalTerminals = sessionData.reduce((sum, s) => sum + s.terminals.length, 0)
@@ -183,9 +197,9 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
     try {
       await api.deleteTerminal(pendingClose.id)
       if (liveTerminal?.id === pendingClose.id) setLiveTerminal(null)
-      showSnackbar({ type: 'success', message: `Terminal ${pendingClose.id} closed` })
+      showSnackbar({ type: 'success', message: `터미널 ${pendingClose.id}을(를) 닫았습니다` })
     } catch {
-      showSnackbar({ type: 'error', message: `Failed to close terminal` })
+      showSnackbar({ type: 'error', message: '터미널을 닫지 못했습니다' })
     }
     setClosingTerminal(null)
     setPendingClose(null)
@@ -196,9 +210,9 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
     setExitingTerminal(pendingExit.id)
     try {
       await api.exitTerminal(pendingExit.id)
-      showSnackbar({ type: 'success', message: `Graceful exit sent` })
+      showSnackbar({ type: 'success', message: '정상 종료 명령을 보냈습니다' })
     } catch {
-      showSnackbar({ type: 'error', message: `Failed to send exit` })
+      showSnackbar({ type: 'error', message: '종료 명령을 보내지 못했습니다' })
     }
     setExitingTerminal(null)
     setPendingExit(null)
@@ -221,9 +235,9 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
     try {
       await api.sendInput(terminalId, message)
       setSendInputValues(prev => ({ ...prev, [terminalId]: '' }))
-      showSnackbar({ type: 'success', message: 'Message sent' })
+      showSnackbar({ type: 'success', message: '메시지를 보냈습니다' })
     } catch {
-      showSnackbar({ type: 'error', message: 'Failed to send message' })
+      showSnackbar({ type: 'error', message: '메시지를 보내지 못했습니다' })
     }
     setSendingInput(null)
   }
@@ -237,6 +251,20 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
     })
   }
 
+  const openSessionChat = async (sessionName: string) => {
+    setOpeningChat(sessionName)
+    try {
+      const detail = await api.getSession(sessionName)
+      const orchestrator = detail.terminals[0]
+      if (!orchestrator) throw new Error('오케스트레이터 터미널을 찾을 수 없습니다')
+      setSessionChat({ sessionName, terminalId: orchestrator.id })
+    } catch (error: any) {
+      showSnackbar({ type: 'error', message: error?.message || '오케스트레이터 채팅을 열지 못했습니다' })
+    } finally {
+      setOpeningChat(null)
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Stats Row */}
@@ -248,7 +276,7 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
             </div>
             <div>
               <div className="text-2xl font-bold text-white">{sessions.length}</div>
-              <div className="text-xs text-gray-400 uppercase tracking-wide">Sessions</div>
+              <div className="text-xs text-gray-400 uppercase tracking-wide">세션</div>
             </div>
           </div>
         </div>
@@ -259,7 +287,7 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
             </div>
             <div>
               <div className="text-2xl font-bold text-white">{totalTerminals}</div>
-              <div className="text-xs text-gray-400 uppercase tracking-wide">Running Agents</div>
+              <div className="text-xs text-gray-400 uppercase tracking-wide">실행 중인 에이전트</div>
             </div>
           </div>
         </div>
@@ -270,7 +298,7 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
             </div>
             <div>
               <div className="text-2xl font-bold text-white">{profileCount}</div>
-              <div className="text-xs text-gray-400 uppercase tracking-wide">Profiles</div>
+              <div className="text-xs text-gray-400 uppercase tracking-wide">프로필</div>
             </div>
           </div>
         </div>
@@ -279,10 +307,10 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
       {/* Quick Actions */}
       <div className="flex gap-3 flex-wrap">
         <button onClick={() => onNavigate('agents')} className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors">
-          <Bot size={16} /> Spawn Agent
+          <Bot size={16} /> 에이전트 실행
         </button>
         <button onClick={() => onNavigate('flows')} className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors">
-          <Zap size={16} /> Manage Flows
+          <Zap size={16} /> 자동화 관리
         </button>
       </div>
 
@@ -290,14 +318,14 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
       <div className="mb-1">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">Active Sessions</h3>
+            <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">활성 세션</h3>
             <p className="text-xs text-gray-500 mt-1">
-              Each session is a workspace where one or more AI agents run and collaborate.
+              각 세션은 하나 이상의 AI 에이전트가 실행되고 협업하는 작업 공간입니다.
             </p>
           </div>
           <button onClick={() => setSortOrder(o => o === 'desc' ? 'asc' : 'desc')} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-200 bg-gray-800 hover:bg-gray-700 px-3 py-1.5 rounded-lg transition-colors">
             <ArrowDownUp size={12} />
-            {sortOrder === 'desc' ? 'Newest first' : 'Oldest first'}
+            {sortOrder === 'desc' ? '최신순' : '오래된순'}
           </button>
         </div>
       </div>
@@ -306,9 +334,9 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
       {allAgentTypes.length > 0 && (
         <div className="flex items-center gap-2 flex-wrap">
           <Filter size={12} className="text-gray-500" />
-          <button onClick={() => setAgentTypeFilter(null)} className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${!agentTypeFilter ? 'bg-emerald-900/40 border-emerald-500/50 text-emerald-300' : 'border-gray-700 text-gray-400 hover:text-gray-200'}`}>All</button>
+          <button onClick={() => setAgentTypeFilter(null)} className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${!agentTypeFilter ? 'bg-emerald-900/40 border-emerald-500/50 text-emerald-300' : 'border-gray-700 text-gray-400 hover:text-gray-200'}`}>전체</button>
           {allAgentTypes.map(t => (
-            <button key={t} onClick={() => setAgentTypeFilter(agentTypeFilter === t ? null : t)} className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${agentTypeFilter === t ? 'bg-emerald-900/40 border-emerald-500/50 text-emerald-300' : 'border-gray-700 text-gray-400 hover:text-gray-200'}`}>{t}</button>
+            <button key={t} onClick={() => setAgentTypeFilter(agentTypeFilter === t ? null : t)} className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${agentTypeFilter === t ? 'bg-emerald-900/40 border-emerald-500/50 text-emerald-300' : 'border-gray-700 text-gray-400 hover:text-gray-200'}`}>{agentTypeLabel(t)}</button>
           ))}
         </div>
       )}
@@ -316,7 +344,7 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
       {/* Status filter */}
       <div className="flex items-center gap-2 flex-wrap -mt-3">
         <Filter size={12} className="text-gray-500" />
-        <button onClick={() => setStatusFilter(null)} className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${!statusFilter ? 'bg-gray-700 border-gray-500/50 text-gray-200' : 'border-gray-700 text-gray-400 hover:text-gray-200'}`}>Any status</button>
+        <button onClick={() => setStatusFilter(null)} className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${!statusFilter ? 'bg-gray-700 border-gray-500/50 text-gray-200' : 'border-gray-700 text-gray-400 hover:text-gray-200'}`}>모든 상태</button>
         {STATUS_ORDER.map(s => {
           const meta = STATUS_META[s]
           return (
@@ -334,11 +362,11 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
           <Bot size={32} className="mx-auto text-gray-600 mb-3" />
           {sessionData.length === 0 ? (
             <>
-              <p className="text-gray-400 text-sm">No active sessions.</p>
-              <p className="text-gray-600 text-xs mt-1">Go to the <span className="text-emerald-400 cursor-pointer" onClick={() => onNavigate('agents')}>Agents tab</span> to spawn your first agent.</p>
+              <p className="text-gray-400 text-sm">활성 세션이 없습니다.</p>
+              <p className="text-gray-600 text-xs mt-1"><span className="text-emerald-400 cursor-pointer" onClick={() => onNavigate('agents')}>에이전트 탭</span>에서 첫 에이전트를 실행하세요.</p>
             </>
           ) : (
-            <p className="text-gray-400 text-sm">No sessions match the current filter.</p>
+            <p className="text-gray-400 text-sm">현재 필터와 일치하는 세션이 없습니다.</p>
           )}
         </div>
       ) : (
@@ -380,33 +408,45 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
 
             return (
               <div key={session.name} className="bg-gray-800/60 border border-gray-700/50 rounded-xl overflow-hidden relative">
+                {/* Orchestrator chat — available without expanding the session */}
+                <button
+                  onClick={(e) => { e.stopPropagation(); void openSessionChat(session.name) }}
+                  disabled={openingChat === session.name}
+                  className="absolute top-3 right-11 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-emerald-400 hover:text-white bg-emerald-950/50 hover:bg-emerald-700/70 disabled:opacity-40 border border-emerald-800/50 rounded-lg transition-colors z-10"
+                  title={`${session.name} 오케스트레이터에게 프롬프트 보내기`}
+                  aria-label={`${session.name} 오케스트레이터 채팅`}
+                >
+                  {openingChat === session.name ? <Loader2 size={12} className="animate-spin" /> : <MessageCircle size={12} />}
+                  채팅
+                </button>
+
                 {/* Delete session button */}
                 <button
                   onClick={(e) => { e.stopPropagation(); setPendingDeleteSession(session.name) }}
                   className="absolute top-3 right-3 p-1.5 text-gray-600 hover:text-red-400 bg-gray-800/80 hover:bg-gray-700 rounded-lg transition-colors z-10"
-                  title="Delete session"
+                  title="세션 삭제"
                 >
                   <Trash2 size={12} />
                 </button>
 
                 {/* Session header */}
-                <button onClick={() => toggleSession(session.name)} className="w-full text-left p-4 pr-12 hover:bg-gray-800/40 transition-colors">
+                <button onClick={() => toggleSession(session.name)} className="w-full text-left p-4 pr-36 hover:bg-gray-800/40 transition-colors">
                   <div className="flex items-center gap-3">
                     {expandedSessions.has(session.name) ? <ChevronDown size={14} className="text-gray-500" /> : <ChevronRight size={14} className="text-gray-500" />}
                     <Users size={14} className="text-emerald-400" />
                     <span className="text-sm font-mono text-gray-200">{session.name}</span>
-                    <span className="text-xs text-gray-500">{session.terminals.length} agent{session.terminals.length !== 1 ? 's' : ''}</span>
+                    <span className="text-xs text-gray-500">에이전트 {session.terminals.length}개</span>
                   </div>
                   <div className="ml-8 mt-1.5 flex flex-col gap-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       {typeSummary.map(([type, count]) => (
-                        <span key={type} className="text-[10px] bg-gray-700/60 text-gray-400 px-1.5 py-0.5 rounded">{type}{count > 1 ? ` ×${count}` : ''}</span>
+                        <span key={type} className="text-[10px] bg-gray-700/60 text-gray-400 px-1.5 py-0.5 rounded">{agentTypeLabel(type)}{count > 1 ? ` ×${count}` : ''}</span>
                       ))}
                     </div>
                     <StatusSummary counts={statusCounts} />
                     <div className="flex items-center gap-3 text-[10px] text-gray-600">
-                      {sessionStart && <span title={fmtAbs(sessionStart) || ''}>Started {fmtRel(sessionStart)}</span>}
-                      {sessionLastActive && <span title={fmtAbs(sessionLastActive) || ''}>Active {fmtRel(sessionLastActive)}</span>}
+                      {sessionStart && <span title={fmtAbs(sessionStart) || ''}>시작 {fmtRel(sessionStart)}</span>}
+                      {sessionLastActive && <span title={fmtAbs(sessionLastActive) || ''}>활동 {fmtRel(sessionLastActive)}</span>}
                     </div>
                   </div>
                 </button>
@@ -418,7 +458,7 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
                       <div key={agentType}>
                         <div className="flex items-center gap-2 mb-2">
                           <Bot size={11} className="text-gray-500" />
-                          <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">{agentType}</span>
+                          <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">{agentTypeLabel(agentType)}</span>
                           <span className="text-[10px] text-gray-600">({terminals.length})</span>
                         </div>
                         <div className="space-y-1.5">
@@ -431,17 +471,17 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center gap-2 min-w-0">
                                     <TermIcon size={12} className="text-gray-500 shrink-0" />
-                                    <span className="text-xs font-medium text-gray-300 truncate">{t.agent_profile || 'default'}</span>
+                                    <span className="text-xs font-medium text-gray-300 truncate">{t.agent_profile || '기본값'}</span>
                                     <span className="text-[10px] font-mono text-gray-600">{t.id.slice(0, 8)}</span>
                                     <StatusBadge status={terminalStatuses[t.id] || null} />
                                     <span className="text-[10px] text-gray-600">{t.provider}</span>
                                   </div>
                                   <div className="flex items-center gap-1 shrink-0">
-                                    <button onClick={() => setInboxTerminalId(t.id)} className="p-1 text-gray-500 hover:text-white bg-gray-800 hover:bg-gray-700 rounded transition-colors" title="Inbox"><Mail size={12} /></button>
-                                    <button onClick={() => setOutputTerminalId(t.id)} className="p-1 text-gray-500 hover:text-white bg-gray-800 hover:bg-gray-700 rounded transition-colors" title="Output"><FileText size={12} /></button>
-                                    <button onClick={() => setLiveTerminal({ id: t.id, provider: t.provider, agentProfile: t.agent_profile })} className="flex items-center gap-1 px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-medium rounded transition-colors"><Monitor size={12} />Terminal</button>
-                                    <button onClick={() => setPendingExit(t)} disabled={exitingTerminal === t.id} className="p-1 text-gray-500 hover:text-amber-400 bg-gray-800 hover:bg-gray-700 rounded transition-colors" title="Graceful Exit"><LogOut size={12} /></button>
-                                    <button onClick={() => setPendingClose(t)} disabled={closingTerminal === t.id} className="p-1 text-gray-500 hover:text-red-400 bg-gray-800 hover:bg-gray-700 rounded transition-colors" title="Close"><Trash2 size={12} /></button>
+                                    <button onClick={() => setInboxTerminalId(t.id)} className="p-1 text-gray-500 hover:text-white bg-gray-800 hover:bg-gray-700 rounded transition-colors" title="받은편지함"><Mail size={12} /></button>
+                                    <button onClick={() => setOutputTerminalId(t.id)} className="p-1 text-gray-500 hover:text-white bg-gray-800 hover:bg-gray-700 rounded transition-colors" title="출력"><FileText size={12} /></button>
+                                    <button onClick={() => setLiveTerminal({ id: t.id, provider: t.provider, agentProfile: t.agent_profile })} className="flex items-center gap-1 px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-medium rounded transition-colors"><Monitor size={12} />터미널</button>
+                                    <button onClick={() => setPendingExit(t)} disabled={exitingTerminal === t.id} className="p-1 text-gray-500 hover:text-amber-400 bg-gray-800 hover:bg-gray-700 rounded transition-colors" title="정상 종료"><LogOut size={12} /></button>
+                                    <button onClick={() => setPendingClose(t)} disabled={closingTerminal === t.id} className="p-1 text-gray-500 hover:text-red-400 bg-gray-800 hover:bg-gray-700 rounded transition-colors" title="닫기"><Trash2 size={12} /></button>
                                   </div>
                                 </div>
                                 {/* Timestamps */}
@@ -451,10 +491,10 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
                                 </div>
                                 {/* Quick Send */}
                                 {!sendInputOpen[t.id] ? (
-                                  <button onClick={() => setSendInputOpen(prev => ({ ...prev, [t.id]: true }))} className="text-[10px] text-gray-600 hover:text-gray-300 transition-colors">Message agent...</button>
+                                  <button onClick={() => setSendInputOpen(prev => ({ ...prev, [t.id]: true }))} className="text-[10px] text-gray-600 hover:text-gray-300 transition-colors">에이전트에게 메시지...</button>
                                 ) : (
                                   <div className="flex items-center gap-1.5">
-                                    <input type="text" value={sendInputValues[t.id] || ''} onChange={e => setSendInputValues(prev => ({ ...prev, [t.id]: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') handleSendInput(t.id) }} placeholder="Type a message..." className="flex-1 bg-gray-900 border border-gray-700 text-gray-200 text-[11px] font-mono rounded px-2 py-1 focus:border-emerald-500 focus:outline-none" autoFocus />
+                                    <input type="text" value={sendInputValues[t.id] || ''} onChange={e => setSendInputValues(prev => ({ ...prev, [t.id]: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') handleSendInput(t.id) }} placeholder="메시지를 입력하세요..." className="flex-1 bg-gray-900 border border-gray-700 text-gray-200 text-[11px] font-mono rounded px-2 py-1 focus:border-emerald-500 focus:outline-none" autoFocus />
                                     <button onClick={() => handleSendInput(t.id)} disabled={sendingInput === t.id || !(sendInputValues[t.id] || '').trim()} className="flex items-center gap-1 px-2 py-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-[10px] font-medium rounded transition-colors"><Send size={10} /></button>
                                   </div>
                                 )}
@@ -478,15 +518,22 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
         <TerminalView terminalId={liveTerminal.id} provider={liveTerminal.provider} agentProfile={liveTerminal.agentProfile} onClose={() => setLiveTerminal(null)} />
       )}
       {outputTerminalId && <OutputViewer terminalId={outputTerminalId} onClose={() => setOutputTerminalId(null)} />}
+      {sessionChat && (
+        <SessionChatPanel
+          sessionName={sessionChat.sessionName}
+          terminalId={sessionChat.terminalId}
+          onClose={() => setSessionChat(null)}
+        />
+      )}
       <ConfirmModal
         open={!!pendingClose}
-        title="Close Terminal"
-        message="This will kill the tmux window and terminate the agent process."
+        title="터미널 닫기"
+        message="tmux 창을 닫고 에이전트 프로세스를 종료합니다."
         details={pendingClose ? [
-          { label: 'Terminal', value: `${pendingClose.agent_profile || 'default'} (${pendingClose.id})` },
-          { label: 'Session', value: pendingClose.tmux_session },
+          { label: '터미널', value: `${pendingClose.agent_profile || '기본값'} (${pendingClose.id})` },
+          { label: '세션', value: pendingClose.tmux_session },
         ] : []}
-        confirmLabel="Close Terminal"
+        confirmLabel="터미널 닫기"
         variant="danger"
         loading={!!closingTerminal}
         onConfirm={handleDeleteTerminal}
@@ -494,13 +541,13 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
       />
       <ConfirmModal
         open={!!pendingExit}
-        title="Graceful Exit"
-        message="This will send the provider-specific exit command (e.g., /exit)."
+        title="정상 종료"
+        message="제공자별 종료 명령(예: /exit)을 보냅니다."
         details={pendingExit ? [
-          { label: 'Terminal', value: `${pendingExit.agent_profile || 'default'} (${pendingExit.id})` },
-          { label: 'Provider', value: pendingExit.provider },
+          { label: '터미널', value: `${pendingExit.agent_profile || '기본값'} (${pendingExit.id})` },
+          { label: '제공자', value: pendingExit.provider },
         ] : []}
-        confirmLabel="Send Exit"
+        confirmLabel="종료 명령 보내기"
         variant="warning"
         loading={!!exitingTerminal}
         onConfirm={handleExitTerminal}
@@ -508,12 +555,12 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
       />
       <ConfirmModal
         open={!!pendingDeleteSession}
-        title="Delete Session"
-        message="This will terminate all agents in this session and remove it."
+        title="세션 삭제"
+        message="이 세션의 모든 에이전트를 종료하고 세션을 삭제합니다."
         details={pendingDeleteSession ? [
-          { label: 'Session', value: pendingDeleteSession },
+          { label: '세션', value: pendingDeleteSession },
         ] : []}
-        confirmLabel="Delete Session"
+        confirmLabel="세션 삭제"
         variant="danger"
         loading={deletingSession}
         onConfirm={handleDeleteSession}

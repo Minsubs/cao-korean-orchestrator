@@ -77,7 +77,7 @@ export function OutputViewer({ terminalId, onClose }: OutputViewerProps) {
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700/30 shrink-0">
           <div className="flex items-center gap-3">
             <FileText size={16} className="text-emerald-400" />
-            <span className="text-sm font-semibold text-white">Terminal Output</span>
+            <span className="text-sm font-semibold text-white">터미널 출력</span>
             <span className="text-xs text-gray-500 font-mono bg-gray-800 px-2 py-0.5 rounded">{terminalId}</span>
           </div>
           <div className="flex items-center gap-2">
@@ -86,17 +86,17 @@ export function OutputViewer({ terminalId, onClose }: OutputViewerProps) {
               onClick={handleCopy}
               disabled={!cleanOutput}
               className="p-1.5 text-gray-400 hover:text-white disabled:opacity-30 transition-colors rounded"
-              title="Copy to clipboard"
+              title="클립보드에 복사"
             >
               {copied ? <Check size={16} className="text-emerald-400" /> : <Copy size={16} />}
             </button>
-            {copied && <span className="text-xs text-emerald-400">Copied!</span>}
+            {copied && <span className="text-xs text-emerald-400">복사됨</span>}
             {/* Refresh button */}
             <button
               onClick={handleRefresh}
               disabled={loading}
               className="p-1.5 text-gray-400 hover:text-white disabled:opacity-30 transition-colors rounded"
-              title="Refresh output"
+              title="출력 새로고침"
             >
               <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
             </button>
@@ -104,7 +104,7 @@ export function OutputViewer({ terminalId, onClose }: OutputViewerProps) {
             <button
               onClick={onClose}
               className="p-1.5 text-gray-500 hover:text-white transition-colors rounded"
-              title="Close"
+              title="닫기"
             >
               <X size={16} />
             </button>
@@ -121,7 +121,7 @@ export function OutputViewer({ terminalId, onClose }: OutputViewerProps) {
                 : 'bg-gray-800 text-gray-400 hover:text-gray-200 hover:bg-gray-700'
             }`}
           >
-            Last Response
+            마지막 응답
           </button>
           <button
             onClick={() => setMode('full')}
@@ -131,7 +131,7 @@ export function OutputViewer({ terminalId, onClose }: OutputViewerProps) {
                 : 'bg-gray-800 text-gray-400 hover:text-gray-200 hover:bg-gray-700'
             }`}
           >
-            Full Output
+            전체 출력
           </button>
         </div>
 
@@ -151,7 +151,7 @@ export function OutputViewer({ terminalId, onClose }: OutputViewerProps) {
             </pre>
           ) : (
             <div className="flex items-center justify-center h-full min-h-[200px]">
-              <p className="text-gray-500 text-sm">No output available</p>
+              <p className="text-gray-500 text-sm">표시할 출력이 없습니다</p>
             </div>
           )}
         </div>
