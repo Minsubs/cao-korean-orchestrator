@@ -177,6 +177,27 @@ class BaseProvider(ABC):
         """
         return self.get_status("\n".join(screen_lines))
 
+    def get_context_usage(self, output: str) -> Optional[int]:
+        """Parse the REMAINING context percentage (0–100) from terminal output.
+
+        DISPLAY / NOTIFICATION ONLY. This value must never feed an orchestration
+        decision (routing, completion, retry): it is a best-effort scrape of a
+        CLI's own footer chrome, which changes between versions and can be absent
+        entirely. Callers surface it as a soft gauge and hide the gauge when it is
+        ``None``.
+
+        Returns the percent of context REMAINING (higher = more headroom), or
+        ``None`` when no known footer pattern matches. A parse miss is always
+        ``None`` — never a guess. The base implementation returns ``None`` so a
+        provider that has no calibrated footer pattern reports "no gauge" rather
+        than a fabricated number.
+
+        Args:
+            output: Terminal output to scan (same rolling buffer ``get_status``
+                receives; implementations strip escapes as needed).
+        """
+        return None
+
     @property
     def paste_submit_delay(self) -> float:
         """Seconds to wait after a bracketed paste before sending the Enter key.

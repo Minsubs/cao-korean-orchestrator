@@ -1,6 +1,6 @@
 ---
 name: code_supervisor
-description: Coding Supervisor Agent in a multi-agent system
+description: 여러 에이전트를 조율하는 코딩 총괄 — 작업을 나눠 워커에게 위임하고 결과를 종합해요
 role: supervisor  # @cao-mcp-server, fs_read, fs_list. For fine-grained control, see docs/tool-restrictions.md
 mcpServers:
   cao-mcp-server:

@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: Code Reviewer Agent in a multi-agent system
+description: 코드를 검토하는 리뷰어 — 결함과 개선점을 찾아 품질을 지켜요
 role: reviewer  # @builtin, fs_read, fs_list, @cao-mcp-server. For fine-grained control, see docs/tool-restrictions.md
 mcpServers:
   cao-mcp-server:

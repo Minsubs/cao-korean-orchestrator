@@ -1,6 +1,6 @@
 ---
 name: memory_manager
-description: Context-Manager Agent — curates memory injection for worker agents
+description: 워커에게 주입할 메모리를 선별하는 컨텍스트 매니저 — 관련 기억만 골라 정리해요
 role: supervisor
 mcpServers:
   cao-mcp-server:

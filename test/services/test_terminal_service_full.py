@@ -954,6 +954,26 @@ class TestGetTerminal:
 
         assert result["status"] == TerminalStatus.UNKNOWN.value
 
+    @patch("cli_agent_orchestrator.services.terminal_service.status_monitor")
+    @patch("cli_agent_orchestrator.services.terminal_service.get_terminal_metadata")
+    def test_get_terminal_includes_last_output_at(self, mock_get_metadata, mock_status_monitor):
+        """get_terminal surfaces status_monitor.get_last_output_at as last_output_at."""
+        mock_get_metadata.return_value = {
+            "id": "test1234",
+            "tmux_window": "developer-abcd",
+            "provider": "kiro_cli",
+            "tmux_session": "cao-session",
+            "agent_profile": "developer",
+            "last_active": datetime.now(),
+        }
+        mock_status_monitor.get_status.return_value = TerminalStatus.IDLE
+        mock_status_monitor.get_last_output_at.return_value = "2026-07-17T00:00:00+00:00"
+
+        result = get_terminal("test1234")
+
+        assert result["last_output_at"] == "2026-07-17T00:00:00+00:00"
+        mock_status_monitor.get_last_output_at.assert_called_once_with("test1234")
+
 
 class TestGetWorkingDirectory:
     """Tests for get_working_directory function."""

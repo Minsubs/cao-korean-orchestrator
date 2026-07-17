@@ -183,6 +183,24 @@ NEW_TUI_SPINNER_PATTERN = r"[✶✢✽✻✳·*][^\n]*ing…"
 # sitting directly above the box from being misread as a live spinner.
 NEW_TUI_BOX_SPINNER_PATTERN = re.compile(r"^[ \t]*[✶✢✽✻✳·*][ \t]+\w*ing\b.*…")
 
+# Remaining-context footer variants (DISPLAY ONLY — parsed by get_context_usage,
+# never used for orchestration). Claude Code renders the "how much context is
+# left" hint in a few shapes across versions; every one reports the percentage
+# of context REMAINING (higher = more headroom):
+#   - "Context left until auto-compact: 23%"      (labelled footer)
+#   - "23% until auto-compact"                     (compact footer)
+#   - "Context low · 8% remaining" / "Context low (8%)"  (low-context warning)
+# Each captures a 1–3 digit integer percent. get_context_usage takes the LAST
+# match in the (escape-stripped) buffer — the freshest footer redraw — clamps to
+# 0–100, and returns None when nothing matches (never a guess). Patterns are
+# deliberately conservative: an unrecognised footer yields None so the gauge is
+# hidden rather than showing a fabricated number.
+CONTEXT_LEFT_PATTERNS = [
+    re.compile(r"[Cc]ontext left until auto-compact:\s*(\d{1,3})\s*%"),
+    re.compile(r"(\d{1,3})\s*%\s*(?:left\s*)?until auto-compact"),
+    re.compile(r"[Cc]ontext low\b[^\n]*?(\d{1,3})\s*%"),
+]
+
 
 class ClaudeCodeProvider(BaseProvider):
     """Provider for Claude Code CLI tool integration."""
@@ -896,6 +914,30 @@ class ClaudeCodeProvider(BaseProvider):
             return TerminalStatus.IDLE
 
         return TerminalStatus.UNKNOWN
+
+    def get_context_usage(self, output: str) -> Optional[int]:
+        """Scrape the remaining-context percentage from Claude Code's footer.
+
+        DISPLAY ONLY — see :meth:`BaseProvider.get_context_usage`. Strips the raw
+        pipe-pane escapes first (the footer text is interleaved with SGR colour
+        codes on the live buffer), then scans for any of CONTEXT_LEFT_PATTERNS.
+        Returns the percent from the LAST (freshest) footer redraw clamped to
+        0–100, or None when no footer matched.
+        """
+        if not output:
+            return None
+        cleaned = strip_terminal_escapes(output)
+        best_val: Optional[int] = None
+        best_pos = -1
+        for pattern in CONTEXT_LEFT_PATTERNS:
+            for match in pattern.finditer(cleaned):
+                if match.start() <= best_pos:
+                    continue
+                value = int(match.group(1))
+                if 0 <= value <= 100:
+                    best_pos = match.start()
+                    best_val = value
+        return best_val
 
     @property
     def paste_submit_delay(self) -> float:

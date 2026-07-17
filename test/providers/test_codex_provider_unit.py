@@ -1725,3 +1725,62 @@ class TestCodexProviderTrustPrompt:
         mock_tmux.return_value.send_special_key.assert_called_with(
             "test-session", "window-0", "Enter"
         )
+
+    @pytest.mark.asyncio
+    @patch("cli_agent_orchestrator.providers.codex.wait_until_status")
+    @patch("cli_agent_orchestrator.providers.codex.wait_for_shell")
+    @patch("cli_agent_orchestrator.providers.codex.get_backend")
+    async def test_initialize_with_trust_prompt_0144_wording(
+        self, mock_tmux, mock_wait_shell, mock_wait_status
+    ):
+        """Codex 0.144+ re-worded the directory-trust dialog — it must still be
+        auto-accepted. A missed match here times the handler out and the first
+        task then gets pasted into the dialog, selecting "No, quit" and killing
+        the CLI (observed live via the assign e2e). Dialog text below is
+        captured verbatim from codex 0.144.5."""
+        mock_wait_shell.return_value = True
+        mock_wait_status.return_value = True
+        mock_tmux.return_value.get_history.return_value = (
+            "> You are in /Users/someone/projects/repo\n"
+            "  Note: You’re in a subdirectory of a Git project. Trusting will apply "
+            "to the repository root: /Users/someone/projects\n"
+            "  Do you trust the contents of this directory? Working with untrusted "
+            "contents comes with higher risk of prompt injection. Trusting the "
+            "directory allows project-local config, hooks, and exec policies to load.\n"
+            "› 1. Yes, continue\n"
+            "  2. No, quit\n"
+            "  Press enter to continue\n"
+        )
+
+        provider = CodexProvider("test1234", "test-session", "window-0")
+        result = await provider.initialize()
+
+        assert result is True
+        mock_tmux.return_value.send_special_key.assert_called_with(
+            "test-session", "window-0", "Enter"
+        )
+
+    @pytest.mark.asyncio
+    @patch("cli_agent_orchestrator.providers.codex.wait_until_status")
+    @patch("cli_agent_orchestrator.providers.codex.wait_for_shell")
+    @patch("cli_agent_orchestrator.providers.codex.get_backend")
+    async def test_initialize_option_pair_fallback_wording(
+        self, mock_tmux, mock_wait_shell, mock_wait_status
+    ):
+        """Future re-wordings of the trust question still match via the
+        bounded "Yes, continue … No, quit" option-pair fallback."""
+        mock_wait_shell.return_value = True
+        mock_wait_status.return_value = True
+        mock_tmux.return_value.get_history.return_value = (
+            "  Some future differently-worded trust question?\n"
+            "› 1. Yes, continue\n"
+            "  2. No, quit\n"
+        )
+
+        provider = CodexProvider("test1234", "test-session", "window-0")
+        result = await provider.initialize()
+
+        assert result is True
+        mock_tmux.return_value.send_special_key.assert_called_with(
+            "test-session", "window-0", "Enter"
+        )

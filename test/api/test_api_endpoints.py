@@ -375,7 +375,10 @@ class TestCreateSession:
             )
 
         assert response.status_code == 400
-        assert "session_name" in response.json()["detail"]
+        # POST /sessions now returns actionable Korean guidance (#12) rather than
+        # the terse "Invalid session_name: ..." (which the get/delete/terminal
+        # path-param routes below still use).
+        assert "영문" in response.json()["detail"]
         mock_svc.create_session.assert_not_called()
 
     def test_create_session_rejects_name_that_overflows_after_prefix(self, client):
@@ -397,7 +400,8 @@ class TestCreateSession:
             )
 
         assert response.status_code == 400
-        assert "session_name" in response.json()["detail"]
+        # Over-length inputs share the actionable Korean guidance message (#12).
+        assert "영문" in response.json()["detail"]
         mock_svc.create_session.assert_not_called()
 
     def test_create_session_accepts_already_prefixed_name(self, client):

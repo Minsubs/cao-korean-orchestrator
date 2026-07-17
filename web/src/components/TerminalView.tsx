@@ -9,9 +9,11 @@ interface TerminalViewProps {
   provider?: string
   agentProfile?: string | null
   onClose: () => void
+  /** Render inline (no fixed overlay/header chrome) for the Workbench dock. Default false preserves the classic modal exactly. */
+  embedded?: boolean
 }
 
-export function TerminalView({ terminalId, provider, agentProfile, onClose }: TerminalViewProps) {
+export function TerminalView({ terminalId, provider, agentProfile, onClose, embedded = false }: TerminalViewProps) {
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -119,6 +121,23 @@ export function TerminalView({ terminalId, provider, agentProfile, onClose }: Te
     }
   }, [terminalId])
 
+  // Terminal — absolute positioning gives xterm.js real pixel dimensions to measure
+  const terminalArea = (
+    <div style={{ flex: 1, position: 'relative', overflow: 'hidden', minHeight: 0 }}>
+      <div ref={containerRef} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
+    </div>
+  )
+
+  // Embedded (Workbench dock): no fixed overlay, no header chrome — the
+  // Workbench's own tab bar already shows terminal id/provider context.
+  if (embedded) {
+    return (
+      <div className="flex h-full w-full flex-col" style={{ background: '#0d1117' }}>
+        {terminalArea}
+      </div>
+    )
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex flex-col" style={{ background: '#0d1117' }}>
       {/* Header */}
@@ -140,10 +159,7 @@ export function TerminalView({ terminalId, provider, agentProfile, onClose }: Te
           </button>
         </div>
       </div>
-      {/* Terminal — absolute positioning gives xterm.js real pixel dimensions to measure */}
-      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-        <div ref={containerRef} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
-      </div>
+      {terminalArea}
     </div>
   )
 }

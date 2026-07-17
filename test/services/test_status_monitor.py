@@ -7,6 +7,7 @@ provider's native status. These tests pin both paths.
 """
 
 import threading
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 from cli_agent_orchestrator.models.terminal import TerminalStatus
@@ -397,3 +398,38 @@ class TestRawDebounceArmedDetection:
         sm._process_chunk("t1", "● Working on task...")
 
         assert sm._last_status["t1"] == TerminalStatus.PROCESSING
+
+
+class TestLastOutputAt:
+    """last_output_at is recorded on output and cleared with the terminal."""
+
+    @patch("cli_agent_orchestrator.services.status_monitor.provider_manager")
+    def test_records_iso_timestamp_on_output(self, mock_pm):
+        provider = MagicMock()
+        provider.supports_screen_detection = False
+        provider.get_status.return_value = TerminalStatus.UNKNOWN
+        mock_pm.get_provider.return_value = provider
+
+        sm = StatusMonitor()
+        assert sm.get_last_output_at("t1") is None
+
+        sm._process_chunk("t1", "some output chunk")
+
+        ts = sm.get_last_output_at("t1")
+        assert isinstance(ts, str)
+        # A valid ISO-8601 timestamp (raises if not).
+        datetime.fromisoformat(ts)
+
+    @patch("cli_agent_orchestrator.services.status_monitor.provider_manager")
+    def test_cleared_on_clear_terminal(self, mock_pm):
+        provider = MagicMock()
+        provider.supports_screen_detection = False
+        provider.get_status.return_value = TerminalStatus.UNKNOWN
+        mock_pm.get_provider.return_value = provider
+
+        sm = StatusMonitor()
+        sm._process_chunk("t1", "output")
+        assert sm.get_last_output_at("t1") is not None
+
+        sm.clear_terminal("t1")
+        assert sm.get_last_output_at("t1") is None

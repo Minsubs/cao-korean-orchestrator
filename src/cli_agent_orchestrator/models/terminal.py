@@ -42,6 +42,9 @@ class Terminal(BaseModel):
         None, description="Current terminal status (live only)"
     )
     last_active: Optional[datetime] = Field(None, description="Last active timestamp")
+    last_output_at: Optional[str] = Field(
+        None, description="ISO-8601 UTC time the last output event was observed (null if none)"
+    )
 
 
 class AgentStepResult(BaseModel):

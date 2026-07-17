@@ -734,6 +734,7 @@ def get_terminal(terminal_id: str) -> Dict:
             "allowed_tools": metadata.get("allowed_tools"),
             "status": status,
             "last_active": metadata["last_active"],
+            "last_output_at": status_monitor.get_last_output_at(terminal_id),
         }
 
     except Exception as e:

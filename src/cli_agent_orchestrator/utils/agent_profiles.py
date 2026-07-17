@@ -3,7 +3,7 @@
 import logging
 from importlib import resources
 from pathlib import Path
-from typing import Dict, List, Set
+from typing import Dict, List, Optional, Set, Tuple
 
 import frontmatter
 
@@ -44,6 +44,33 @@ def _safe_join(root: Path, *parts: str) -> Path | None:
     return candidate
 
 
+def _extract_profile_fields(text: str) -> Tuple[str, Optional[str], Optional[str]]:
+    """Return ``(description, provider, model)`` from a profile's frontmatter.
+
+    These are the additive fields the profile *list* surfaces (GET
+    /agents/profiles) so the UI can show a profile's intended provider/model
+    without loading the whole profile. Only lightweight frontmatter parsing is
+    done here — no env resolution, no ``AgentProfile`` construction.
+
+    A missing field yields ``""`` for description and ``None`` for
+    provider/model; a parse failure yields ``("", None, None)`` so a malformed
+    profile is still listed by name rather than dropped. Non-string values are
+    treated as absent (``None``) to keep the wire shape predictable.
+    """
+    try:
+        meta = frontmatter.loads(text).metadata
+    except Exception:
+        return "", None, None
+    description = meta.get("description", "") or ""
+    if not isinstance(description, str):
+        description = ""
+    provider = meta.get("provider")
+    provider = provider if isinstance(provider, str) and provider else None
+    model = meta.get("model")
+    model = model if isinstance(model, str) and model else None
+    return description, provider, model
+
+
 def _scan_directory(
     directory: Path,
     source_label: str,
@@ -70,36 +97,31 @@ def _scan_directory(
     for item in directory.iterdir():
         if item.is_dir():
             profile_name = item.name
-            desc = ""
+            desc, provider, model = "", None, None
             # Check for agent.md inside directory
             agent_md = item / "agent.md"
             if agent_md.exists():
-                try:
-                    data = frontmatter.loads(agent_md.read_text())
-                    desc = data.metadata.get("description", "")
-                except Exception:
-                    pass
+                desc, provider, model = _extract_profile_fields(agent_md.read_text())
             _record(profile_name)
             if profile_name not in profiles:
                 profiles[profile_name] = {
                     "name": profile_name,
                     "description": desc,
                     "source": source_label,
+                    "provider": provider,
+                    "model": model,
                 }
         elif item.suffix == ".md" and item.is_file():
             profile_name = item.stem
-            desc = ""
-            try:
-                data = frontmatter.loads(item.read_text())
-                desc = data.metadata.get("description", "")
-            except Exception:
-                pass
+            desc, provider, model = _extract_profile_fields(item.read_text())
             _record(profile_name)
             if profile_name not in profiles:
                 profiles[profile_name] = {
                     "name": profile_name,
                     "description": desc,
                     "source": source_label,
+                    "provider": provider,
+                    "model": model,
                 }
 
 
@@ -167,18 +189,21 @@ def list_agent_profiles() -> List[Dict]:
                 if profile_name in profiles:
                     continue
                 try:
-                    data = frontmatter.loads(item.read_text())
-                    profiles[profile_name] = {
-                        "name": profile_name,
-                        "description": data.metadata.get("description", ""),
-                        "source": "built-in",
-                    }
+                    text = item.read_text()
                 except Exception:
-                    profiles[profile_name] = {
-                        "name": profile_name,
-                        "description": "",
-                        "source": "built-in",
-                    }
+                    text = ""
+                # _extract_profile_fields("") -> ("", None, None), so an
+                # unreadable built-in still lists by name with empty fields.
+                # Distinct names: ``provider`` is already the str loop variable
+                # of the agent-dirs loop above in this function's scope.
+                desc, item_provider, item_model = _extract_profile_fields(text)
+                profiles[profile_name] = {
+                    "name": profile_name,
+                    "description": desc,
+                    "source": "built-in",
+                    "provider": item_provider,
+                    "model": item_model,
+                }
     except Exception as e:
         logger.debug(f"Could not scan built-in agent store: {e}")
 

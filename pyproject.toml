@@ -62,6 +62,7 @@ claude_code_memory = "cli_agent_orchestrator.plugins.builtin.claude_code_memory:
 kiro_cli_memory = "cli_agent_orchestrator.plugins.builtin.kiro_cli_memory:KiroCliMemoryPlugin"
 codex_memory = "cli_agent_orchestrator.plugins.builtin.codex_memory:CodexMemoryPlugin"
 event_log_publisher = "cli_agent_orchestrator.plugins.builtin.event_log_publisher:EventLogPublisher"
+ui_event_publisher = "cli_agent_orchestrator.plugins.builtin.ui_event_publisher:UiEventPublisher"
 mcp_apps = "cli_agent_orchestrator.plugins.builtin.mcp_apps:McpAppsPlugin"
 
 [project.urls]

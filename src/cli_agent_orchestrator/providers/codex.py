@@ -76,8 +76,21 @@ TUI_FOOTER_PATTERN = r"(?:\?\s+for shortcuts|context left|\d+%\s+left|·\s+[~/])
 # ASSISTANT_PREFIX_PATTERN and the TUI footer › matches idle prompt).
 TUI_PROGRESS_PATTERN = r"•.*\(\d+s\s*•\s*esc to interrupt\)"
 
-# Workspace trust/approval prompt shown when Codex opens a new directory
-TRUST_PROMPT_PATTERN = r"allow Codex to work in this folder"
+# Workspace trust/approval prompt shown when Codex opens a new directory.
+# Wording differs across Codex versions — all variants must be covered, because
+# a missed match makes _handle_trust_prompt time out and initialize() then
+# pastes the first task into the still-open dialog, which selects "No, quit"
+# and kills the CLI (observed live on 0.144.5 via the assign e2e):
+#   - legacy:  "... allow Codex to work in this folder ..."
+#   - 0.144+:  "Do you trust the contents of this directory? ..." with a
+#              "› 1. Yes, continue / 2. No, quit" option list
+# The bounded "Yes, continue …. No, quit" alternative is the option-pair
+# fallback for future re-wordings of the question line itself.
+TRUST_PROMPT_PATTERN = (
+    r"allow Codex to work in this folder"
+    r"|Do you trust the contents of this directory"
+    r"|Yes, continue[\s\S]{0,120}?No, quit"
+)
 # Codex welcome banner indicating normal startup (no trust prompt)
 CODEX_WELCOME_PATTERN = r"OpenAI Codex"
 

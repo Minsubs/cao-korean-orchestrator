@@ -7,6 +7,7 @@ Publisher: terminal.{id}.status
 import asyncio
 import logging
 import threading
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 from cli_agent_orchestrator.constants import (
@@ -68,6 +69,11 @@ class StatusMonitor:
         # IDLE/COMPLETED would freeze the terminal forever even when the
         # agent is genuinely processing new work.
         self._allow_processing_revert: Dict[str, bool] = {}
+        # Per-terminal ISO-8601 UTC timestamp of the last output event observed
+        # on ``terminal.{id}.output`` (recorded in _process_chunk under _lock).
+        # Additive: surfaced via get_last_output_at() for the Terminal API's
+        # last_output_at field; never consulted by the detection logic.
+        self._last_output_at: Dict[str, str] = {}
         # --- pyte rendered-screen detection state (only used when CAO_PYTE_STATUS
         # is on AND the provider opts in via supports_screen_detection) ---
         # Per-terminal pyte Screen+Stream that composites the raw byte stream
@@ -146,6 +152,7 @@ class StatusMonitor:
             if len(buffer) > STATE_BUFFER_MAX:
                 buffer = buffer[-STATE_BUFFER_MAX:]
             self._buffers[terminal_id] = buffer
+            self._last_output_at[terminal_id] = datetime.now(timezone.utc).isoformat()
             if use_screen:
                 self._feed_screen_locked(terminal_id, chunk)
 
@@ -524,6 +531,7 @@ class StatusMonitor:
             self._buffers.pop(terminal_id, None)
             self._last_status.pop(terminal_id, None)
             self._allow_processing_revert.pop(terminal_id, None)
+            self._last_output_at.pop(terminal_id, None)
             self._screens.pop(terminal_id, None)
             self._bursting.pop(terminal_id, None)
             handle = self._quiesce_handle.pop(terminal_id, None)
@@ -609,6 +617,15 @@ class StatusMonitor:
         """Get accumulated output buffer for a terminal."""
         with self._lock:
             return self._buffers.get(terminal_id, "")
+
+    def get_last_output_at(self, terminal_id: str) -> Optional[str]:
+        """Return the ISO-8601 UTC time of the last observed output event.
+
+        ``None`` when no output has been seen for the terminal (e.g. it has
+        produced nothing yet, or its monitor was cleared).
+        """
+        with self._lock:
+            return self._last_output_at.get(terminal_id)
 
 
 # Module-level singleton

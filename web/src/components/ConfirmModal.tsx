@@ -48,7 +48,7 @@ export function ConfirmModal({
     : { icon: 'text-yellow-400 bg-yellow-900/40', btn: 'bg-yellow-600 hover:bg-yellow-500 focus:ring-yellow-500' }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center" role="dialog" aria-modal="true" aria-label={title}>
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onCancel} />
 

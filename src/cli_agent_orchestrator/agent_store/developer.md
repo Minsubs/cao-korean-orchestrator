@@ -1,6 +1,6 @@
 ---
 name: developer
-description: Developer Agent in a multi-agent system
+description: 명세에 따라 코드를 구현하는 개발자 — 요구사항을 동작하는 코드로 옮겨요
 role: developer  # @builtin, fs_*, execute_bash, @cao-mcp-server. For fine-grained control, see docs/tool-restrictions.md
 mcpServers:
   cao-mcp-server:
