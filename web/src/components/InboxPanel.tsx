@@ -10,10 +10,10 @@ interface InboxPanelProps {
 type StatusFilter = 'all' | 'pending' | 'delivered' | 'failed'
 
 const STATUS_FILTERS: { key: StatusFilter; label: string }[] = [
-  { key: 'all', label: 'All' },
-  { key: 'pending', label: 'Pending' },
-  { key: 'delivered', label: 'Delivered' },
-  { key: 'failed', label: 'Failed' },
+  { key: 'all', label: '전체' },
+  { key: 'pending', label: '대기 중' },
+  { key: 'delivered', label: '전달됨' },
+  { key: 'failed', label: '실패' },
 ]
 
 function formatRelativeTime(dateStr: string | null): string {
@@ -21,21 +21,21 @@ function formatRelativeTime(dateStr: string | null): string {
   const now = Date.now()
   const then = new Date(dateStr).getTime()
   const diffSec = Math.floor((now - then) / 1000)
-  if (diffSec < 0) return 'just now'
-  if (diffSec < 60) return `${diffSec}s ago`
+  if (diffSec < 0) return '방금'
+  if (diffSec < 60) return `${diffSec}초 전`
   const diffMin = Math.floor(diffSec / 60)
-  if (diffMin < 60) return `${diffMin}m ago`
+  if (diffMin < 60) return `${diffMin}분 전`
   const diffHr = Math.floor(diffMin / 60)
-  if (diffHr < 24) return `${diffHr}h ago`
+  if (diffHr < 24) return `${diffHr}시간 전`
   const diffDay = Math.floor(diffHr / 24)
-  return `${diffDay}d ago`
+  return `${diffDay}일 전`
 }
 
 function MessageStatusBadge({ status }: { status: InboxMessage['status'] }) {
   const config = {
-    delivered: { bg: 'bg-emerald-400/10', text: 'text-emerald-400', label: 'Delivered' },
-    pending: { bg: 'bg-amber-400/10', text: 'text-amber-400', label: 'Pending' },
-    failed: { bg: 'bg-red-400/10', text: 'text-red-400', label: 'Failed' },
+    delivered: { bg: 'bg-emerald-400/10', text: 'text-emerald-400', label: '전달됨' },
+    pending: { bg: 'bg-amber-400/10', text: 'text-amber-400', label: '대기 중' },
+    failed: { bg: 'bg-red-400/10', text: 'text-red-400', label: '실패' },
   }
   const c = config[status] || config.pending
   return (
@@ -126,14 +126,14 @@ export function InboxPanel({ terminalId, onClose }: InboxPanelProps) {
               <Mail size={16} className="text-emerald-400" />
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-white">Agent Inbox</h3>
-              <p className="text-[11px] text-gray-500">Messages between agents in this session <span className="font-mono">({terminalId})</span></p>
+              <h3 className="text-sm font-semibold text-white">에이전트 받은편지함</h3>
+              <p className="text-[11px] text-gray-500">이 세션의 에이전트 간 메시지 <span className="font-mono">({terminalId})</span></p>
             </div>
           </div>
           <button
             onClick={onClose}
             className="p-1.5 text-gray-500 hover:text-white transition-colors rounded-lg hover:bg-gray-800"
-            title="Close"
+            title="닫기"
           >
             <X size={16} />
           </button>
@@ -167,8 +167,8 @@ export function InboxPanel({ terminalId, onClose }: InboxPanelProps) {
           ) : messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-gray-500">
               <Mail size={32} className="mb-3 opacity-40" />
-              <p className="text-sm">No messages yet</p>
-              <p className="text-xs text-gray-600 mt-1">Messages appear here when agents communicate via handoff, assign, or send_message. You can also send a message manually below.</p>
+              <p className="text-sm">아직 메시지가 없습니다</p>
+              <p className="text-xs text-gray-600 mt-1">에이전트가 handoff, assign 또는 send_message로 통신하면 여기에 표시됩니다. 아래에서 직접 메시지를 보낼 수도 있습니다.</p>
             </div>
           ) : (
             messages.map(msg => {
@@ -212,7 +212,7 @@ export function InboxPanel({ terminalId, onClose }: InboxPanelProps) {
               value={sendText}
               onChange={e => setSendText(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Type a message..."
+              placeholder="메시지를 입력하세요..."
               className="flex-1 bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2.5 focus:border-emerald-500 focus:outline-none placeholder-gray-600"
             />
             <button
@@ -225,7 +225,7 @@ export function InboxPanel({ terminalId, onClose }: InboxPanelProps) {
               ) : (
                 <Send size={14} />
               )}
-              Send
+              보내기
             </button>
           </div>
         </div>

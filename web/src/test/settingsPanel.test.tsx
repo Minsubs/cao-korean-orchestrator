@@ -53,7 +53,7 @@ describe('SettingsPanel — directory enable/disable (GH #280/#281)', () => {
     expect(screen.getByText('/team/a')).toBeInTheDocument()
     // agent-store shared by two providers renders exactly once
     expect(screen.getAllByText(AGENT_STORE)).toHaveLength(1)
-    expect(await screen.findByTestId('profile-count')).toHaveTextContent('2 profiles discovered')
+    expect(await screen.findByTestId('profile-count')).toHaveTextContent('프로필 2개 발견')
     expect(await screen.findByTestId('dup-note')).toBeInTheDocument()
   })
 
@@ -61,7 +61,7 @@ describe('SettingsPanel — directory enable/disable (GH #280/#281)', () => {
     render(<SettingsPanel />)
     await screen.findByText('/team/a')
 
-    const toggle = screen.getByRole('switch', { name: 'Enable /team/a' })
+    const toggle = screen.getByRole('switch', { name: '/team/a 활성화' })
     expect(toggle).toHaveAttribute('aria-checked', 'true')
     fireEvent.click(toggle)
 
@@ -69,7 +69,7 @@ describe('SettingsPanel — directory enable/disable (GH #280/#281)', () => {
       expect(posts.some(p => p.disabled_dirs?.includes('/team/a'))).toBe(true)
     )
     await waitFor(() =>
-      expect(screen.getByRole('switch', { name: 'Enable /team/a' })).toHaveAttribute(
+      expect(screen.getByRole('switch', { name: '/team/a 활성화' })).toHaveAttribute(
         'aria-checked',
         'false'
       )
@@ -79,7 +79,7 @@ describe('SettingsPanel — directory enable/disable (GH #280/#281)', () => {
   it('disabling a built-in default persists it (no more silent reappear — #281)', async () => {
     render(<SettingsPanel />)
     await screen.findByText('/home/u/.kiro/agents')
-    fireEvent.click(screen.getByRole('switch', { name: 'Enable /home/u/.kiro/agents' }))
+    fireEvent.click(screen.getByRole('switch', { name: '/home/u/.kiro/agents 활성화' }))
     await waitFor(() =>
       expect(posts.some(p => p.disabled_dirs?.includes('/home/u/.kiro/agents'))).toBe(true)
     )
@@ -88,7 +88,7 @@ describe('SettingsPanel — directory enable/disable (GH #280/#281)', () => {
   it('removing a custom dir POSTs extra_dirs without it', async () => {
     render(<SettingsPanel />)
     await screen.findByText('/team/a')
-    fireEvent.click(screen.getByRole('button', { name: 'Remove /team/a' }))
+    fireEvent.click(screen.getByRole('button', { name: '/team/a 제거' }))
     await waitFor(() =>
       expect(
         posts.some(p => Array.isArray(p.extra_dirs) && !p.extra_dirs.includes('/team/a'))
@@ -99,6 +99,6 @@ describe('SettingsPanel — directory enable/disable (GH #280/#281)', () => {
   it('built-in defaults cannot be removed (no remove button)', async () => {
     render(<SettingsPanel />)
     await screen.findByText('/home/u/.kiro/agents')
-    expect(screen.queryByRole('button', { name: 'Remove /home/u/.kiro/agents' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '/home/u/.kiro/agents 제거' })).toBeNull()
   })
 })

@@ -53,9 +53,34 @@ RESPONSE_PATTERN = r"⏺(?:\x1b\[[0-9;]*m)*\s+"  # Handle any ANSI codes between
 # RESPONSE_PATTERN so get_status's legacy ⏺-COMPLETED check is unaffected (adding
 # "●" there could fire COMPLETED mid-stream while a response is still rendering).
 EXTRACTION_RESPONSE_PATTERN = re.compile(
-    r"^[ \t]*(?:\x1b\[[0-9;]*m)*[⏺●](?:\x1b\[[0-9;]*m)*\s+",
+    # Claude Code 2.1.211 can briefly paint the response glyph and first text
+    # cell in adjacent columns ("●OK") before the settled frame becomes
+    # "⏺ OK". Accept either whitespace or an immediately adjacent non-space.
+    r"^[ \t]*(?:\x1b\[[0-9;]*m)*[⏺●](?:\x1b\[[0-9;]*m)*(?:[ \t]+|(?=\S)|(?=\r?$))",
     re.MULTILINE,
 )
+
+# The same TUI can momentarily column-position its effort footer so capture-pane
+# sees it as a start-of-line response marker: "● high · /effort". It is UI
+# chrome, never agent output. Filtering it after the structural marker match
+# preserves support for real answers that legitimately begin with "high".
+EFFORT_FOOTER_TEXT_PATTERN = re.compile(
+    r"^(?:low|medium|high|max)\s*·\s*/effort(?:\s|$)", re.IGNORECASE
+)
+
+
+def _real_response_matches(output: str) -> list[re.Match[str]]:
+    """Return response markers excluding Claude's column-positioned footer."""
+    matches: list[re.Match[str]] = []
+    for match in EXTRACTION_RESPONSE_PATTERN.finditer(output):
+        line_end = output.find("\n", match.end())
+        if line_end == -1:
+            line_end = len(output)
+        line_tail = strip_terminal_escapes(output[match.end() : line_end]).strip()
+        if EFFORT_FOOTER_TEXT_PATTERN.match(line_tail):
+            continue
+        matches.append(match)
+    return matches
 # Match Claude Code processing spinners:
 # - Old format: "✽ Cooking… (esc to interrupt)" / "✶ Thinking… (esc to interrupt)"
 # - New format: "✽ Cooking… (6s · ↓ 174 tokens · thinking)"
@@ -558,6 +583,12 @@ class ClaudeCodeProvider(BaseProvider):
             except Exception as exc:  # backend hiccup: don't fail init for the gate
                 logger.warning("input-ready settle check capture failed: %s", exc)
                 return False
+            if not isinstance(current, str):
+                logger.warning(
+                    "input-ready settle check received non-text history for %s; proceeding",
+                    self.terminal_id,
+                )
+                return False
             if (
                 previous is not None
                 and current == previous
@@ -732,7 +763,7 @@ class ClaudeCodeProvider(BaseProvider):
         # fallback.) The ● is matched at line start only, so the footer effort
         # indicator "… esc to interrupt ● high · /effort" is never counted.
         last_sol_response = None
-        for m in re.finditer(EXTRACTION_RESPONSE_PATTERN, output):
+        for m in _real_response_matches(output):
             last_sol_response = m
 
         # BACKGROUND TASK still running (GH #392): the newest TUI prints the
@@ -858,9 +889,7 @@ class ClaudeCodeProvider(BaseProvider):
             for pi in prompt_idx
         )
         if boxed_prompt:
-            if re.search(
-                GET_STATUS_COMPLETION_PATTERN, joined
-            ) or EXTRACTION_RESPONSE_PATTERN.search(joined):
+            if re.search(GET_STATUS_COMPLETION_PATTERN, joined) or _real_response_matches(joined):
                 return TerminalStatus.COMPLETED
             return TerminalStatus.IDLE
 
@@ -896,7 +925,7 @@ class ClaudeCodeProvider(BaseProvider):
     def extract_last_message_from_script(self, script_output: str) -> str:
         """Extract Claude's final response message using the ⏺/● response marker."""
         # Find all matches of the response pattern (legacy ⏺ or newest-TUI ●).
-        matches = list(re.finditer(EXTRACTION_RESPONSE_PATTERN, script_output))
+        matches = _real_response_matches(script_output)
 
         if not matches:
             raise ValueError("No Claude Code response found - no ⏺/● pattern detected")

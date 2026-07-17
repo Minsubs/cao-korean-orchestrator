@@ -269,8 +269,28 @@ class CodexProvider(BaseProvider):
             except Exception as e:
                 raise ProviderError(f"Failed to load agent profile '{self._agent_profile}': {e}")
 
-        if profile and profile.codexProfile and not yolo:
+        approval_policy = getattr(profile, "codexApprovalPolicy", None)
+        sandbox = getattr(profile, "codexSandbox", None)
+        if not isinstance(approval_policy, str):
+            approval_policy = None
+        if not isinstance(sandbox, str):
+            sandbox = None
+
+        if yolo:
+            command_parts = ["codex", "--yolo"]
+        elif profile and profile.codexProfile:
             command_parts = ["codex", "--profile", profile.codexProfile]
+        elif approval_policy or sandbox:
+            # A partial explicit policy receives conservative defaults. In
+            # particular, never silently pair a no-prompt worker with
+            # danger-full-access.
+            command_parts = [
+                "codex",
+                "--ask-for-approval",
+                approval_policy or "on-request",
+                "--sandbox",
+                sandbox or "read-only",
+            ]
         else:
             command_parts = ["codex", "--yolo"]
         command_parts.extend(["--no-alt-screen", "--disable", "shell_snapshot"])

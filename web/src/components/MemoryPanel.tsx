@@ -9,19 +9,19 @@ import { MemoryGraphView } from './MemoryGraphView'
 type ViewMode = 'list' | 'graph'
 
 const SCOPE_OPTIONS = [
-  { value: '', label: 'All scopes' },
-  { value: 'global', label: 'global' },
-  { value: 'project', label: 'project' },
-  { value: 'session', label: 'session' },
-  { value: 'agent', label: 'agent' },
+  { value: '', label: '모든 범위' },
+  { value: 'global', label: '전역' },
+  { value: 'project', label: '프로젝트' },
+  { value: 'session', label: '세션' },
+  { value: 'agent', label: '에이전트' },
 ]
 
 const TYPE_OPTIONS = [
-  { value: '', label: 'All types' },
-  { value: 'user', label: 'user' },
-  { value: 'feedback', label: 'feedback' },
-  { value: 'project', label: 'project' },
-  { value: 'reference', label: 'reference' },
+  { value: '', label: '모든 유형' },
+  { value: 'user', label: '사용자' },
+  { value: 'feedback', label: '피드백' },
+  { value: 'project', label: '프로젝트' },
+  { value: 'reference', label: '참고자료' },
 ]
 
 const SCOPE_PILL: Record<string, string> = {
@@ -29,6 +29,20 @@ const SCOPE_PILL: Record<string, string> = {
   project: 'bg-emerald-900/50 text-emerald-400',
   session: 'bg-yellow-900/50 text-yellow-400',
   agent: 'bg-purple-900/50 text-purple-400',
+}
+
+const SCOPE_LABELS: Record<string, string> = {
+  global: '전역',
+  project: '프로젝트',
+  session: '세션',
+  agent: '에이전트',
+}
+
+const TYPE_LABELS: Record<string, string> = {
+  user: '사용자',
+  feedback: '피드백',
+  project: '프로젝트',
+  reference: '참고자료',
 }
 
 // Keys are unique only within (scope, scope_id), so rows need a composite id
@@ -106,7 +120,7 @@ export function MemoryPanel() {
         return current
       })
     } catch (e: any) {
-      showSnackbar({ type: 'error', message: e.message || 'Failed to load memory' })
+      showSnackbar({ type: 'error', message: e.message || '메모리를 불러오지 못했습니다' })
     }
   }
 
@@ -115,10 +129,10 @@ export function MemoryPanel() {
     setBusy(true)
     try {
       await api.deleteMemory(pendingDelete.key, pendingDelete.scope, pendingDelete.scope_id ?? undefined)
-      showSnackbar({ type: 'success', message: `Memory "${pendingDelete.key}" deleted` })
+      showSnackbar({ type: 'success', message: `메모리 "${pendingDelete.key}"을(를) 삭제했습니다` })
       await fetchMemories()
     } catch (e: any) {
-      showSnackbar({ type: 'error', message: e.message || 'Failed to delete memory' })
+      showSnackbar({ type: 'error', message: e.message || '메모리를 삭제하지 못했습니다' })
     } finally {
       setBusy(false)
       setPendingDelete(null)
@@ -153,12 +167,12 @@ export function MemoryPanel() {
         }
       }
       if (failures > 0) {
-        showSnackbar({ type: 'error', message: `Cleared ${deleted}, but ${failures} scope ID${failures === 1 ? '' : 's'} failed` })
+        showSnackbar({ type: 'error', message: `${deleted}개를 삭제했지만 범위 ID ${failures}개는 실패했습니다` })
       } else {
-        showSnackbar({ type: 'success', message: `Cleared ${deleted} memor${deleted === 1 ? 'y' : 'ies'}` })
+        showSnackbar({ type: 'success', message: `메모리 ${deleted}개를 삭제했습니다` })
       }
     } catch (e: any) {
-      showSnackbar({ type: 'error', message: e.message || 'Failed to clear memories' })
+      showSnackbar({ type: 'error', message: e.message || '메모리를 비우지 못했습니다' })
     } finally {
       // Refetch even after failure — some deletions may already have landed
       await fetchMemories()
@@ -174,7 +188,7 @@ export function MemoryPanel() {
       {/* View-mode toggle + shared scope selector. The scope (and, in graph +
           project mode, scope_id) is shared across both views. */}
       <div className="flex items-center gap-3 flex-wrap">
-        <div className="inline-flex rounded-lg border border-gray-700 overflow-hidden" role="tablist" aria-label="Memory view mode">
+        <div className="inline-flex rounded-lg border border-gray-700 overflow-hidden" role="tablist" aria-label="메모리 보기 방식">
           <button
             role="tab"
             aria-selected={viewMode === 'list'}
@@ -184,7 +198,7 @@ export function MemoryPanel() {
             }`}
           >
             <List size={14} />
-            List
+            목록
           </button>
           <button
             role="tab"
@@ -195,7 +209,7 @@ export function MemoryPanel() {
             }`}
           >
             <Share2 size={14} />
-            Graph
+            그래프
           </button>
         </div>
 
@@ -213,7 +227,7 @@ export function MemoryPanel() {
             type="text"
             value={graphScopeId}
             onChange={e => setGraphScopeId(e.target.value)}
-            placeholder="project scope_id (e.g. github-com-…)"
+            placeholder="프로젝트 scope_id (예: github-com-…)"
             className="bg-gray-900 border border-gray-700 text-gray-200 text-xs rounded-lg px-3 py-2 w-72 focus:border-emerald-500 focus:outline-none font-mono"
           />
         )}
@@ -222,22 +236,22 @@ export function MemoryPanel() {
       {viewMode === 'graph' ? (
         <MemoryGraphView scope={scopeFilter} scopeId={graphScopeId} />
       ) : loading ? (
-        <div className="text-gray-500 text-sm py-8 text-center">Loading memories...</div>
+        <div className="text-gray-500 text-sm py-8 text-center">메모리 불러오는 중...</div>
       ) : (
       /* Memory List */
       <div className="bg-gray-800/60 border border-gray-700/50 rounded-xl p-5">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">
-            Memories ({filtered.length})
+            메모리 ({filtered.length})
           </h3>
           <button
             onClick={() => setPendingClear(scopeFilter)}
             disabled={!scopeFilter}
             className="flex items-center gap-2 bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
-            title={scopeFilter ? `Clear all ${scopeFilter} memories` : 'Select a scope filter to enable'}
+            title={scopeFilter ? `${scopeFilter} 범위의 모든 메모리 비우기` : '범위를 선택하면 사용할 수 있습니다'}
           >
             <Trash2 size={14} />
-            Clear scope…
+            범위 비우기…
           </button>
         </div>
 
@@ -255,7 +269,7 @@ export function MemoryPanel() {
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Filter keys..."
+              placeholder="키 검색..."
               className="bg-gray-900 border border-gray-700 text-gray-200 text-xs rounded-lg pl-8 pr-3 py-1.5 w-48 focus:border-emerald-500 focus:outline-none"
             />
           </div>
@@ -264,9 +278,9 @@ export function MemoryPanel() {
         {filtered.length === 0 ? (
           <div className="text-center py-8">
             <Brain size={32} className="mx-auto text-gray-600 mb-3" />
-            <p className="text-gray-500 text-sm">No memories stored.</p>
+            <p className="text-gray-500 text-sm">저장된 메모리가 없습니다.</p>
             <p className="text-gray-600 text-xs mt-1">
-              Agents store memories as they work. Inspect them with the CLI: <code className="text-emerald-400">cao memory list</code>
+              에이전트는 작업하면서 메모리를 저장합니다. CLI에서도 확인할 수 있습니다: <code className="text-emerald-400">cao memory list</code>
             </p>
           </div>
         ) : (
@@ -282,9 +296,9 @@ export function MemoryPanel() {
                     <Brain size={14} className="text-gray-400 shrink-0" />
                     <span className="text-sm text-gray-200 font-medium truncate">{m.key}</span>
                     <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${SCOPE_PILL[m.scope] || 'bg-gray-700 text-gray-400'}`}>
-                      {m.scope}
+                      {SCOPE_LABELS[m.scope] || m.scope}
                     </span>
-                    <span className="text-xs text-gray-500 shrink-0">{m.memory_type}</span>
+                    <span className="text-xs text-gray-500 shrink-0">{TYPE_LABELS[m.memory_type] || m.memory_type}</span>
                     {m.tags && (
                       <span className="text-xs text-gray-600 truncate">{m.tags}</span>
                     )}
@@ -298,7 +312,7 @@ export function MemoryPanel() {
                     <button
                       onClick={e => { e.stopPropagation(); setPendingDelete(m) }}
                       className="p-1.5 text-gray-500 hover:text-red-400 transition-colors rounded"
-                      title="Delete memory"
+                      title="메모리 삭제"
                     >
                       <Trash2 size={14} />
                     </button>
@@ -316,13 +330,13 @@ export function MemoryPanel() {
                 {expandedKey === rowId(m) && (
                   <div className="px-3 pb-3 text-xs text-gray-400 space-y-3 border-t border-gray-700/30 pt-3">
                     <div className="grid grid-cols-2 gap-x-6 gap-y-1">
-                      <div>Created: <span className="text-gray-300">{new Date(m.created_at).toLocaleString()}</span></div>
-                      <div>Updated: <span className="text-gray-300">{new Date(m.updated_at).toLocaleString()}</span></div>
+                      <div>생성: <span className="text-gray-300">{new Date(m.created_at).toLocaleString('ko-KR')}</span></div>
+                      <div>수정: <span className="text-gray-300">{new Date(m.updated_at).toLocaleString('ko-KR')}</span></div>
                       {m.scope_id && (
-                        <div className="col-span-2">Scope ID: <span className="text-gray-300 font-mono">{m.scope_id}</span></div>
+                        <div className="col-span-2">범위 ID: <span className="text-gray-300 font-mono">{m.scope_id}</span></div>
                       )}
                       {m.tags && (
-                        <div className="col-span-2">Tags: <span className="text-gray-300">{m.tags}</span></div>
+                        <div className="col-span-2">태그: <span className="text-gray-300">{m.tags}</span></div>
                       )}
                     </div>
                     {/* Plain text only — memory bodies are untrusted agent output */}
@@ -331,7 +345,7 @@ export function MemoryPanel() {
                         {detail.data.content}
                       </div>
                     ) : (
-                      <div className="text-gray-500">Loading content...</div>
+                      <div className="text-gray-500">내용 불러오는 중...</div>
                     )}
                   </div>
                 )}
@@ -345,15 +359,15 @@ export function MemoryPanel() {
       {/* Delete Confirmation Modal */}
       <ConfirmModal
         open={!!pendingDelete}
-        title="Delete Memory"
-        message="This will permanently remove the memory and its history. This action cannot be undone."
+        title="메모리 삭제"
+        message="메모리와 기록을 영구적으로 삭제합니다. 이 작업은 되돌릴 수 없습니다."
         details={pendingDelete ? [
-          { label: 'Key', value: pendingDelete.key },
-          { label: 'Scope', value: pendingDelete.scope },
-          { label: 'Scope ID', value: pendingDelete.scope_id || 'n/a' },
-          { label: 'Type', value: pendingDelete.memory_type },
+          { label: '키', value: pendingDelete.key },
+          { label: '범위', value: pendingDelete.scope },
+          { label: '범위 ID', value: pendingDelete.scope_id || '해당 없음' },
+          { label: '유형', value: TYPE_LABELS[pendingDelete.memory_type] || pendingDelete.memory_type },
         ] : []}
-        confirmLabel="Delete Memory"
+        confirmLabel="메모리 삭제"
         variant="danger"
         loading={busy}
         onConfirm={handleDelete}
@@ -365,12 +379,12 @@ export function MemoryPanel() {
           possibly-filtered view displays. */}
       <ConfirmModal
         open={!!pendingClear}
-        title="Clear Scope"
-        message="This attempts to permanently remove all memories in the selected scope (best-effort) — including any not shown by the current type filter or search. This action cannot be undone."
+        title="범위 비우기"
+        message="선택한 범위의 모든 메모리를 영구적으로 삭제합니다. 현재 유형 필터나 검색 결과에 보이지 않는 항목도 포함됩니다. 이 작업은 되돌릴 수 없습니다."
         details={pendingClear ? [
-          { label: 'Scope', value: pendingClear },
+          { label: '범위', value: pendingClear },
         ] : []}
-        confirmLabel="Clear Scope"
+        confirmLabel="범위 비우기"
         variant="danger"
         loading={busy}
         onConfirm={handleClear}

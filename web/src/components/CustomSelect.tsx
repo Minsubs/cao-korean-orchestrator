@@ -17,7 +17,7 @@ interface CustomSelectProps {
   className?: string
 }
 
-export function CustomSelect({ value, onChange, options, placeholder = 'Select...', className = '' }: CustomSelectProps) {
+export function CustomSelect({ value, onChange, options, placeholder = '선택하세요...', className = '' }: CustomSelectProps) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -105,7 +105,7 @@ export function CustomSelect({ value, onChange, options, placeholder = 'Select..
             </div>
           ))}
           {options.length === 0 && (
-            <div className="px-3 py-4 text-sm text-gray-500 text-center">No options available</div>
+            <div className="px-3 py-4 text-sm text-gray-500 text-center">선택할 수 있는 항목이 없습니다</div>
           )}
         </div>
       )}

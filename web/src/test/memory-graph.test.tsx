@@ -120,14 +120,14 @@ describe('MemoryPanel — List⇄Graph toggle & graph view', () => {
     vi.restoreAllMocks()
   })
 
-  // The scope CustomSelect renders its selected label ("All scopes") as button
+  // The scope CustomSelect renders its selected label ("모든 범위") as button
   // text — but that same string also appears in the graph scope-guard message,
   // so target the FIRST match (the select trigger, rendered before the guard).
   function selectGlobalScope() {
-    fireEvent.click(screen.getAllByText('All scopes')[0])
-    // The dropdown option is a <button>; "global" also appears as text in the
+    fireEvent.click(screen.getAllByText('모든 범위')[0])
+    // The dropdown option is a <button>; "전역" also appears as text in the
     // guard message, so disambiguate by role.
-    fireEvent.click(screen.getByRole('button', { name: 'global' }))
+    fireEvent.click(screen.getByRole('button', { name: '전역' }))
   }
 
   // Route mock responses by URL + method so a component that fires list + graph
@@ -153,9 +153,9 @@ describe('MemoryPanel — List⇄Graph toggle & graph view', () => {
     // List is the default view.
     expect(await screen.findByText('project-conventions')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('tab', { name: /graph/i }))
+    fireEvent.click(screen.getByRole('tab', { name: '그래프' }))
     // Graph tab now selected; list row gone from the DOM.
-    await waitFor(() => expect(screen.getByRole('tab', { name: /graph/i })).toHaveAttribute('aria-selected', 'true'))
+    await waitFor(() => expect(screen.getByRole('tab', { name: '그래프' })).toHaveAttribute('aria-selected', 'true'))
     expect(screen.queryByText('project-conventions')).not.toBeInTheDocument()
   })
 
@@ -165,10 +165,10 @@ describe('MemoryPanel — List⇄Graph toggle & graph view', () => {
       return { status: 200, body: [] }
     })
     render(<MemoryPanel />)
-    await screen.findByText('No memories stored.')
-    fireEvent.click(screen.getByRole('tab', { name: /graph/i }))
+    await screen.findByText('저장된 메모리가 없습니다.')
+    fireEvent.click(screen.getByRole('tab', { name: '그래프' }))
     // scopeFilter defaults to '' (All scopes) → guard, no graph fetch.
-    expect(await screen.findByText(/Pick/i)).toBeInTheDocument()
+    expect(await screen.findByText(/그래프를 보려면/)).toBeInTheDocument()
     expect(mockFetch.mock.calls.some(c => String(c[0]).startsWith('/graph/'))).toBe(false)
   })
 
@@ -182,8 +182,8 @@ describe('MemoryPanel — List⇄Graph toggle & graph view', () => {
       return { status: 200, body: [] }
     })
     render(<MemoryPanel />)
-    await screen.findByText('No memories stored.')
-    fireEvent.click(screen.getByRole('tab', { name: /graph/i }))
+    await screen.findByText('저장된 메모리가 없습니다.')
+    fireEvent.click(screen.getByRole('tab', { name: '그래프' }))
     selectGlobalScope()
 
     await waitFor(() => expect(getLastSigma()).toBeDefined())
@@ -214,8 +214,8 @@ describe('MemoryPanel — List⇄Graph toggle & graph view', () => {
       return { status: 200, body: [] }
     })
     render(<MemoryPanel />)
-    await screen.findByText('No memories stored.')
-    fireEvent.click(screen.getByRole('tab', { name: /graph/i }))
+    await screen.findByText('저장된 메모리가 없습니다.')
+    fireEvent.click(screen.getByRole('tab', { name: '그래프' }))
     selectGlobalScope()
     await waitFor(() => expect(getLastSigma()).toBeDefined())
 
@@ -241,19 +241,19 @@ describe('MemoryPanel — List⇄Graph toggle & graph view', () => {
       return { status: 200, body: [] }
     })
     render(<MemoryPanel />)
-    await screen.findByText('No memories stored.')
-    fireEvent.click(screen.getByRole('tab', { name: /graph/i }))
+    await screen.findByText('저장된 메모리가 없습니다.')
+    fireEvent.click(screen.getByRole('tab', { name: '그래프' }))
     selectGlobalScope()
     await waitFor(() => expect(getLastSigma()).toBeDefined())
 
-    fireEvent.click(screen.getByText('Export to Obsidian'))
+    fireEvent.click(screen.getByText('Obsidian으로 내보내기'))
 
     // Feedback goes through the shared store snackbar (rendered by <App>, not
     // this isolated panel), so assert on the store state.
     await waitFor(() => expect(useStore.getState().snackbar).toBeTruthy())
     const snack = useStore.getState().snackbar!
     expect(snack.type).toBe('success')
-    expect(snack.message).toMatch(/Exported 1 note/)
+    expect(snack.message).toMatch(/노트 1개를/)
     expect(snack.message).toContain('global-vault')
     expect(exportBody).toEqual({ options: {}, sink: 'obsidian', dest: 'global-vault' })
   })
@@ -264,8 +264,8 @@ describe('MemoryPanel — List⇄Graph toggle & graph view', () => {
       return { status: 200, body: [] }
     })
     render(<MemoryPanel />)
-    await screen.findByText('No memories stored.')
-    fireEvent.click(screen.getByRole('tab', { name: /graph/i }))
+    await screen.findByText('저장된 메모리가 없습니다.')
+    fireEvent.click(screen.getByRole('tab', { name: '그래프' }))
     selectGlobalScope()
     await waitFor(() => expect(getLastSigma()).toBeDefined())
 
@@ -310,7 +310,7 @@ describe('MemoryPanel — List⇄Graph toggle & graph view', () => {
     await Promise.resolve()
     expect(mockFetch.mock.calls.some(c => String(c[0]).startsWith('/memory/'))).toBe(false)
     // No side panel content appeared.
-    expect(screen.queryByText(/Loading/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/불러오는 중/)).not.toBeInTheDocument()
   })
 
   it('a plain clickNode (no drag) still reads the memory', async () => {
@@ -325,8 +325,8 @@ describe('MemoryPanel — List⇄Graph toggle & graph view', () => {
       return { status: 200, body: [] }
     })
     render(<MemoryPanel />)
-    await screen.findByText('No memories stored.')
-    fireEvent.click(screen.getByRole('tab', { name: /graph/i }))
+    await screen.findByText('저장된 메모리가 없습니다.')
+    fireEvent.click(screen.getByRole('tab', { name: '그래프' }))
     selectGlobalScope()
     await waitFor(() => expect(getLastSigma()).toBeDefined())
 
@@ -353,10 +353,10 @@ describe('MemoryPanel — List⇄Graph toggle & graph view', () => {
     })
     render(<MemoryPanel />)
     await screen.findByText('project-conventions')
-    fireEvent.click(screen.getByRole('tab', { name: /graph/i }))
+    fireEvent.click(screen.getByRole('tab', { name: '그래프' }))
     // Pick the project scope; the panel defaults graphScopeId from MEMORIES.
-    fireEvent.click(screen.getAllByText('All scopes')[0])
-    fireEvent.click(screen.getByRole('button', { name: 'project' }))
+    fireEvent.click(screen.getAllByText('모든 범위')[0])
+    fireEvent.click(screen.getByRole('button', { name: '프로젝트' }))
 
     await waitFor(() => expect(getLastSigma()).toBeDefined())
     // project → scope_id IS carried on the request.
@@ -374,18 +374,18 @@ describe('MemoryPanel — List⇄Graph toggle & graph view', () => {
     })
     render(<MemoryPanel />)
     await screen.findByText('project-conventions')
-    fireEvent.click(screen.getByRole('tab', { name: /graph/i }))
+    fireEvent.click(screen.getByRole('tab', { name: '그래프' }))
 
     // First select project so a scope_id ('my-proj') lands in shared state.
-    fireEvent.click(screen.getAllByText('All scopes')[0])
-    fireEvent.click(screen.getByRole('button', { name: 'project' }))
+    fireEvent.click(screen.getAllByText('모든 범위')[0])
+    fireEvent.click(screen.getByRole('button', { name: '프로젝트' }))
     await waitFor(() => expect(graphUrls.some(u => u.includes('scope=project'))).toBe(true))
     expect(graphUrls.some(u => u === '/graph/memory?scope=project&scope_id=my-proj')).toBe(true)
 
     // Now switch to global. graphScopeId ('my-proj') is still in state, but the
     // effectiveScopeId guard must OMIT it — global has no scope_id.
-    fireEvent.click(screen.getByRole('button', { name: 'project' }))
-    fireEvent.click(screen.getByRole('button', { name: 'global' }))
+    fireEvent.click(screen.getByRole('button', { name: '프로젝트' }))
+    fireEvent.click(screen.getByRole('button', { name: '전역' }))
 
     await waitFor(() => expect(graphUrls.some(u => u.includes('scope=global'))).toBe(true))
     const globalUrls = graphUrls.filter(u => u.includes('scope=global'))
@@ -405,8 +405,8 @@ describe('MemoryPanel — List⇄Graph toggle & graph view', () => {
       return Promise.resolve({ ok: true, status: 200, statusText: 'OK', json: () => Promise.resolve([]) })
     })
     render(<MemoryPanel />)
-    await screen.findByText('No memories stored.')
-    fireEvent.click(screen.getByRole('tab', { name: /graph/i }))
+    await screen.findByText('저장된 메모리가 없습니다.')
+    fireEvent.click(screen.getByRole('tab', { name: '그래프' }))
     selectGlobalScope()
 
     const errBox = await screen.findByTestId('graph-error')
@@ -426,12 +426,12 @@ describe('MemoryPanel — List⇄Graph toggle & graph view', () => {
       return Promise.resolve({ ok: true, status: 200, statusText: 'OK', json: () => Promise.resolve([]) })
     })
     render(<MemoryPanel />)
-    await screen.findByText('No memories stored.')
-    fireEvent.click(screen.getByRole('tab', { name: /graph/i }))
+    await screen.findByText('저장된 메모리가 없습니다.')
+    fireEvent.click(screen.getByRole('tab', { name: '그래프' }))
     selectGlobalScope()
 
     const errBox = await screen.findByTestId('graph-error')
-    expect(errBox.textContent).toMatch(/timed out/i)
+    expect(errBox.textContent).toMatch(/시간이 초과/)
     expect(errBox.textContent).toMatch(/:9889/)
     expect(errBox.textContent).not.toMatch(/9894/)
   })
@@ -468,16 +468,16 @@ describe('MemoryPanel — List⇄Graph toggle & graph view', () => {
 
     render(<MemoryPanel />)
     await screen.findByText('project-conventions')
-    fireEvent.click(screen.getByRole('tab', { name: /graph/i }))
+    fireEvent.click(screen.getByRole('tab', { name: '그래프' }))
 
     // Start the (slow) project fetch.
-    fireEvent.click(screen.getAllByText('All scopes')[0])
-    fireEvent.click(screen.getByRole('button', { name: 'project' }))
+    fireEvent.click(screen.getAllByText('모든 범위')[0])
+    fireEvent.click(screen.getByRole('button', { name: '프로젝트' }))
 
     // Switch to global before the project fetch resolves; global resolves first
     // and renders its graph.
-    fireEvent.click(screen.getByRole('button', { name: 'project' }))
-    fireEvent.click(screen.getByRole('button', { name: 'global' }))
+    fireEvent.click(screen.getByRole('button', { name: '프로젝트' }))
+    fireEvent.click(screen.getByRole('button', { name: '전역' }))
     await waitFor(() => expect(getLastSigma()).toBeDefined())
     const graphAfterGlobal = getLastSigma()!.graph as import('graphology').default
     expect(graphAfterGlobal.hasNode('hub1')).toBe(true)
@@ -527,14 +527,14 @@ describe('MemoryPanel — List⇄Graph toggle & graph view', () => {
 
     render(<MemoryPanel />)
     await screen.findByText('project-conventions')
-    fireEvent.click(screen.getByRole('tab', { name: /graph/i }))
+    fireEvent.click(screen.getByRole('tab', { name: '그래프' }))
 
     // Start the (slow, doomed) project fetch, then switch to global before it
     // settles. Global resolves first and renders its graph.
-    fireEvent.click(screen.getAllByText('All scopes')[0])
-    fireEvent.click(screen.getByRole('button', { name: 'project' }))
-    fireEvent.click(screen.getByRole('button', { name: 'project' }))
-    fireEvent.click(screen.getByRole('button', { name: 'global' }))
+    fireEvent.click(screen.getAllByText('모든 범위')[0])
+    fireEvent.click(screen.getByRole('button', { name: '프로젝트' }))
+    fireEvent.click(screen.getByRole('button', { name: '프로젝트' }))
+    fireEvent.click(screen.getByRole('button', { name: '전역' }))
     await waitFor(() => expect(getLastSigma()).toBeDefined())
     const graphAfterGlobal = getLastSigma()!.graph as import('graphology').default
     expect(graphAfterGlobal.hasNode('hub1')).toBe(true)
@@ -584,14 +584,14 @@ describe('MemoryPanel — List⇄Graph toggle & graph view', () => {
 
     render(<MemoryPanel />)
     await screen.findByText('project-conventions')
-    fireEvent.click(screen.getByRole('tab', { name: /graph/i }))
+    fireEvent.click(screen.getByRole('tab', { name: '그래프' }))
 
     // Start project (fetch A, loading=true), then switch to global (fetch B,
     // still pending). Both leave loading=true; the spinner is showing.
-    fireEvent.click(screen.getAllByText('All scopes')[0])
-    fireEvent.click(screen.getByRole('button', { name: 'project' }))
-    fireEvent.click(screen.getByRole('button', { name: 'project' }))
-    fireEvent.click(screen.getByRole('button', { name: 'global' }))
+    fireEvent.click(screen.getAllByText('모든 범위')[0])
+    fireEvent.click(screen.getByRole('button', { name: '프로젝트' }))
+    fireEvent.click(screen.getByRole('button', { name: '프로젝트' }))
+    fireEvent.click(screen.getByRole('button', { name: '전역' }))
     await waitFor(() => expect(screen.getByTestId('graph-loading')).toBeInTheDocument())
 
     // Settle the STALE project fetch — its finally must NOT clear loading.
@@ -615,19 +615,19 @@ describe('MemoryPanel — List⇄Graph toggle & graph view', () => {
       return { status: 200, body: [] }
     })
     render(<MemoryPanel />)
-    await screen.findByText('No memories stored.')
-    fireEvent.click(screen.getByRole('tab', { name: /graph/i }))
+    await screen.findByText('저장된 메모리가 없습니다.')
+    fireEvent.click(screen.getByRole('tab', { name: '그래프' }))
     selectGlobalScope()
     await waitFor(() => expect(getLastSigma()).toBeDefined())
 
-    fireEvent.click(screen.getByText('Export to Obsidian'))
+    fireEvent.click(screen.getByText('Obsidian으로 내보내기'))
 
     await waitFor(() => expect(useStore.getState().snackbar).toBeTruthy())
     const snack = useStore.getState().snackbar!
     expect(snack.type).toBe('error')
-    expect(snack.message).toMatch(/secret gate/i)
+    expect(snack.message).toMatch(/보안 검사/)
     // Only the server's pattern-name detail is surfaced — never content.
     expect(snack.message).toContain('aws-access-key-id')
-    expect(snack.message).toMatch(/Nothing was written/i)
+    expect(snack.message).toMatch(/파일은 작성되지 않았습니다/)
   })
 })

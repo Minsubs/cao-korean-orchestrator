@@ -75,23 +75,23 @@ export const useStore = create<Store>((set, get) => ({
   createSession: async (provider, agentProfile, workingDirectory, sessionName) => {
     try {
       await api.createSession(provider, agentProfile, sessionName, workingDirectory)
-      get().showSnackbar({ type: 'success', message: 'Session created' })
+      get().showSnackbar({ type: 'success', message: '세션을 만들었습니다' })
       await get().fetchSessions()
     } catch (e: any) {
-      get().showSnackbar({ type: 'error', message: e.message || 'Failed to create session' })
+      get().showSnackbar({ type: 'error', message: e.message || '세션을 만들지 못했습니다' })
     }
   },
 
   deleteSession: async (name) => {
     try {
       await api.deleteSession(name)
-      get().showSnackbar({ type: 'success', message: `Deleted ${name}` })
+      get().showSnackbar({ type: 'success', message: `${name} 세션을 삭제했습니다` })
       if (get().activeSession === name) {
         set({ activeSession: null, activeSessionDetail: null })
       }
       await get().fetchSessions()
     } catch (e: any) {
-      get().showSnackbar({ type: 'error', message: e.message || 'Failed to delete session' })
+      get().showSnackbar({ type: 'error', message: e.message || '세션을 삭제하지 못했습니다' })
     }
   },
 

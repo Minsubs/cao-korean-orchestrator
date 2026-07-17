@@ -19,8 +19,8 @@ export function ConfirmModal({
   title,
   message,
   details,
-  confirmLabel = 'Confirm',
-  cancelLabel = 'Cancel',
+  confirmLabel = '확인',
+  cancelLabel = '취소',
   variant = 'danger',
   loading = false,
   onConfirm,
@@ -96,7 +96,7 @@ export function ConfirmModal({
             className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-all focus:outline-none focus:ring-2 disabled:opacity-60 flex items-center gap-2 ${colors.btn}`}
           >
             {loading && <Loader2 size={14} className="animate-spin" />}
-            {loading ? 'Closing...' : confirmLabel}
+            {loading ? '처리 중...' : confirmLabel}
           </button>
         </div>
       </div>

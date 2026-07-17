@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useStore } from '../store'
 import { api, AgentProfileInfo, ProviderInfo } from '../api'
-import { Bot, Play, Trash2, ChevronRight, Terminal as TermIcon, Monitor, Package, FolderOpen, Tag, Search, Mail, Plus, LogOut, Send, FileText, X } from 'lucide-react'
+import { Bot, Play, Trash2, ChevronRight, Terminal as TermIcon, Monitor, Package, FolderOpen, Tag, Search, Mail, Plus, LogOut, Send, FileText, X, MessageCircle, Loader2 } from 'lucide-react'
 import { TerminalView } from './TerminalView'
 import { ConfirmModal } from './ConfirmModal'
 import { InboxPanel } from './InboxPanel'
@@ -9,15 +9,65 @@ import { CustomSelect, SelectOption } from './CustomSelect'
 import { TerminalMeta } from '../api'
 import { StatusBadge } from './StatusBadge'
 import { OutputViewer } from './OutputViewer'
+import { SessionChatPanel } from './SessionChatPanel'
 
 export const FALLBACK_PROVIDERS = ['kiro_cli', 'claude_code', 'q_cli', 'codex', 'gemini_cli', 'hermes', 'kimi_cli', 'copilot_cli', 'opencode_cli', 'cursor_cli']
 
 const SOURCE_LABELS: Record<string, string> = {
-  'built-in': 'Built-in',
-  'local': 'Local',
+  'built-in': '기본 제공',
+  'installed': '설치됨',
+  'custom': '사용자 지정',
+  'local': '로컬',
   'kiro': 'Kiro',
   'q_cli': 'Q CLI',
   'opencode_cli': 'OpenCode',
+}
+
+const PROFILE_DESCRIPTIONS: Record<string, string> = {
+  code_supervisor: '다중 에이전트 시스템의 코딩 오케스트레이터',
+  codex_orchestrator_sol: 'Sol 기반 다중 에이전트 오케스트레이터',
+  claude_architect_opus: '복잡한 설계와 고난도 분석을 담당하는 Opus 아키텍트',
+  claude_developer_sonnet: '구현·디버깅·테스트를 담당하는 Sonnet 개발자',
+  claude_scout_haiku: '빠른 탐색·목록화·트리아지를 담당하는 Haiku 탐색가',
+  codex_reviewer_sol: '정확성·보안·릴리스 게이트를 담당하는 Sol 최종 검토자',
+  codex_qa_terra: '테스트 실행과 회귀 검증을 담당하는 Terra QA',
+  codex_docs_luna: '문서·요약·인수인계를 담당하는 Luna 문서화 에이전트',
+  developer: '다중 에이전트 시스템의 개발자',
+  reviewer: '다중 에이전트 시스템의 코드 검토자',
+  memory_manager: '에이전트용 메모리 주입을 관리하는 컨텍스트 관리자',
+  workflow_scout: '기존 CAO 워크플로를 찾는 읽기 전용 탐색기',
+}
+
+const PROFILE_LABELS: Record<string, string> = {
+  code_supervisor: '오케스트레이터',
+  codex_orchestrator_sol: 'Sol 오케스트레이터',
+  claude_architect_opus: 'Opus 아키텍트',
+  claude_developer_sonnet: 'Sonnet 개발자',
+  claude_scout_haiku: 'Haiku 탐색가',
+  codex_reviewer_sol: 'Sol 최종 검토자',
+  codex_qa_terra: 'Terra QA',
+  codex_docs_luna: 'Luna 문서화',
+  developer: '개발자',
+  reviewer: '코드 검토자',
+  memory_manager: '메모리 관리자',
+  workflow_scout: '워크플로 탐색가',
+}
+
+function profileLabel(name: string): string {
+  return PROFILE_LABELS[name] || name.replace(/_/g, ' ')
+}
+
+const SESSION_STATUS_LABELS: Record<string, string> = {
+  active: '활성',
+  attached: '연결됨',
+  detached: '분리됨',
+  inactive: '비활성',
+  dead: '종료됨',
+  unknown: '알 수 없음',
+}
+
+function profileDescription(profile: AgentProfileInfo): string | undefined {
+  return PROFILE_DESCRIPTIONS[profile.name] || profile.description || undefined
 }
 
 export function AgentPanel() {
@@ -64,6 +114,22 @@ export function AgentPanel() {
   const { showSnackbar } = useStore()
   const [outputTerminalId, setOutputTerminalId] = useState<string | null>(null)
   const [showSpawnModal, setShowSpawnModal] = useState(false)
+  const [sessionChat, setSessionChat] = useState<{ sessionName: string; terminalId: string } | null>(null)
+  const [openingChat, setOpeningChat] = useState<string | null>(null)
+
+  const openSessionChat = async (sessionName: string) => {
+    setOpeningChat(sessionName)
+    try {
+      const detail = await api.getSession(sessionName)
+      const orchestrator = detail.terminals[0]
+      if (!orchestrator) throw new Error('오케스트레이터 터미널을 찾을 수 없습니다')
+      setSessionChat({ sessionName, terminalId: orchestrator.id })
+    } catch (error: any) {
+      showSnackbar({ type: 'error', message: error?.message || '오케스트레이터 채팅을 열지 못했습니다' })
+    } finally {
+      setOpeningChat(null)
+    }
+  }
 
   const handleDeleteTerminal = async () => {
     if (!pendingClose) return
@@ -73,9 +139,9 @@ export function AgentPanel() {
       await api.deleteTerminal(id)
       if (liveTerminal?.id === id) setLiveTerminal(null)
       if (activeSession) await selectSession(activeSession)
-      showSnackbar({ type: 'success', message: `Terminal ${id} closed — tmux window killed` })
+      showSnackbar({ type: 'success', message: `터미널 ${id}을(를) 닫고 tmux 창을 종료했습니다` })
     } catch {
-      showSnackbar({ type: 'error', message: `Failed to close terminal ${id}` })
+      showSnackbar({ type: 'error', message: `터미널 ${id}을(를) 닫지 못했습니다` })
     }
     setClosingTerminal(null)
     setPendingClose(null)
@@ -88,9 +154,9 @@ export function AgentPanel() {
     try {
       await api.exitTerminal(id)
       if (activeSession) await selectSession(activeSession)
-      showSnackbar({ type: 'success', message: `Graceful exit sent to terminal ${id}` })
+      showSnackbar({ type: 'success', message: `터미널 ${id}에 정상 종료 명령을 보냈습니다` })
     } catch {
-      showSnackbar({ type: 'error', message: `Failed to send exit to terminal ${id}` })
+      showSnackbar({ type: 'error', message: `터미널 ${id}에 종료 명령을 보내지 못했습니다` })
     }
     setExitingTerminal(null)
     setPendingExit(null)
@@ -103,9 +169,9 @@ export function AgentPanel() {
     try {
       await api.sendInput(terminalId, message)
       setSendInputValues(prev => ({ ...prev, [terminalId]: '' }))
-      showSnackbar({ type: 'success', message: `Message sent to terminal ${terminalId}` })
+      showSnackbar({ type: 'success', message: `터미널 ${terminalId}에 메시지를 보냈습니다` })
     } catch {
-      showSnackbar({ type: 'error', message: `Failed to send message to terminal ${terminalId}` })
+      showSnackbar({ type: 'error', message: `터미널 ${terminalId}에 메시지를 보내지 못했습니다` })
     }
     setSendingInput(null)
   }
@@ -177,13 +243,13 @@ export function AgentPanel() {
     setAddingAgent(true)
     try {
       await api.addTerminalToSession(activeSession, addProvider, addProfile.trim(), addWorkDir.trim() || undefined)
-      showSnackbar({ type: 'success', message: 'Agent added to session' })
+      showSnackbar({ type: 'success', message: '세션에 에이전트를 추가했습니다' })
       setShowAddAgent(false)
       setAddProfile('')
       setAddWorkDir('')
       if (activeSession) await selectSession(activeSession)
     } catch (e: any) {
-      showSnackbar({ type: 'error', message: e.message || 'Failed to add agent' })
+      showSnackbar({ type: 'error', message: e.message || '에이전트를 추가하지 못했습니다' })
     }
     setAddingAgent(false)
   }
@@ -202,7 +268,7 @@ export function AgentPanel() {
       <div className="bg-gray-800/60 border border-gray-700/50 rounded-xl p-5">
         <div className="flex items-center justify-between mb-1">
           <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">
-            Sessions ({sessions.length})
+            세션 ({sessions.length})
           </h3>
           <div className="flex items-center gap-2">
             {sessions.length > 3 && (
@@ -212,7 +278,7 @@ export function AgentPanel() {
                   type="text"
                   value={sessionSearch}
                   onChange={e => setSessionSearch(e.target.value)}
-                  placeholder="Filter sessions..."
+                  placeholder="세션 검색..."
                   className="bg-gray-900 border border-gray-700 text-gray-200 text-xs rounded-lg pl-8 pr-3 py-1.5 w-48 focus:border-emerald-500 focus:outline-none"
                 />
               </div>
@@ -222,15 +288,15 @@ export function AgentPanel() {
               className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
             >
               <Plus size={14} />
-              Spawn Agent
+              에이전트 실행
             </button>
           </div>
         </div>
         <p className="text-xs text-gray-500 mb-4">
-          A session is a workspace where agents collaborate. Each session can have multiple agents that communicate via messages. Click a session to see its agents.
+          세션은 에이전트가 협업하는 작업 공간입니다. 여러 에이전트가 메시지로 통신할 수 있습니다. 세션을 누르면 소속 에이전트를 확인할 수 있습니다.
         </p>
         {sessions.length === 0 ? (
-          <p className="text-gray-500 text-sm">No active sessions. Spawn an agent above to create one.</p>
+          <p className="text-gray-500 text-sm">활성 세션이 없습니다. 위에서 에이전트를 실행해 세션을 만드세요.</p>
         ) : (
           <div className="space-y-2">
             {sessions.filter(s => !sessionSearch || s.id.includes(sessionSearch) || s.name.includes(sessionSearch)).map(s => (
@@ -245,14 +311,24 @@ export function AgentPanel() {
                   <Bot size={16} className="text-emerald-400" />
                   <span className="text-sm text-gray-200 font-mono">{s.id}</span>
                   <span className={`text-xs px-2 py-0.5 rounded-full ${s.status === 'active' ? 'bg-emerald-900/50 text-emerald-400' : 'bg-gray-700 text-gray-400'}`}>
-                    {s.status}
+                    {SESSION_STATUS_LABELS[s.status] || s.status}
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
+                    onClick={e => { e.stopPropagation(); void openSessionChat(s.id) }}
+                    disabled={openingChat === s.id}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-emerald-400 hover:text-white bg-emerald-950/40 hover:bg-emerald-700/60 disabled:opacity-40 border border-emerald-800/40 rounded-lg transition-colors"
+                    title={`${s.id} 오케스트레이터에게 프롬프트 보내기`}
+                    aria-label={`${s.id} 오케스트레이터 채팅`}
+                  >
+                    {openingChat === s.id ? <Loader2 size={13} className="animate-spin" /> : <MessageCircle size={13} />}
+                    채팅
+                  </button>
+                  <button
                     onClick={e => { e.stopPropagation(); deleteSession(s.id) }}
                     className="p-1.5 text-gray-500 hover:text-red-400 transition-colors rounded"
-                    title="Delete session"
+                    title="세션 삭제"
                   >
                     <Trash2 size={14} />
                   </button>
@@ -269,15 +345,15 @@ export function AgentPanel() {
         <div className="bg-gray-800/60 border border-gray-700/50 rounded-xl p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">
-              Terminals in {activeSession}
+              {activeSession}의 터미널
             </h3>
             <button
               onClick={() => setShowAddAgent(!showAddAgent)}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-400 hover:text-emerald-400 bg-gray-900/50 hover:bg-gray-900 border border-gray-700/50 hover:border-emerald-700/50 rounded-lg transition-colors"
-              title="Add another agent to this session so they can collaborate"
+              title="협업할 에이전트를 이 세션에 추가"
             >
               <Plus size={14} />
-              Add Agent
+              에이전트 추가
             </button>
           </div>
 
@@ -285,34 +361,34 @@ export function AgentPanel() {
           {showAddAgent && (
             <div className="mb-4 p-4 bg-gray-900/70 border border-gray-700/50 rounded-lg space-y-3">
               <p className="text-xs text-gray-500">
-                Add another agent to this session. Agents in the same session can send messages to each other and coordinate on tasks. A supervisor can delegate work to agents you add here.
+                이 세션에 에이전트를 추가합니다. 같은 세션의 에이전트는 서로 메시지를 보내고 작업을 조율할 수 있으며, 오케스트레이터가 추가된 에이전트에게 작업을 위임할 수 있습니다.
               </p>
               <div className="flex gap-3 items-end flex-wrap">
                 <div className="min-w-[160px]">
-                  <label className="block text-xs text-gray-500 mb-1">Provider</label>
+                  <label className="block text-xs text-gray-500 mb-1">제공자</label>
                   <CustomSelect
                     value={addProvider}
                     onChange={setAddProvider}
-                    placeholder="Select provider..."
+                    placeholder="제공자 선택..."
                     options={(providers.length > 0 ? providers : FALLBACK_PROVIDERS.map(n => ({ name: n, binary: '', installed: true }))).map(p => ({
                       value: p.name,
-                      label: p.name.replace(/_/g, ' '),
-                      sublabel: !p.installed ? 'Not installed' : undefined,
+                      label: profileLabel(p.name),
+                      sublabel: !p.installed ? '설치되지 않음' : undefined,
                       disabled: !p.installed,
                     }))}
                   />
                 </div>
                 <div className="flex-1 min-w-[180px]">
-                  <label className="block text-xs text-gray-500 mb-1">Agent Profile</label>
+                  <label className="block text-xs text-gray-500 mb-1">에이전트 프로필</label>
                   {profiles.length > 0 ? (
                     <CustomSelect
                       value={addProfile}
                       onChange={setAddProfile}
-                      placeholder="Select a profile..."
+                      placeholder="프로필 선택..."
                       options={profiles.map(p => ({
                         value: p.name,
-                        label: p.name,
-                        sublabel: p.description || undefined,
+                        label: profileLabel(p.name),
+                        sublabel: profileDescription(p),
                         group: SOURCE_LABELS[p.source] || p.source,
                       }))}
                     />
@@ -321,7 +397,7 @@ export function AgentPanel() {
                       type="text"
                       value={addProfile}
                       onChange={e => setAddProfile(e.target.value)}
-                      placeholder="e.g. developer, reviewer"
+                      placeholder="예: developer, reviewer"
                       className="w-full bg-gray-900 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2.5 focus:border-emerald-500 focus:outline-none"
                     />
                   )}
@@ -332,11 +408,11 @@ export function AgentPanel() {
                   className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors"
                 >
                   <Plus size={14} />
-                  {addingAgent ? 'Adding...' : 'Add'}
+                  {addingAgent ? '추가 중...' : '추가'}
                 </button>
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Working Directory</label>
+                <label className="block text-xs text-gray-500 mb-1">작업 디렉터리</label>
                 <div className="relative">
                   <FolderOpen size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
                   <input
@@ -344,7 +420,7 @@ export function AgentPanel() {
                     value={addWorkDir}
                     onChange={e => setAddWorkDir(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleAddAgent()}
-                    placeholder="/path/to/project (optional)"
+                    placeholder="/path/to/project (선택 사항)"
                     className="w-full bg-gray-900 border border-gray-700 text-gray-200 text-sm font-mono rounded-lg pl-9 pr-3 py-2 focus:border-emerald-500 focus:outline-none"
                   />
                 </div>
@@ -361,50 +437,50 @@ export function AgentPanel() {
                     <span className="text-sm font-mono text-gray-300">{t.id}</span>
                     <StatusBadge status={terminalStatuses[t.id] || null} />
                     <span className="text-xs text-gray-500">{t.provider}</span>
-                    {t.agent_profile && <span className="text-xs text-emerald-400">{t.agent_profile}</span>}
+                    {t.agent_profile && <span className="text-xs text-emerald-400">{profileLabel(t.agent_profile)}</span>}
                   </div>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => setInboxTerminalId(t.id)}
                       className="flex items-center gap-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-xs font-medium rounded-lg transition-colors"
-                      title="View inbox"
+                      title="받은편지함 보기"
                     >
                       <Mail size={14} />
-                      Inbox
+                      받은편지함
                     </button>
                     <button
                       onClick={() => openTerminal(t.id, t.provider, t.agent_profile)}
                       className="flex items-center gap-2 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium rounded-lg transition-colors"
-                      title="Open live terminal"
+                      title="실시간 터미널 열기"
                     >
                       <Monitor size={14} />
-                      Open Terminal
+                      터미널 열기
                     </button>
                     <button
                       onClick={() => setOutputTerminalId(t.id)}
                       className="flex items-center gap-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-xs font-medium rounded-lg transition-colors"
-                      title="View output"
+                      title="출력 보기"
                     >
                       <FileText size={14} />
-                      Output
+                      출력
                     </button>
                     <button
                       onClick={() => setPendingExit(t as TerminalMeta)}
                       disabled={exitingTerminal === t.id}
                       className="flex items-center gap-2 px-3 py-1.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white text-xs font-medium rounded-lg transition-colors"
-                      title="Graceful exit"
+                      title="정상 종료"
                     >
                       <LogOut size={14} />
-                      {exitingTerminal === t.id ? 'Exiting...' : 'Graceful Exit'}
+                      {exitingTerminal === t.id ? '종료 중...' : '정상 종료'}
                     </button>
                     <button
                       onClick={() => setPendingClose(t as TerminalMeta)}
                       disabled={closingTerminal === t.id}
                       className="flex items-center gap-2 px-3 py-1.5 bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white text-xs font-medium rounded-lg transition-colors"
-                      title="Close terminal"
+                      title="터미널 닫기"
                     >
                       <Trash2 size={14} />
-                      {closingTerminal === t.id ? 'Closing...' : 'Close'}
+                      {closingTerminal === t.id ? '닫는 중...' : '닫기'}
                     </button>
                   </div>
                 </div>
@@ -421,7 +497,7 @@ export function AgentPanel() {
                     onClick={() => setSendInputOpen(prev => ({ ...prev, [t.id]: true }))}
                     className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
                   >
-                    Message agent...
+                    에이전트에게 메시지...
                   </button>
                 ) : (
                   <div className="flex items-center gap-2">
@@ -430,7 +506,7 @@ export function AgentPanel() {
                       value={sendInputValues[t.id] || ''}
                       onChange={e => setSendInputValues(prev => ({ ...prev, [t.id]: e.target.value }))}
                       onKeyDown={e => { if (e.key === 'Enter') handleSendInput(t.id) }}
-                      placeholder="Type a message..."
+                      placeholder="메시지를 입력하세요..."
                       className="flex-1 bg-gray-900 border border-gray-700 text-gray-200 text-sm font-mono rounded-lg px-3 py-1.5 focus:border-emerald-500 focus:outline-none"
                       autoFocus
                     />
@@ -440,7 +516,7 @@ export function AgentPanel() {
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-medium rounded-lg transition-colors"
                     >
                       <Send size={12} />
-                      {sendingInput === t.id ? 'Sending...' : 'Send'}
+                      {sendingInput === t.id ? '보내는 중...' : '보내기'}
                     </button>
                   </div>
                 )}
@@ -473,18 +549,26 @@ export function AgentPanel() {
         />
       )}
 
+      {sessionChat && (
+        <SessionChatPanel
+          sessionName={sessionChat.sessionName}
+          terminalId={sessionChat.terminalId}
+          onClose={() => setSessionChat(null)}
+        />
+      )}
+
       {/* Close Confirmation Modal */}
       <ConfirmModal
         open={!!pendingClose}
-        title="Close Terminal"
-        message="This will kill the tmux window and terminate the agent process. This action cannot be undone."
+        title="터미널 닫기"
+        message="tmux 창을 닫고 에이전트 프로세스를 종료합니다. 이 작업은 되돌릴 수 없습니다."
         details={pendingClose ? [
-          { label: 'Terminal ID', value: pendingClose.id },
-          { label: 'Provider', value: pendingClose.provider },
-          { label: 'Profile', value: pendingClose.agent_profile || 'none' },
-          { label: 'Session', value: pendingClose.tmux_session },
+          { label: '터미널 ID', value: pendingClose.id },
+          { label: '제공자', value: pendingClose.provider },
+          { label: '프로필', value: pendingClose.agent_profile ? profileLabel(pendingClose.agent_profile) : '없음' },
+          { label: '세션', value: pendingClose.tmux_session },
         ] : []}
-        confirmLabel="Close Terminal"
+        confirmLabel="터미널 닫기"
         variant="danger"
         loading={!!closingTerminal}
         onConfirm={handleDeleteTerminal}
@@ -494,15 +578,15 @@ export function AgentPanel() {
       {/* Graceful Exit Confirmation Modal */}
       <ConfirmModal
         open={!!pendingExit}
-        title="Graceful Exit"
-        message="This will send the provider-specific exit command (e.g., /exit). The agent will shut down gracefully."
+        title="정상 종료"
+        message="제공자별 종료 명령(예: /exit)을 보냅니다. 에이전트가 정상적으로 종료됩니다."
         details={pendingExit ? [
-          { label: 'Terminal ID', value: pendingExit.id },
-          { label: 'Provider', value: pendingExit.provider },
-          { label: 'Profile', value: pendingExit.agent_profile || 'none' },
-          { label: 'Session', value: pendingExit.tmux_session },
+          { label: '터미널 ID', value: pendingExit.id },
+          { label: '제공자', value: pendingExit.provider },
+          { label: '프로필', value: pendingExit.agent_profile ? profileLabel(pendingExit.agent_profile) : '없음' },
+          { label: '세션', value: pendingExit.tmux_session },
         ] : []}
-        confirmLabel="Send Exit"
+        confirmLabel="종료 명령 보내기"
         variant="warning"
         loading={!!exitingTerminal}
         onConfirm={handleExitTerminal}
@@ -517,9 +601,9 @@ export function AgentPanel() {
             {/* Modal header */}
             <div className="flex items-center justify-between p-5 border-b border-gray-700/50">
               <div>
-                <h3 className="text-base font-semibold text-gray-200">Spawn Agent</h3>
+                <h3 className="text-base font-semibold text-gray-200">에이전트 실행</h3>
                 <p className="text-xs text-gray-500 mt-1">
-                  Launch a new AI agent in its own isolated tmux session.
+                  새로운 AI 에이전트를 독립된 tmux 세션에서 실행합니다.
                 </p>
               </div>
               <button
@@ -533,33 +617,33 @@ export function AgentPanel() {
             {/* Modal body */}
             <div className="p-5 space-y-4">
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Provider</label>
+                <label className="block text-xs text-gray-500 mb-1">제공자</label>
                 <CustomSelect
                   value={provider}
                   onChange={setProvider}
-                  placeholder="Select provider..."
+                  placeholder="제공자 선택..."
                   options={(providers.length > 0 ? providers : FALLBACK_PROVIDERS.map(n => ({ name: n, binary: '', installed: true }))).map(p => ({
                     value: p.name,
-                    label: p.name.replace(/_/g, ' '),
-                    sublabel: !p.installed ? 'Not installed' : undefined,
+                    label: profileLabel(p.name),
+                    sublabel: !p.installed ? '설치되지 않음' : undefined,
                     disabled: !p.installed,
                   }))}
                 />
               </div>
 
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Agent Profile</label>
+                <label className="block text-xs text-gray-500 mb-1">에이전트 프로필</label>
                 {loadingProfiles ? (
-                  <div className="bg-gray-900 border border-gray-700 text-gray-500 text-sm rounded-lg px-3 py-2.5">Loading profiles...</div>
+                  <div className="bg-gray-900 border border-gray-700 text-gray-500 text-sm rounded-lg px-3 py-2.5">프로필 불러오는 중...</div>
                 ) : profiles.length > 0 ? (
                   <CustomSelect
                     value={profile}
                     onChange={setProfile}
-                    placeholder="Select a profile..."
+                    placeholder="프로필 선택..."
                     options={profiles.map(p => ({
                       value: p.name,
-                      label: p.name,
-                      sublabel: p.description || undefined,
+                      label: profileLabel(p.name),
+                      sublabel: profileDescription(p),
                       group: SOURCE_LABELS[p.source] || p.source,
                     }))}
                   />
@@ -568,14 +652,14 @@ export function AgentPanel() {
                     type="text"
                     value={profile}
                     onChange={e => setProfile(e.target.value)}
-                    placeholder="e.g. developer, reviewer"
+                    placeholder="예: developer, reviewer"
                     className="w-full bg-gray-900 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2.5 focus:border-emerald-500 focus:outline-none"
                   />
                 )}
               </div>
 
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Session Name <span className="text-gray-600">(optional)</span></label>
+                <label className="block text-xs text-gray-500 mb-1">세션 이름 <span className="text-gray-600">(선택 사항)</span></label>
                 <div className="relative">
                   <Tag size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
                   <input
@@ -583,14 +667,14 @@ export function AgentPanel() {
                     value={sessionName}
                     onChange={e => setSessionName(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleCreate()}
-                    placeholder="my-session (or a random id like cao-a1b2c3d4)"
+                    placeholder="my-session (비우면 cao-a1b2c3d4 같은 임의 ID 사용)"
                     className="w-full bg-gray-900 border border-gray-700 text-gray-200 text-sm rounded-lg pl-9 pr-3 py-2.5 focus:border-emerald-500 focus:outline-none"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Working Directory <span className="text-gray-600">(optional)</span></label>
+                <label className="block text-xs text-gray-500 mb-1">작업 디렉터리 <span className="text-gray-600">(선택 사항)</span></label>
                 <div className="relative">
                   <FolderOpen size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
                   <input
@@ -598,7 +682,7 @@ export function AgentPanel() {
                     value={workingDirectory}
                     onChange={e => setWorkingDirectory(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleCreate()}
-                    placeholder="/path/to/project (defaults to home)"
+                    placeholder="/path/to/project (기본값: 홈 디렉터리)"
                     className="w-full bg-gray-900 border border-gray-700 text-gray-200 text-sm font-mono rounded-lg pl-9 pr-3 py-2.5 focus:border-emerald-500 focus:outline-none"
                   />
                 </div>
@@ -607,7 +691,7 @@ export function AgentPanel() {
               {/* Quick-pick profiles */}
               {profiles.length > 0 && (
                 <div>
-                  <label className="block text-xs text-gray-500 mb-2">Quick pick</label>
+                  <label className="block text-xs text-gray-500 mb-2">빠른 선택</label>
                   <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto">
                     {profiles.slice(0, 12).map(p => (
                       <button
@@ -619,7 +703,7 @@ export function AgentPanel() {
                             : 'bg-gray-900/50 border-gray-700/30 hover:bg-gray-800/80 text-gray-300'
                         }`}
                       >
-                        <span className="font-medium">{p.name}</span>
+                        <span className="font-medium">{profileLabel(p.name)}</span>
                         <span className="text-[10px] text-gray-600 ml-1.5">{SOURCE_LABELS[p.source] || p.source}</span>
                       </button>
                     ))}
@@ -634,7 +718,7 @@ export function AgentPanel() {
                 onClick={() => setShowSpawnModal(false)}
                 className="px-4 py-2 text-sm text-gray-400 hover:text-gray-200 transition-colors"
               >
-                Cancel
+                취소
               </button>
               <button
                 onClick={handleCreate}
@@ -642,7 +726,7 @@ export function AgentPanel() {
                 className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors"
               >
                 <Play size={14} />
-                {creating ? 'Spawning...' : 'Spawn Agent'}
+                {creating ? '실행 중...' : '에이전트 실행'}
               </button>
             </div>
           </div>

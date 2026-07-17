@@ -61,7 +61,7 @@ export function TerminalView({ terminalId, provider, agentProfile, onClose }: Te
     }
 
     ws.onclose = () => {
-      term.write('\r\n\x1b[33m[Connection closed]\x1b[0m\r\n')
+      term.write('\r\n\x1b[33m[연결이 종료되었습니다]\x1b[0m\r\n')
     }
 
     // Copy selection to clipboard on mouse-up
@@ -130,11 +130,11 @@ export function TerminalView({ terminalId, provider, agentProfile, onClose }: Te
           {agentProfile && <span className="text-xs text-emerald-400 bg-emerald-900/30 px-2 py-0.5 rounded">{agentProfile}</span>}
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-[10px] text-gray-600">Click X to close</span>
+          <span className="text-[10px] text-gray-600">X를 눌러 닫기</span>
           <button
             onClick={onClose}
             className="p-1 text-gray-500 hover:text-white transition-colors rounded"
-            title="Close terminal"
+            title="터미널 닫기"
           >
             <X size={18} />
           </button>

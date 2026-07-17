@@ -549,6 +549,46 @@ class TestCodexProviderCodexProfile:
         assert "--profile" not in command
 
 
+class TestCodexProviderExplicitPermissionPolicy:
+    """Explicit role policies avoid prompts without falling back to YOLO."""
+
+    @patch("cli_agent_orchestrator.providers.codex.load_agent_profile")
+    def test_read_only_orchestrator_uses_on_request(self, mock_load):
+        profile = MagicMock()
+        profile.model = None
+        profile.system_prompt = None
+        profile.mcpServers = None
+        profile.codexProfile = None
+        profile.codexApprovalPolicy = "on-request"
+        profile.codexSandbox = "read-only"
+        profile.codexConfig = None
+        mock_load.return_value = profile
+
+        command = CodexProvider("tid", "sess", "win", "agent")._build_codex_command()
+
+        assert "--ask-for-approval on-request" in command
+        assert "--sandbox read-only" in command
+        assert "--yolo" not in command
+
+    @patch("cli_agent_orchestrator.providers.codex.load_agent_profile")
+    def test_workspace_worker_uses_never(self, mock_load):
+        profile = MagicMock()
+        profile.model = None
+        profile.system_prompt = None
+        profile.mcpServers = None
+        profile.codexProfile = None
+        profile.codexApprovalPolicy = "never"
+        profile.codexSandbox = "workspace-write"
+        profile.codexConfig = None
+        mock_load.return_value = profile
+
+        command = CodexProvider("tid", "sess", "win", "agent")._build_codex_command()
+
+        assert "--ask-for-approval never" in command
+        assert "--sandbox workspace-write" in command
+        assert "--yolo" not in command
+
+
 class TestTomlScalar:
     """Tests for ``_toml_scalar`` TOML-literal serialization."""
 

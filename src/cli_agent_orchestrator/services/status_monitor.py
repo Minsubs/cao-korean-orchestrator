@@ -500,6 +500,24 @@ class StatusMonitor:
             logger.error(f"Error detecting status for {terminal_id}: {e}")
             return TerminalStatus.UNKNOWN
 
+    def restore_snapshot(self, terminal_id: str, snapshot: str) -> TerminalStatus:
+        """Seed status from a live pane snapshot after a server restart.
+
+        FIFO pipe-pane only forwards future output. Existing idle terminals may
+        therefore remain UNKNOWN forever after a restart unless their current
+        rendered pane is inspected once. This method primes the rolling buffer
+        and publishes the detected status without replaying historical output
+        through LogWriter or other output consumers.
+        """
+        with self._lock:
+            self._buffers[terminal_id] = snapshot[-STATE_BUFFER_MAX:]
+            self._last_status.pop(terminal_id, None)
+            self._allow_processing_revert.pop(terminal_id, None)
+
+        detected = self._detect_status(terminal_id, self._buffers[terminal_id])
+        self._apply_detection(terminal_id, detected)
+        return detected
+
     def clear_terminal(self, terminal_id: str) -> None:
         """Free buffer and status for a deleted terminal."""
         with self._lock:

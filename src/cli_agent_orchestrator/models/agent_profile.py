@@ -4,7 +4,16 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-PermissionMode = Literal["default", "acceptEdits", "plan", "auto", "bypassPermissions"]
+PermissionMode = Literal[
+    "default",
+    "acceptEdits",
+    "plan",
+    "auto",
+    "bypassPermissions",
+    "dontAsk",
+]
+CodexApprovalPolicy = Literal["untrusted", "on-request", "never"]
+CodexSandbox = Literal["read-only", "workspace-write", "danger-full-access"]
 
 
 class McpServer(BaseModel):
@@ -77,6 +86,13 @@ class AgentProfile(BaseModel):
     # empty string from silently degrading to --yolo, since this is a
     # permission-floor knob.
     codexProfile: Optional[str] = Field(default=None, min_length=1)
+
+    # Codex-only. Explicit headless approval and sandbox policy. When both are
+    # absent CAO preserves the legacy --yolo launch behavior; role profiles can
+    # opt into a no-prompt but sandboxed worker, or an approval-gated read-only
+    # orchestrator, without requiring a named ~/.codex profile.
+    codexApprovalPolicy: Optional[CodexApprovalPolicy] = None
+    codexSandbox: Optional[CodexSandbox] = None
 
     # Codex-only. Inline Codex config overrides passed as `-c key=value` at
     # launch (e.g. {"model_reasoning_effort": "xhigh", "service_tier": "fast",
