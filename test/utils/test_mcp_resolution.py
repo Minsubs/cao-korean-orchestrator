@@ -1,7 +1,11 @@
 """Unit tests for cao-mcp-server command resolution."""
 
+from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
+from cli_agent_orchestrator.utils import mcp_resolution
 from cli_agent_orchestrator.utils.mcp_resolution import (
     CAO_MCP_SERVER_MODULE,
     resolve_cao_mcp_command,
@@ -67,6 +71,7 @@ class TestArgsPreservation:
     def test_script_resolution_preserves_args(self):
         with (
             patch(f"{MOD}._sibling_script", return_value="/venv/bin/cao-mcp-server"),
+            patch(f"{MOD}._sibling_environment_can_import_server", return_value=True),
             patch(f"{MOD}.shutil.which", return_value=None),
         ):
             cmd, args = resolve_cao_mcp_command("cao-mcp-server", ["--log-level", "debug"])
@@ -101,6 +106,7 @@ class TestRuntimeResolution:
     def test_prefers_sibling_over_path(self):
         with (
             patch(f"{MOD}._sibling_script", return_value="/venv/bin/cao-mcp-server"),
+            patch(f"{MOD}._sibling_environment_can_import_server", return_value=True),
             patch(f"{MOD}.shutil.which", return_value="/usr/local/bin/cao-mcp-server"),
         ):
             cmd, args = resolve_cao_mcp_command("cao-mcp-server", [])
@@ -115,6 +121,76 @@ class TestRuntimeResolution:
             cmd, args = resolve_cao_mcp_command("cao-mcp-server", [])
         assert cmd == "/usr/local/bin/cao-mcp-server"
         assert args == []
+
+    def test_falls_back_to_path_when_sibling_environment_cannot_import_server(self):
+        """An existing but broken sibling launcher must not disable orchestration."""
+        with (
+            patch(f"{MOD}._sibling_script", return_value="/venv/bin/cao-mcp-server"),
+            patch(f"{MOD}._sibling_environment_can_import_server", return_value=False),
+            patch(
+                f"{MOD}.shutil.which",
+                return_value="/usr/local/bin/cao-mcp-server",
+            ),
+        ):
+            cmd, args = resolve_cao_mcp_command("cao-mcp-server", [])
+        assert cmd == "/usr/local/bin/cao-mcp-server"
+        assert args == []
+
+    def test_skips_same_broken_sibling_returned_by_path(self):
+        """An activated venv must not reselect its broken sibling through PATH."""
+        with (
+            patch(f"{MOD}._sibling_script", return_value="/venv/bin/cao-mcp-server"),
+            patch(f"{MOD}._sibling_environment_can_import_server", return_value=False),
+            patch(
+                f"{MOD}.shutil.which",
+                side_effect=[
+                    "/venv/bin/cao-mcp-server",
+                    "/usr/local/bin/cao-mcp-server",
+                ],
+            ),
+        ):
+            cmd, args = resolve_cao_mcp_command("cao-mcp-server", [])
+        assert cmd == "/usr/local/bin/cao-mcp-server"
+        assert args == []
+
+    def test_broken_sibling_without_alternate_uses_isolated_source_bootstrap(self):
+        """Never fall back to a `python -m` import already proven impossible."""
+        with (
+            patch(f"{MOD}._sibling_script", return_value="/venv/bin/cao-mcp-server"),
+            patch(f"{MOD}._sibling_environment_can_import_server", return_value=False),
+            patch(f"{MOD}.shutil.which", side_effect=["/venv/bin/cao-mcp-server", None]),
+            patch(f"{MOD}.sys") as mock_sys,
+        ):
+            mock_sys.executable = "/venv/bin/python"
+            cmd, args = resolve_cao_mcp_command("cao-mcp-server", ["--flag"])
+
+        assert cmd == "/venv/bin/python"
+        assert args[:2] == ["-I", "-c"]
+        assert "sys.path.insert" in args[2]
+        assert f"from {CAO_MCP_SERVER_MODULE} import main" in args[2]
+        assert args[3:] == ["--flag"]
+
+    def test_import_probe_ignores_shadow_package_in_working_directory(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The health probe must not execute a workspace-shadowed CAO package."""
+        shadow = tmp_path / "cli_agent_orchestrator" / "mcp_server"
+        shadow.mkdir(parents=True)
+        (tmp_path / "cli_agent_orchestrator" / "__init__.py").write_text("")
+        (shadow / "__init__.py").write_text("")
+        marker = tmp_path / "shadow-imported"
+        (shadow / "server.py").write_text(
+            f"from pathlib import Path\nPath({str(marker)!r}).write_text('executed')\n"
+        )
+
+        monkeypatch.chdir(tmp_path)
+        mcp_resolution._sibling_environment_can_import_server.cache_clear()
+        try:
+            mcp_resolution._sibling_environment_can_import_server()
+        finally:
+            mcp_resolution._sibling_environment_can_import_server.cache_clear()
+
+        assert not marker.exists()
 
     def test_falls_back_to_module_entrypoint(self):
         """No sibling, nothing on PATH → run the module via the interpreter."""
@@ -157,6 +233,7 @@ class TestPersistedResolution:
     def test_falls_back_to_sibling_when_not_on_path(self):
         with (
             patch(f"{MOD}._sibling_script", return_value="/versioned/venv/bin/cao-mcp-server"),
+            patch(f"{MOD}._sibling_environment_can_import_server", return_value=True),
             patch(f"{MOD}.shutil.which", return_value=None),
         ):
             cmd, args = resolve_cao_mcp_command("cao-mcp-server", [], persisted=True)

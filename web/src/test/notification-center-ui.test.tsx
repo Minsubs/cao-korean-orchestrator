@@ -10,7 +10,8 @@ describe('notification center UI', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '알림 센터 열기' }))
 
-    expect(screen.getByRole('dialog', { name: '알림 센터' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: '알림 센터' })).toHaveClass('bg-[var(--surface)]')
+    expect(screen.getByRole('dialog', { name: '알림 센터' })).not.toHaveClass('bg-gray-900')
     expect(screen.getByText('아직 알림이 없습니다.')).toBeInTheDocument()
     expect(screen.getByText('앱 내 알림 내역은 항상 저장됩니다.')).toBeInTheDocument()
   })
@@ -41,6 +42,32 @@ describe('notification center UI', () => {
     })
 
     expect(screen.getByText('정체 감지 — sonnet 출력 없음')).toBeInTheDocument()
+  })
+
+  it('shows the exact session and agent for a completed worker', () => {
+    render(<NotificationCenter sessions={[]} />)
+    fireEvent.click(screen.getByRole('button', { name: '알림 센터 열기' }))
+
+    act(() => {
+      emitWorkspaceAlert(
+        'completed',
+        'login-fix · 테스트 담당 작업 완료',
+        '테스트 담당의 작업이 끝났습니다.',
+        'worker01',
+        'cao-login-fix',
+        'codex_qa_terra',
+      )
+    })
+
+    expect(screen.getByText('login-fix · 테스트 담당', { exact: true })).toBeInTheDocument()
+    expect(screen.getByText('작업 완료', { exact: true })).toBeInTheDocument()
+    const stored = JSON.parse(window.localStorage.getItem('cao:notifications:history:v1') || '[]')
+    expect(stored[0]).toMatchObject({
+      kind: 'completed',
+      terminalId: 'worker01',
+      sessionName: 'cao-login-fix',
+      agentName: 'codex_qa_terra',
+    })
   })
 
   it('does not throw when an alert is emitted with no NotificationCenter mounted', () => {

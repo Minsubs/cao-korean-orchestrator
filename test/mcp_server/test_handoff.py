@@ -345,6 +345,7 @@ class TestHandoffContextPropagation:
         assert payload["session_name"] == "cao-supervisor-1"
         assert payload["caller_id"] == "sup-abc"
         assert payload["allowed_tools"] == ["fs_read", "fs_write"]
+        assert payload["orchestration_type"] == "handoff"
 
     @patch("cli_agent_orchestrator.mcp_server.server._get_cleanup_nudge", return_value="")
     @patch("cli_agent_orchestrator.mcp_server.server._resolve_handoff_provider")

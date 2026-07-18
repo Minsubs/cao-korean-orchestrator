@@ -23,8 +23,11 @@ server, or an explicit absolute path) passes through unchanged.
 """
 
 import logging
+import os
 import shutil
+import subprocess
 import sys
+from functools import lru_cache
 from pathlib import Path
 from typing import List, Tuple
 
@@ -50,6 +53,45 @@ def _sibling_script() -> str:
         return ""
     sibling = Path(sys.executable).with_name(_SCRIPT_FILENAME)
     return str(sibling) if sibling.exists() else ""
+
+
+@lru_cache(maxsize=1)
+def _sibling_environment_can_import_server() -> bool:
+    """Return whether a fresh sibling interpreter can import the MCP server."""
+    if not sys.executable:
+        return False
+    try:
+        result = subprocess.run(
+            [sys.executable, "-I", "-c", f"import {CAO_MCP_SERVER_MODULE}"],
+            check=False,
+            cwd=str(Path(sys.executable).resolve().parent),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
+
+
+def _same_launcher(left: str, right: str) -> bool:
+    """Compare launcher paths without requiring either path to keep existing."""
+    if not left or not right:
+        return False
+    return Path(left).resolve(strict=False) == Path(right).resolve(strict=False)
+
+
+def _path_script_excluding(excluded: str) -> str:
+    """Find the next PATH launcher after excluding a broken sibling directory."""
+    excluded_dir = Path(excluded).resolve(strict=False).parent
+    path_entries = [
+        entry
+        for entry in os.environ.get("PATH", "").split(os.pathsep)
+        if entry and Path(entry).resolve(strict=False) != excluded_dir
+    ]
+    candidate = shutil.which(CAO_MCP_SERVER_COMMAND, path=os.pathsep.join(path_entries)) or ""
+    return "" if _same_launcher(candidate, excluded) else candidate
 
 
 def resolve_cao_mcp_command(
@@ -89,6 +131,9 @@ def resolve_cao_mcp_command(
 
     sibling = _sibling_script()
     on_path = shutil.which(CAO_MCP_SERVER_COMMAND)
+    sibling_usable = not sibling or _sibling_environment_can_import_server()
+    if sibling and not sibling_usable and on_path and _same_launcher(on_path, sibling):
+        on_path = _path_script_excluding(sibling)
     order = (
         [("PATH", on_path), ("sibling", sibling)]
         if persisted
@@ -98,9 +143,33 @@ def resolve_cao_mcp_command(
         ]
     )
     for label, candidate in order:
+        if label == "sibling" and candidate and not sibling_usable:
+            logger.warning(
+                "Skipping unusable interpreter-sibling %s: fresh interpreter cannot import %s",
+                candidate,
+                CAO_MCP_SERVER_MODULE,
+            )
+            continue
         if candidate:
             logger.debug("Resolved %s via %s: %s", command, label, candidate)
             return candidate, list(args)
+
+    if sibling and not sibling_usable and sys.executable:
+        # The server itself may be running from a source checkout supplied on
+        # its original sys.path even though the sibling interpreter's editable
+        # .pth is broken/hidden. Bootstrap from this already-loaded module's
+        # trusted source root under isolated mode instead of returning the same
+        # interpreter with a `-m` invocation we just proved cannot import.
+        source_root = str(Path(__file__).resolve().parents[2])
+        bootstrap = (
+            f"import sys; sys.path.insert(0, {source_root!r}); "
+            f"from {CAO_MCP_SERVER_MODULE} import main; main()"
+        )
+        logger.warning(
+            "Using isolated source bootstrap for %s because no working launcher was found",
+            command,
+        )
+        return sys.executable, ["-I", "-c", bootstrap, *args]
 
     # Module entrypoint via the current interpreter — runnable without any
     # console script on PATH. Falls back to a bare ``python3`` only if

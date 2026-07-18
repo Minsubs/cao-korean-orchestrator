@@ -124,6 +124,8 @@ export function installAgentProfileContent(
 export interface AgentProfileInfoWithModel extends AgentProfileInfo {
   provider: string | null
   model: string | null
+  ui_role?: string | null
+  specialty?: string | null
 }
 
 // ── Session/terminal creation with an *optional* provider (feedback #1) ────

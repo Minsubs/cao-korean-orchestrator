@@ -85,6 +85,8 @@ describe('ConfirmModal', () => {
     expect(screen.getByText('Are you sure?')).toBeInTheDocument()
     expect(screen.getByText('Delete')).toBeInTheDocument()
     expect(screen.getByText('취소')).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Delete Item' }).innerHTML).toContain('bg-[var(--surface)]')
+    expect(screen.getByRole('dialog', { name: 'Delete Item' }).innerHTML).not.toContain('bg-gray-900')
   })
 
   it('does not render when closed', () => {

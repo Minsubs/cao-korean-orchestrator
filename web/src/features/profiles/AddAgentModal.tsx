@@ -95,7 +95,7 @@ export function AddAgentModal({ onClose, onInstalled }: AddAgentModalProps) {
         if (firstInstalled) setProvider(firstInstalled.name)
         else if (visible[0]) setProvider(visible[0].name)
       })
-      .catch(() => setProvidersError('Provider 목록을 불러오지 못했어요 — 기본값(claude_code)으로 진행해요'))
+      .catch(() => setProvidersError('실행 AI 목록을 불러오지 못했어요 — 기본값(Claude Code)으로 진행해요'))
     loadCatalog()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -142,7 +142,7 @@ export function AddAgentModal({ onClose, onInstalled }: AddAgentModalProps) {
   const canSubmit =
     nameValid && effectiveSpecialtyName.length > 0 && description.trim().length > 0 && provider.length > 0 && effectiveModel.length > 0
 
-  function handleCreate() {
+  async function handleCreate() {
     if (!canSubmit) return
     const built = buildProfileMarkdown({
       name: name.trim(),
@@ -153,6 +153,7 @@ export function AddAgentModal({ onClose, onInstalled }: AddAgentModalProps) {
       model: effectiveModel,
     })
     setResult(built)
+    await installBuilt(built)
   }
 
   function handleDownload() {
@@ -171,24 +172,30 @@ export function AddAgentModal({ onClose, onInstalled }: AddAgentModalProps) {
   const [installing, setInstalling] = useState(false)
   const [installed, setInstalled] = useState(false)
 
-  async function handleInstall() {
-    if (!result || installing) return
+  async function installBuilt(built: BuiltProfile) {
+    if (installing) return
     setInstalling(true)
     try {
       await apiProfiles.installAgentProfileContent({
         name: name.trim(),
-        content: result.markdown,
+        content: built.markdown,
         provider,
       })
       setInstalled(true)
       showSnackbar({ type: 'success', message: `${name.trim()} 프로필을 설치했어요 — 새 세션부터 사용할 수 있어요` })
       onInstalled?.()
+      onClose()
     } catch (e) {
       const detail = (e as { detail?: string; message?: string })
       showSnackbar({ type: 'error', message: detail.detail || detail.message || '프로필을 설치하지 못했어요' })
     } finally {
       setInstalling(false)
     }
+  }
+
+  async function handleInstall() {
+    if (!result) return
+    await installBuilt(result)
   }
 
   async function handleCopyCommand() {
@@ -243,7 +250,7 @@ export function AddAgentModal({ onClose, onInstalled }: AddAgentModalProps) {
                     className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-2 text-xs text-[var(--text)] outline-none focus:border-[var(--accent)]"
                   />
                   <div className="mt-1 text-[10.5px] text-[var(--text-3)]">
-                    파일: <span className="font-mono">~/.aws/cli-agent-orchestrator/agents/{name.trim() || '<이름>'}.md</span>
+                    설치 위치: <span className="font-mono">~/.aws/cli-agent-orchestrator/agent-store/{name.trim() || '<이름>'}.md</span>
                     {!nameValid && name.length > 0 && (
                       <span className="ml-1 text-[var(--danger)]">영문/숫자/-/_ 1~64자만 사용할 수 있어요</span>
                     )}
@@ -349,8 +356,8 @@ export function AddAgentModal({ onClose, onInstalled }: AddAgentModalProps) {
               </div>
 
               <div>
-                <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-[var(--text-3)]">Provider</div>
-                <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Provider">
+                <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-[var(--text-3)]">실행 AI</div>
+                <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="실행 AI">
                   {visibleProviders.map(p => (
                     <button
                       key={p.name}
@@ -439,7 +446,7 @@ export function AddAgentModal({ onClose, onInstalled }: AddAgentModalProps) {
               </div>
               <div className="flex items-start gap-2 rounded-xl bg-[var(--surface-2)] px-3 py-2 text-[11px] leading-relaxed text-[var(--text-2)]">
                 <Key size={13} className="mt-0.5 shrink-0" />
-                <span>만든 에이전트는 다운로드한 파일을 설치 명령으로 등록한 뒤, 새 세션부터 사용할 수 있어요. 실행 중 세션에는 영향이 없어요.</span>
+                <span>에이전트 만들기를 누르면 이 서버에 바로 설치되고 목록에 추가돼요. 실행 중 세션에는 영향이 없어요.</span>
               </div>
             </div>
 
@@ -449,7 +456,7 @@ export function AddAgentModal({ onClose, onInstalled }: AddAgentModalProps) {
               </button>
               <button
                 type="button"
-                onClick={handleCreate}
+                onClick={() => void handleCreate()}
                 disabled={!canSubmit}
                 className="flex h-8 items-center gap-1.5 rounded-full bg-[var(--accent)] px-3 text-xs font-semibold text-[var(--on-accent)] disabled:opacity-40"
               >
@@ -491,7 +498,7 @@ function ResultStep({
     <div className="px-4 py-4">
       <div className="flex items-start gap-2 rounded-xl bg-[var(--success-bg)] px-3 py-2.5 text-xs leading-relaxed text-[var(--success)]">
         <Sparkles size={14} className="mt-0.5 shrink-0" />
-        <span>프로필 파일을 만들었어요. 바로 설치하거나, 파일로 내려받아 직접 설치할 수도 있어요.</span>
+        <span>{installing ? '프로필을 이 서버에 설치하고 있어요.' : installed ? '프로필을 설치했어요.' : '설치하지 못했어요. 다시 시도하거나 파일로 내려받을 수 있어요.'}</span>
       </div>
 
       <div className="mt-4">
@@ -532,7 +539,7 @@ function ResultStep({
             {copied ? '복사됨' : '복사'}
           </button>
         </div>
-        <p className="mt-1.5 text-[10.5px] text-[var(--text-3)]">provider: {provider} · 설치 후 새 세션부터 이 에이전트를 사용할 수 있어요.</p>
+        <p className="mt-1.5 text-[10.5px] text-[var(--text-3)]">실행 AI: {providerLabel(provider)} · 설치 후 새 세션부터 이 에이전트를 사용할 수 있어요.</p>
       </div>
 
       <div className="mt-4">

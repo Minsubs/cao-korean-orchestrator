@@ -10,52 +10,15 @@ import { TerminalMeta } from '../api'
 import { StatusBadge } from './StatusBadge'
 import { OutputViewer } from './OutputViewer'
 import { SessionChatPanel } from './SessionChatPanel'
+import {
+  isOrchestratorProfile,
+  profileDescription,
+  profileLabel,
+  profileSectionLabel,
+} from '../features/profiles/profilePresentation'
+import { providerLabel } from '../features/profiles/roleData'
 
 export const FALLBACK_PROVIDERS = ['kiro_cli', 'claude_code', 'q_cli', 'codex', 'gemini_cli', 'hermes', 'kimi_cli', 'copilot_cli', 'opencode_cli', 'cursor_cli']
-
-const SOURCE_LABELS: Record<string, string> = {
-  'built-in': '기본 제공',
-  'installed': '설치됨',
-  'custom': '사용자 지정',
-  'local': '로컬',
-  'kiro': 'Kiro',
-  'q_cli': 'Q CLI',
-  'opencode_cli': 'OpenCode',
-}
-
-const PROFILE_DESCRIPTIONS: Record<string, string> = {
-  code_supervisor: '다중 에이전트 시스템의 코딩 오케스트레이터',
-  codex_orchestrator_sol: 'Sol 기반 다중 에이전트 오케스트레이터',
-  claude_architect_opus: '복잡한 설계와 고난도 분석을 담당하는 Opus 아키텍트',
-  claude_developer_sonnet: '구현·디버깅·테스트를 담당하는 Sonnet 개발자',
-  claude_scout_haiku: '빠른 탐색·목록화·트리아지를 담당하는 Haiku 탐색가',
-  codex_reviewer_sol: '정확성·보안·릴리스 게이트를 담당하는 Sol 최종 검토자',
-  codex_qa_terra: '테스트 실행과 회귀 검증을 담당하는 Terra QA',
-  codex_docs_luna: '문서·요약·인수인계를 담당하는 Luna 문서화 에이전트',
-  developer: '다중 에이전트 시스템의 개발자',
-  reviewer: '다중 에이전트 시스템의 코드 검토자',
-  memory_manager: '에이전트용 메모리 주입을 관리하는 컨텍스트 관리자',
-  workflow_scout: '기존 CAO 워크플로를 찾는 읽기 전용 탐색기',
-}
-
-const PROFILE_LABELS: Record<string, string> = {
-  code_supervisor: '오케스트레이터',
-  codex_orchestrator_sol: 'Sol 오케스트레이터',
-  claude_architect_opus: 'Opus 아키텍트',
-  claude_developer_sonnet: 'Sonnet 개발자',
-  claude_scout_haiku: 'Haiku 탐색가',
-  codex_reviewer_sol: 'Sol 최종 검토자',
-  codex_qa_terra: 'Terra QA',
-  codex_docs_luna: 'Luna 문서화',
-  developer: '개발자',
-  reviewer: '코드 검토자',
-  memory_manager: '메모리 관리자',
-  workflow_scout: '워크플로 탐색가',
-}
-
-function profileLabel(name: string): string {
-  return PROFILE_LABELS[name] || name.replace(/_/g, ' ')
-}
 
 const SESSION_STATUS_LABELS: Record<string, string> = {
   active: '활성',
@@ -64,10 +27,6 @@ const SESSION_STATUS_LABELS: Record<string, string> = {
   inactive: '비활성',
   dead: '종료됨',
   unknown: '알 수 없음',
-}
-
-function profileDescription(profile: AgentProfileInfo): string | undefined {
-  return PROFILE_DESCRIPTIONS[profile.name] || profile.description || undefined
 }
 
 export function AgentPanel() {
@@ -372,7 +331,7 @@ export function AgentPanel() {
                     placeholder="제공자 선택..."
                     options={(providers.length > 0 ? providers : FALLBACK_PROVIDERS.map(n => ({ name: n, binary: '', installed: true }))).map(p => ({
                       value: p.name,
-                      label: profileLabel(p.name),
+                      label: providerLabel(p.name),
                       sublabel: !p.installed ? '설치되지 않음' : undefined,
                       disabled: !p.installed,
                     }))}
@@ -385,11 +344,11 @@ export function AgentPanel() {
                       value={addProfile}
                       onChange={setAddProfile}
                       placeholder="프로필 선택..."
-                      options={profiles.map(p => ({
+                      options={profiles.filter(p => !isOrchestratorProfile(p.name)).map(p => ({
                         value: p.name,
                         label: profileLabel(p.name),
                         sublabel: profileDescription(p),
-                        group: SOURCE_LABELS[p.source] || p.source,
+                        group: profileSectionLabel(p),
                       }))}
                     />
                   ) : (
@@ -624,7 +583,7 @@ export function AgentPanel() {
                   placeholder="제공자 선택..."
                   options={(providers.length > 0 ? providers : FALLBACK_PROVIDERS.map(n => ({ name: n, binary: '', installed: true }))).map(p => ({
                     value: p.name,
-                    label: profileLabel(p.name),
+                    label: providerLabel(p.name),
                     sublabel: !p.installed ? '설치되지 않음' : undefined,
                     disabled: !p.installed,
                   }))}
@@ -644,7 +603,7 @@ export function AgentPanel() {
                       value: p.name,
                       label: profileLabel(p.name),
                       sublabel: profileDescription(p),
-                      group: SOURCE_LABELS[p.source] || p.source,
+                      group: profileSectionLabel(p),
                     }))}
                   />
                 ) : (
@@ -704,7 +663,7 @@ export function AgentPanel() {
                         }`}
                       >
                         <span className="font-medium">{profileLabel(p.name)}</span>
-                        <span className="text-[10px] text-gray-600 ml-1.5">{SOURCE_LABELS[p.source] || p.source}</span>
+                        <span className="text-[10px] text-gray-600 ml-1.5">{profileSectionLabel(p)}</span>
                       </button>
                     ))}
                   </div>

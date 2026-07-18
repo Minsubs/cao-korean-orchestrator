@@ -5,11 +5,6 @@
 // `/usage/accounts` backend contract lives entirely in this file so this
 // feature never has to touch another owner's API surface.
 //
-// Availability stance, same as every other api.*.ts client in this codebase:
-// the endpoint can 404 (router not mounted yet — true today, the backend is
-// being built in parallel) or fail on the network independently. Callers
-// (useUsageAccounts.ts) must treat that as an honest error state — never
-// fall back to fabricated/sample data.
 const BASE = '' // Vite proxy handles routing to backend, same as every other api.*.ts
 
 export interface ApiUsageError extends Error {

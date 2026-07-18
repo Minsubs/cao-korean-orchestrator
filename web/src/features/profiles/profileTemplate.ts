@@ -99,6 +99,8 @@ export function buildProfileMarkdown(input: ProfileTemplateInput): BuiltProfile 
   fm.push(`description: ${yamlScalar(input.description)}`)
   fm.push(`provider: ${input.provider}`)
   fm.push(`model: ${yamlScalar(input.model)}`)
+  fm.push(`uiRole: ${yamlScalar(input.uiRole)}`)
+  fm.push(`specialty: ${yamlScalar(input.specialtyName)}`)
   fm.push(
     `# UI 역할 "${input.uiRole}" -> CAO 빌트인 역할 "${builtin}" 매핑 (CAO는 supervisor/developer/reviewer 3종만 빌트인 역할로 지원하며, allowedTools 프리셋은 이 빌트인 역할 기준으로 정해져요)`,
   )

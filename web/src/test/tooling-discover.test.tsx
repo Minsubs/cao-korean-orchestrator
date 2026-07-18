@@ -341,12 +341,12 @@ describe('ToolingView — Phase 5b 탐색 탭 + 설치됨 탭 확장', () => {
         kind: 'cli',
         category: '스킬',
         providers: ['generic_skills'],
-        homepage: 'https://github.com/anthropics/skills',
+        homepage: 'https://github.com/vercel-labs/skills',
         requires: [],
         popular: false,
         new_session_required: false,
         warnings: ['표기용 예시 명령이에요 — 설치 전 공식 문서에서 정확한 패키지명을 확인하세요.'],
-        install: { generic_skills: { method: 'manual', argv: ['npm', 'install', '-g', '@anthropic-ai/skills'] } },
+        install: { generic_skills: { method: 'manual', argv: ['npm', 'install', '-g', 'skills'] } },
         supported: {
           generic_skills: {
             method: 'manual',
@@ -354,7 +354,7 @@ describe('ToolingView — Phase 5b 탐색 탭 + 설치됨 탭 확장', () => {
             install_status: 'not_installed',
             supported: false,
             reason: '자동 설치는 지원하지 않아요 — 명령을 복사해 실행한 뒤 다시 검사하세요',
-            command: 'npm install -g @anthropic-ai/skills',
+            command: 'npm install -g skills',
           },
         },
       },
@@ -371,7 +371,7 @@ describe('ToolingView — Phase 5b 탐색 탭 + 설치됨 탭 확장', () => {
     expect(within(detail).getByText('수동 설치')).toBeInTheDocument()
     expect(within(detail).queryByRole('button', { name: '설치 불가' })).not.toBeInTheDocument()
     expect(within(detail).getByText('자동 설치는 지원하지 않아요 — 명령을 복사해 실행한 뒤 다시 검사하세요')).toBeInTheDocument()
-    expect(within(detail).getByText('npm install -g @anthropic-ai/skills')).toBeInTheDocument()
+    expect(within(detail).getByText('npm install -g skills')).toBeInTheDocument()
     expect(within(detail).getByRole('button', { name: '명령 복사' })).toBeInTheDocument()
   })
 
@@ -400,13 +400,28 @@ describe('ToolingView — Phase 5b 탐색 탭 + 설치됨 탭 확장', () => {
   // ── kind 필터 칩 ─────────────────────────────────────────────────────────
   it('filters by kind chip', async () => {
     await openDiscoverTab()
-    expect(screen.getByRole('option', { name: /code-review-pack/ })).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: /^MCP/ }))
+    const kindGroup = screen.getByRole('group', { name: '종류 필터' })
+    fireEvent.click(within(kindGroup).getByRole('button', { name: /^Plugin/ }))
     expect(screen.queryByRole('option', { name: /context7/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('option', { name: /filesystem/ })).not.toBeInTheDocument()
     expect(screen.getByRole('option', { name: /code-review-pack/ })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: /docx/ })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /docx/ })).not.toBeInTheDocument()
+  })
+
+  it('shows all 13 plugin rows when the Plugin 13 chip is selected directly', async () => {
+    catalog = Array.from({ length: 13 }, (_, index) => ({
+      ...CATALOG[2],
+      id: `plugin-${index + 1}`,
+      name: `Plugin ${index + 1}`,
+    }))
+    render(<ToolingView />)
+    fireEvent.click(await screen.findByRole('tab', { name: /탐색/ }))
+
+    const kindGroup = await screen.findByRole('group', { name: '종류 필터' })
+    fireEvent.click(within(kindGroup).getByRole('button', { name: 'Plugin 13' }))
+
+    expect(screen.getAllByRole('option')).toHaveLength(13)
+    expect(screen.getByText((_, node) => node?.textContent === '검색 결과 13개 / 전체 13개')).toBeInTheDocument()
   })
 
   // ── provider 필터 칩 ─────────────────────────────────────────────────────
@@ -417,9 +432,8 @@ describe('ToolingView — Phase 5b 탐색 탭 + 설치됨 탭 확장', () => {
     // the detail panel's "Claude Code에 설치" button, which starts with the
     // same text.
     const providerGroup = screen.getByRole('group', { name: 'Provider 필터' })
-    // Turning off Claude Code leaves only items that also list codex —
-    // only context7 supports both.
-    fireEvent.click(within(providerGroup).getByRole('button', { name: /^Claude Code/ }))
+    // Selecting Codex CLI directly leaves only items that support Codex.
+    fireEvent.click(within(providerGroup).getByRole('button', { name: /^Codex CLI/ }))
     expect(screen.getByRole('option', { name: /context7/ })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: /filesystem/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('option', { name: /code-review-pack/ })).not.toBeInTheDocument()
@@ -432,6 +446,19 @@ describe('ToolingView — Phase 5b 탐색 탭 + 설치됨 탭 확장', () => {
     fireEvent.change(screen.getByLabelText('카탈로그 검색'), { target: { value: 'filesystem' } })
     await waitFor(() => expect(screen.queryByRole('option', { name: /context7/ })).not.toBeInTheDocument())
     expect(screen.getByRole('option', { name: /filesystem/ })).toBeInTheDocument()
+  })
+
+  it('searches category and provider labels as well as item names', async () => {
+    await openDiscoverTab()
+    const input = screen.getByLabelText('카탈로그 검색')
+
+    fireEvent.change(input, { target: { value: '품질' } })
+    await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(1))
+    expect(screen.getByRole('option', { name: /code-review-pack/ })).toBeInTheDocument()
+
+    fireEvent.change(input, { target: { value: 'Codex CLI' } })
+    await waitFor(() => expect(screen.getByRole('option', { name: /context7/ })).toBeInTheDocument())
+    expect(screen.getAllByRole('option')).toHaveLength(1)
   })
 
   // ── method=manual → 설치 버튼 대신 "수동 설치" 라벨 + 눈에 보이는 reason +

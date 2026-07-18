@@ -106,7 +106,7 @@ describe('AgentSidePanel — manual worker add (Phase 2c §2)', () => {
     const dialog = await screen.findByRole('dialog', { name: '에이전트 추가' })
 
     fireEvent.click(within(dialog).getByText('프로필 선택...'))
-    fireEvent.click(await within(dialog).findByRole('button', { name: /^developer/ }))
+    fireEvent.click(await within(dialog).findByRole('button', { name: /^개발자 예제/ }))
 
     fireEvent.click(within(dialog).getByRole('button', { name: '추가' }))
 
@@ -143,7 +143,7 @@ describe('AgentSidePanel — manual worker add (Phase 2c §2)', () => {
     fireEvent.click(screen.getByRole('button', { name: '에이전트 추가' }))
     const dialog = await screen.findByRole('dialog', { name: '에이전트 추가' })
     fireEvent.click(within(dialog).getByText('프로필 선택...'))
-    fireEvent.click(await within(dialog).findByRole('button', { name: /^developer/ }))
+    fireEvent.click(await within(dialog).findByRole('button', { name: /^개발자 예제/ }))
     fireEvent.click(within(dialog).getByRole('button', { name: '추가' }))
 
     await waitFor(() => expect(useStore.getState().snackbar).toMatchObject({ type: 'error' }))
@@ -166,14 +166,14 @@ describe('AgentSidePanel — manual worker add (Phase 2c §2)', () => {
 
     // The provider select auto-corrects off the hidden 'kiro_cli' default the
     // moment the (filtered) provider list resolves, so it already reads
-    // "claude_code" rather than the placeholder — open it from there. Its
+    // "Claude Code" rather than the placeholder — open it from there. Its
     // trigger button and the now-visible dropdown option both match
-    // "claude_code" (getAllByRole, not getByRole, to tolerate that) — the
+    // "Claude Code" (getAllByRole, not getByRole, to tolerate that) — the
     // real assertion is that 'kiro_cli' has zero matches anywhere at all.
-    const providerTrigger = await within(dialog).findByText('claude_code')
+    const providerTrigger = await within(dialog).findByText('Claude Code')
     fireEvent.click(providerTrigger)
-    await waitFor(() => expect(within(dialog).getAllByRole('button', { name: /^claude_code/ }).length).toBeGreaterThanOrEqual(1))
-    expect(within(dialog).queryByRole('button', { name: /^kiro_cli/ })).not.toBeInTheDocument()
+    await waitFor(() => expect(within(dialog).getAllByRole('button', { name: /^Claude Code/ }).length).toBeGreaterThanOrEqual(1))
+    expect(within(dialog).queryByRole('button', { name: /^Kiro CLI/ })).not.toBeInTheDocument()
   })
 
   it('feedback #1: selecting a profile with a real `provider` field auto-fills the provider select', async () => {

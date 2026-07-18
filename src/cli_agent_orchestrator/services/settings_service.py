@@ -16,7 +16,10 @@ SETTINGS_FILE = CAO_HOME_DIR / "settings.json"
 # Default agent directories per provider
 _DEFAULTS = {
     "kiro_cli": str(Path.home() / ".kiro" / "agents"),
-    "claude_code": str(Path.home() / ".aws" / "cli-agent-orchestrator" / "agent-store"),
+    # Claude Code's native subagents live here. CAO's own cross-provider
+    # profiles are scanned separately from LOCAL_AGENT_STORE_DIR, so pointing
+    # this provider at that same CAO store hid the user's native role roster.
+    "claude_code": str(Path.home() / ".claude" / "agents"),
     "codex": str(Path.home() / ".aws" / "cli-agent-orchestrator" / "agent-store"),
     "cao_installed": str(Path.home() / ".aws" / "cli-agent-orchestrator" / "agent-context"),
 }

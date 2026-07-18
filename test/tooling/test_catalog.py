@@ -60,6 +60,27 @@ def test_ids_unique_and_lookup():
     assert catalog.get_item("nope") is None
 
 
+def test_catalog_has_a_broad_recommended_skill_and_plugin_selection():
+    assert len(catalog._ITEMS) >= 30
+    ids = {item.id for item in catalog._ITEMS}
+    assert {"frontend-design", "webapp-testing", "mcp-builder", "computer-use"} <= ids
+    assert {
+        "claude-plugin-linear",
+        "claude-plugin-notion",
+        "claude-plugin-figma",
+        "claude-plugin-sentry",
+    } <= ids
+
+    notion = catalog.get_item("claude-plugin-notion")
+    assert notion.kind == "plugin"
+    assert notion.install["claude_code"].argv == (
+        "claude",
+        "plugin",
+        "install",
+        "notion@claude-plugins-official",
+    )
+
+
 def test_mcp_and_skill_provider_split():
     ctx = catalog.get_item("context7")
     assert ctx.providers == ("claude_code", "codex")
@@ -81,9 +102,9 @@ def test_generic_skills_cli_bootstrap_item():
     assert cli.providers == ("generic_skills",)
     spec = cli.install["generic_skills"]
     assert spec.method == "manual"
-    # Command is present for display; it is an estimate, so it carries a caveat.
-    assert spec.argv == ("npm", "install", "-g", "@anthropic-ai/skills")
-    assert any("공식 문서" in w for w in cli.warnings)
+    assert spec.argv == ("npm", "install", "-g", "skills")
+    assert cli.homepage == "https://github.com/vercel-labs/skills"
+    assert any("전역" in w for w in cli.warnings)
     assert cli.manual_reason and "다시 검사" in cli.manual_reason
 
 
@@ -96,7 +117,7 @@ def test_manual_cli_item_shows_command_even_when_undetected(monkeypatch):
     entry = cli["supported"]["generic_skills"]
     assert entry["supported"] is False
     assert entry["install_status"] == "not_installed"
-    assert entry["command"] == "npm install -g @anthropic-ai/skills"
+    assert entry["command"] == "npm install -g skills"
     assert (
         entry["reason"] == "자동 설치는 지원하지 않아요 — 명령을 복사해 실행한 뒤 다시 검사하세요"
     )
@@ -109,7 +130,7 @@ def test_manual_cli_item_reports_installed_when_detected(monkeypatch):
     cli = next(it for it in catalog.list_catalog() if it["id"] == "generic-skills-cli")
     entry = cli["supported"]["generic_skills"]
     assert entry["install_status"] == "installed"
-    assert entry["command"] == "npm install -g @anthropic-ai/skills"
+    assert entry["command"] == "npm install -g skills"
 
 
 # --- resolve_install ------------------------------------------------------
@@ -150,7 +171,9 @@ def test_resolve_unsupported_provider():
 
 def test_resolve_skill():
     r = catalog.resolve_install("docx", "generic_skills", None)
-    assert r.method == "skill" and r.name == "docx" and r.command_tokens == []
+    assert r.method == "skill"
+    assert r.name == "docx"
+    assert r.command_tokens == ["anthropics/skills", "docx"]
 
 
 # --- list_catalog ---------------------------------------------------------

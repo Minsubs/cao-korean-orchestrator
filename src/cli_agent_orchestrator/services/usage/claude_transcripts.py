@@ -255,7 +255,7 @@ def aggregate(home: Path, now: datetime) -> Dict[str, Any]:
         for day, bucket in parsed.daily.items():
             if day == today:
                 _add(today_bucket, bucket)
-            if day >= week_start:
+            if week_start <= day <= today:
                 _add(week_bucket, bucket)
         today_models = parsed.daily_by_model.get(today)
         if today_models:

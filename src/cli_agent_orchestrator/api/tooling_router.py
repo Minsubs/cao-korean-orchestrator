@@ -177,8 +177,9 @@ def _resolve_catalog(adapter: ExtensionAdapter, body: PlanRequest) -> _Resolved:
     try:
         if resolved.method == "mcp":
             plan = adapter.plan_mcp_add(resolved.name, resolved.command_tokens)
-        else:  # "skill" — reuse the generic install path with the resolved name
-            plan = adapter.plan("install", resolved.name, body.scope)
+        else:
+            repository = resolved.command_tokens[0] if resolved.command_tokens else ""
+            plan = adapter.plan_skill_add(repository, resolved.name, body.scope)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

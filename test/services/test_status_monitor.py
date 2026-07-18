@@ -38,6 +38,178 @@ class TestGetStatusTmux:
 
         assert sm.get_status("missing") == TerminalStatus.UNKNOWN
 
+    @patch("cli_agent_orchestrator.services.status_monitor.provider_manager")
+    @patch("cli_agent_orchestrator.backends.registry.get_backend")
+    @patch("cli_agent_orchestrator.services.status_monitor.monotonic")
+    def test_processing_raw_stream_rechecks_rendered_pane(
+        self, mock_monotonic, mock_get_backend, mock_pm
+    ):
+        """An idle Codex pane must not stay processing because its raw TUI stream is stale."""
+        mock_monotonic.side_effect = [1.0, 2.1]
+        backend = _backend(event_inbox=False)
+        backend.get_history.return_value = "rendered idle pane"
+        mock_get_backend.return_value = backend
+
+        provider = MagicMock()
+        provider.session_name = "cao-session"
+        provider.window_name = "codex-worker"
+        provider.supports_rendered_pane_status = True
+        provider.get_status.return_value = TerminalStatus.PROCESSING
+        provider.get_status_from_screen.return_value = TerminalStatus.COMPLETED
+        mock_pm.get_provider.return_value = provider
+
+        sm = StatusMonitor()
+        sm._last_status["t1"] = TerminalStatus.PROCESSING
+        sm._buffers["t1"] = "stale raw stream"
+
+        assert sm.get_status("t1") == TerminalStatus.PROCESSING
+        assert sm.get_status("t1") == TerminalStatus.COMPLETED
+        backend.get_history.assert_called_with(
+            "cao-session",
+            "codex-worker",
+            tail_lines=120,
+            strip_escapes=False,
+        )
+        assert provider.get_status_from_screen.call_count == 2
+
+    @patch("cli_agent_orchestrator.services.status_monitor.provider_manager")
+    @patch("cli_agent_orchestrator.backends.registry.get_backend")
+    @patch("cli_agent_orchestrator.services.status_monitor.monotonic")
+    def test_rendered_capture_straddling_new_input_cannot_settle_new_generation(
+        self, mock_monotonic, mock_get_backend, mock_pm
+    ):
+        """A pre-input pane frame must never be recorded under a newer turn."""
+        mock_monotonic.side_effect = [1.0, 2.1]
+        backend = _backend(event_inbox=False)
+        mock_get_backend.return_value = backend
+
+        provider = MagicMock()
+        provider.session_name = "cao-session"
+        provider.window_name = "codex-worker"
+        provider.supports_rendered_pane_status = True
+        provider.get_status.return_value = TerminalStatus.PROCESSING
+        provider.get_status_from_screen.return_value = TerminalStatus.COMPLETED
+        mock_pm.get_provider.return_value = provider
+
+        sm = StatusMonitor()
+        sm._last_status["t1"] = TerminalStatus.PROCESSING
+        sm._buffers["t1"] = "stale raw stream"
+        sm.notify_input_sent("t1")
+
+        def capture_then_deliver_new_input(*args, **kwargs):
+            sm.notify_input_sent("t1")
+            return "completed pane from the previous generation"
+
+        backend.get_history.side_effect = capture_then_deliver_new_input
+        assert sm.get_status("t1") == TerminalStatus.PROCESSING
+        assert sm.get_input_generation("t1") == 2
+        assert sm.get_ready_generation("t1") == 0
+        assert "t1" not in sm._rendered_ready_candidate
+
+        backend.get_history.side_effect = None
+        backend.get_history.return_value = "completed pane for the current generation"
+        assert sm.get_status("t1") == TerminalStatus.PROCESSING
+        assert sm.get_ready_generation("t1") == 0
+        assert sm._rendered_ready_candidate["t1"][0] == 2
+
+    @patch("cli_agent_orchestrator.services.status_monitor.provider_manager")
+    @patch("cli_agent_orchestrator.backends.registry.get_backend")
+    def test_raw_detection_straddling_new_input_cannot_settle_new_generation(
+        self, mock_get_backend, mock_pm
+    ):
+        """The rolling buffer and its generation must be evaluated atomically."""
+        mock_get_backend.return_value = _backend(event_inbox=False)
+        provider = MagicMock()
+        provider.supports_rendered_pane_status = False
+        mock_pm.get_provider.return_value = provider
+
+        sm = StatusMonitor()
+        sm._last_status["t1"] = TerminalStatus.PROCESSING
+        sm._buffers["t1"] = "completed bytes from the previous generation"
+        sm.notify_input_sent("t1")
+
+        def detect_then_deliver_new_input(buffer):
+            sm.notify_input_sent("t1")
+            return TerminalStatus.COMPLETED
+
+        provider.get_status.side_effect = detect_then_deliver_new_input
+        assert sm.get_status("t1") == TerminalStatus.PROCESSING
+        assert sm.get_input_generation("t1") == 2
+        assert sm.get_ready_generation("t1") == 0
+
+    @patch("cli_agent_orchestrator.services.status_monitor.provider_manager")
+    def test_scheduled_raw_detection_straddling_input_is_discarded(self, mock_pm):
+        """The event-driven raw path must pin the chunk's generation too."""
+        provider = MagicMock()
+        mock_pm.get_provider.return_value = provider
+        sm = StatusMonitor()
+        sm._last_status["t1"] = TerminalStatus.PROCESSING
+        sm.notify_input_sent("t1")
+        old_generation = sm.get_input_generation("t1")
+
+        def detect_then_deliver_new_input(buffer):
+            sm.notify_input_sent("t1")
+            return TerminalStatus.COMPLETED
+
+        provider.get_status.side_effect = detect_then_deliver_new_input
+        sm._schedule_raw_detection("t1", "old completed bytes", old_generation)
+
+        assert sm._last_status["t1"] == TerminalStatus.PROCESSING
+        assert sm.get_input_generation("t1") == old_generation + 1
+        assert sm.get_ready_generation("t1") == 0
+
+    @patch("cli_agent_orchestrator.services.status_monitor.provider_manager")
+    @patch("cli_agent_orchestrator.backends.registry.get_backend")
+    @patch("cli_agent_orchestrator.services.status_monitor.monotonic")
+    def test_rendered_idle_frame_never_finishes_an_active_turn(
+        self, mock_monotonic, mock_get_backend, mock_pm
+    ):
+        """A transient footer-only frame is not proof that Codex replied."""
+        mock_monotonic.side_effect = [1.0, 2.1]
+        backend = _backend(event_inbox=False)
+        backend.get_history.return_value = "callback visible with idle footer"
+        mock_get_backend.return_value = backend
+        provider = MagicMock()
+        provider.session_name = "cao-session"
+        provider.window_name = "codex-supervisor"
+        provider.supports_rendered_pane_status = True
+        provider.get_status.return_value = TerminalStatus.PROCESSING
+        provider.get_status_from_screen.return_value = TerminalStatus.IDLE
+        mock_pm.get_provider.return_value = provider
+
+        sm = StatusMonitor()
+        sm._last_status["t1"] = TerminalStatus.PROCESSING
+        sm._buffers["t1"] = "stale raw stream"
+        sm._input_generation["t1"] = 2
+        sm._ready_generation["t1"] = 1
+
+        assert sm.get_status("t1") == TerminalStatus.PROCESSING
+        assert sm.get_status("t1") == TerminalStatus.PROCESSING
+        assert sm.get_ready_generation("t1") == 1
+
+    @patch("cli_agent_orchestrator.services.status_monitor.provider_manager")
+    @patch("cli_agent_orchestrator.backends.registry.get_backend")
+    def test_processing_rendered_pane_probe_is_coalesced(self, mock_get_backend, mock_pm):
+        """Concurrent HTTP polls must not fork one capture-pane process each."""
+        backend = _backend(event_inbox=False)
+        backend.get_history.return_value = "still processing"
+        mock_get_backend.return_value = backend
+        provider = MagicMock()
+        provider.session_name = "cao-session"
+        provider.window_name = "codex-worker"
+        provider.supports_rendered_pane_status = True
+        provider.get_status.return_value = TerminalStatus.PROCESSING
+        provider.get_status_from_screen.return_value = TerminalStatus.PROCESSING
+        mock_pm.get_provider.return_value = provider
+
+        sm = StatusMonitor()
+        sm._last_status["t1"] = TerminalStatus.PROCESSING
+        sm._buffers["t1"] = "stale raw stream"
+
+        assert sm.get_status("t1") == TerminalStatus.PROCESSING
+        assert sm.get_status("t1") == TerminalStatus.PROCESSING
+        backend.get_history.assert_called_once()
+
 
 class TestGetStatusEventInbox:
     """Event-inbox backend (herdr): derive status on demand from the provider."""
@@ -55,6 +227,43 @@ class TestGetStatusEventInbox:
         # would return UNKNOWN here.
         assert sm.get_status("t1") == TerminalStatus.IDLE
         provider.get_status.assert_called_once()
+
+    @patch("cli_agent_orchestrator.services.status_monitor.provider_manager")
+    @patch("cli_agent_orchestrator.backends.registry.get_backend")
+    def test_native_status_advances_ready_generation(self, mock_get_backend, mock_pm):
+        """Herdr polling must provide the same semantic turn proof as tmux."""
+        mock_get_backend.return_value = _backend(event_inbox=True)
+        provider = MagicMock()
+        provider.get_status.side_effect = [TerminalStatus.PROCESSING, TerminalStatus.COMPLETED]
+        mock_pm.get_provider.return_value = provider
+
+        sm = StatusMonitor()
+        sm.notify_input_sent("h1")
+        assert sm.get_status("h1") == TerminalStatus.PROCESSING
+        assert sm.get_status("h1") == TerminalStatus.COMPLETED
+        assert sm.get_input_generation("h1") == 1
+        assert sm.get_ready_generation("h1") == 1
+
+    @patch("cli_agent_orchestrator.services.status_monitor.provider_manager")
+    @patch("cli_agent_orchestrator.backends.registry.get_backend")
+    def test_native_status_straddling_input_does_not_settle_new_generation(
+        self, mock_get_backend, mock_pm
+    ):
+        mock_get_backend.return_value = _backend(event_inbox=True)
+        provider = MagicMock()
+        mock_pm.get_provider.return_value = provider
+        sm = StatusMonitor()
+        sm._last_status["h1"] = TerminalStatus.PROCESSING
+        sm.notify_input_sent("h1")
+
+        def detect_then_deliver_input(buffer):
+            sm.notify_input_sent("h1")
+            return TerminalStatus.COMPLETED
+
+        provider.get_status.side_effect = detect_then_deliver_input
+        assert sm.get_status("h1") == TerminalStatus.PROCESSING
+        assert sm.get_input_generation("h1") == 2
+        assert sm.get_ready_generation("h1") == 0
 
     @patch("cli_agent_orchestrator.services.status_monitor.provider_manager")
     @patch("cli_agent_orchestrator.backends.registry.get_backend")
@@ -175,10 +384,15 @@ class TestStickyLatching:
         """The normal cycle: input → PROCESSING accepted → COMPLETED → flap blocked."""
         m = _SequencedMonitor()
         m.feed(TerminalStatus.IDLE)
+        assert m.sm.get_input_generation("t1") == 0
+        assert m.sm.get_ready_generation("t1") == 0
         m.sm.notify_input_sent("t1")
+        assert m.sm.get_input_generation("t1") == 1
+        assert m.sm.get_ready_generation("t1") == 0
         m.feed(TerminalStatus.PROCESSING)
         assert m.status() == TerminalStatus.PROCESSING
         m.feed(TerminalStatus.COMPLETED)
+        assert m.sm.get_ready_generation("t1") == 1
         m.feed(TerminalStatus.PROCESSING)  # post-completion eviction flap
         assert m.status() == TerminalStatus.COMPLETED
 

@@ -22,6 +22,7 @@ def _make_skill(parent, name, description="a skill"):
 
 def _stub_empty_profiles(monkeypatch):
     monkeypatch.setattr(extensions, "list_agent_profiles", lambda: [])
+    monkeypatch.setattr(extensions.registry, "get_adapters", lambda: {})
 
 
 def test_skills_scope_by_install_location(tmp_path, monkeypatch):
@@ -105,3 +106,38 @@ def test_invalid_skill_folder_is_skipped(tmp_path, monkeypatch):
     skill_names = {i["name"] for i in extensions.list_extensions() if i["kind"] == "skill"}
     assert "broken" not in skill_names
     assert "other-name" not in skill_names
+
+
+def test_provider_managed_extensions_are_merged_with_qualified_ids(tmp_path, monkeypatch):
+    class FakeAdapter:
+        display_name = "Fake provider"
+
+        def __init__(self, installed, names):
+            self._installed = installed
+            self._names = names
+
+        def detect(self):
+            return type("Env", (), {"installed": self._installed})()
+
+        def list_installed(self):
+            return [{"name": name, "raw": name} for name in self._names]
+
+    monkeypatch.setattr(extensions.constants, "SKILLS_DIR", tmp_path / "absent")
+    monkeypatch.setattr(extensions.settings_service, "get_extra_skill_dirs", lambda: [])
+    monkeypatch.setattr(extensions, "list_agent_profiles", lambda: [])
+    monkeypatch.setattr(
+        extensions.registry,
+        "get_adapters",
+        lambda: {
+            "generic_skills": FakeAdapter(True, ["frontend-design"]),
+            "codex": FakeAdapter(True, ["context7"]),
+            "claude_code": FakeAdapter(False, ["ignored"]),
+        },
+    )
+
+    by_id = {item["id"]: item for item in extensions.list_extensions()}
+
+    assert by_id["skill:generic_skills:frontend-design"]["kind"] == "skill"
+    assert by_id["skill:generic_skills:frontend-design"]["provider"] == "generic_skills"
+    assert by_id["mcp:codex:context7"]["kind"] == "mcp"
+    assert "mcp:claude_code:ignored" not in by_id

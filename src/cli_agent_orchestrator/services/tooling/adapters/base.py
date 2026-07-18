@@ -114,6 +114,10 @@ class ExtensionAdapter(ABC):
         """Plan a catalog MCP-server install (default: unsupported → ValueError)."""
         raise ValueError(f"{self.id} does not support installing MCP servers")
 
+    def plan_skill_add(self, repository: str, name: str, scope: Optional[str]) -> ExecutionPlan:
+        """Plan an exact skill install from a curated repository."""
+        raise ValueError(f"{self.id} does not support installing repository skills")
+
 
 # Capability keys that gate a user-visible action (everything except the
 # ``requires*`` session/restart flags).

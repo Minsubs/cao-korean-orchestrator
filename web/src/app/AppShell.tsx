@@ -25,6 +25,7 @@ import { SettingsPanel } from '../components/SettingsPanel'
 import { NotificationCenter } from '../components/NotificationCenter'
 import { Workspace } from '../features/workspace/Workspace'
 import { PENDING_SELECT_KEY } from '../features/workspace/constants'
+import { UsageButton } from '../features/usage/UsageButton'
 
 // Phase 1b App Shell: left icon rail + top bar + a single content region that
 // swaps between views. Replaces the old 5-tab top bar (App.tsx). FlowsPanel/
@@ -250,6 +251,7 @@ export function AppShell() {
           </div>
           <div className="flex items-center gap-3">
             <NotificationCenter sessions={sessions} />
+            <UsageButton />
             <span className="text-xs text-[var(--text-3)]">세션 {sessions.length}개</span>
             <ConnectionChip connected={connected} />
             <button

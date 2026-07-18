@@ -35,7 +35,7 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from cli_agent_orchestrator.api import env_router, tooling_router, ui_features_router
+from cli_agent_orchestrator.api import env_router, tooling_router, ui_features_router, usage_router
 from cli_agent_orchestrator.backends import TerminalBackendError, TerminalNotFoundError
 from cli_agent_orchestrator.backends.herdr_backend import HerdrBackend
 from cli_agent_orchestrator.backends.registry import get_backend
@@ -231,6 +231,10 @@ class RunStepRequest(BaseModel):
     caller_id: Optional[str] = Field(
         default=None,
         description="Supervisor terminal ID to record for structural callback routing (#284)",
+    )
+    orchestration_type: Optional[OrchestrationType] = Field(
+        default=None,
+        description="Prompt dispatch type used for UI lifecycle events (e.g. handoff)",
     )
     allowed_tools: Optional[list[str]] = Field(
         default=None,
@@ -666,6 +670,7 @@ app.add_middleware(
 app.include_router(tooling_router.router)
 app.include_router(ui_features_router.router)
 app.include_router(env_router.router)
+app.include_router(usage_router.router)
 
 
 @app.exception_handler(RequestValidationError)
@@ -1365,7 +1370,10 @@ async def list_sessions() -> List[Dict]:
 
 
 @app.get("/sessions/{session_name}")
-async def get_session(session_name: str) -> Dict:
+async def get_session(
+    session_name: str,
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_READ, SCOPE_WRITE, SCOPE_ADMIN)),
+) -> Dict:
     # Validate before entering the try block so a malformed name surfaces
     # as 400 instead of being mapped to 404 by the not-found handler below.
     try:
@@ -1373,7 +1381,7 @@ async def get_session(session_name: str) -> Dict:
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     try:
-        return session_service.get_session(session_name)
+        return await asyncio.to_thread(session_service.get_session, session_name)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except Exception as e:
@@ -1814,6 +1822,7 @@ async def run_step(
             caller_id=body.caller_id,
             allowed_tools=body.allowed_tools,
             registry=get_plugin_registry(request),
+            orchestration_type=body.orchestration_type,
             env_vars=body.env_vars,
             on_terminal_created=on_terminal_created,
         )
@@ -2426,10 +2435,17 @@ async def create_inbox_message_endpoint(
 @app.get("/terminals/{terminal_id}/inbox/messages")
 async def get_inbox_messages_endpoint(
     terminal_id: TerminalId,
-    limit: int = Query(default=10, le=100, description="Maximum number of messages to retrieve"),
+    limit: int = Query(
+        default=10, ge=1, le=100, description="Maximum number of messages to retrieve"
+    ),
     status_param: Optional[str] = Query(
         default=None, alias="status", description="Filter by message status"
     ),
+    after_id: Optional[int] = Query(
+        default=None, ge=0, description="Only return messages newer than this ID"
+    ),
+    newest_first: bool = Query(default=False, description="Return newest message IDs first"),
+    _scopes: List[str] = Depends(require_any_scope(SCOPE_READ, SCOPE_WRITE, SCOPE_ADMIN)),
 ) -> List[Dict]:
     """Get inbox messages for a terminal.
 
@@ -2437,6 +2453,8 @@ async def get_inbox_messages_endpoint(
         terminal_id: Terminal ID to get messages for
         limit: Maximum number of messages to return (default: 10, max: 100)
         status_param: Optional filter by message status ('pending', 'delivered', 'failed')
+        after_id: Optional exclusive message-ID cursor
+        newest_first: Return newest IDs first when true
 
     Returns:
         List of inbox messages with sender_id, message, created_at, status
@@ -2454,7 +2472,13 @@ async def get_inbox_messages_endpoint(
                 )
 
         # Get messages using existing database function
-        messages = get_inbox_messages(terminal_id, limit=limit, status=status_filter)
+        messages = get_inbox_messages(
+            terminal_id,
+            limit=limit,
+            status=status_filter,
+            after_id=after_id,
+            newest_first=newest_first,
+        )
 
         # Convert to response format
         result = []

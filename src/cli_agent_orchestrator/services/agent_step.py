@@ -26,6 +26,7 @@ import logging
 import time
 from typing import Callable, Optional
 
+from cli_agent_orchestrator.models.inbox import OrchestrationType
 from cli_agent_orchestrator.models.terminal import AgentStepResult, TerminalStatus
 from cli_agent_orchestrator.plugins import PluginRegistry
 from cli_agent_orchestrator.services import terminal_service
@@ -210,6 +211,7 @@ async def run_agent_step(
     caller_id: Optional[str] = None,
     allowed_tools: Optional[list[str]] = None,
     registry: Optional[PluginRegistry] = None,
+    orchestration_type: Optional[OrchestrationType] = None,
     env_vars: Optional[dict[str, str]] = None,
     on_terminal_created: Optional[Callable[[str], None]] = None,
     cancel_event: Optional[asyncio.Event] = None,
@@ -254,9 +256,12 @@ async def run_agent_step(
             terminal (handoff inheritance). None lets ``create_terminal`` derive
             them from the agent profile.
         registry: Plugin registry forwarded to ``delete_terminal`` on teardown so
-            ``post_kill_terminal`` plugin hooks fire (parity with the DELETE
-            endpoint). None (the in-process engine path today) means no hooks
-            dispatch — behavior unchanged.
+            lifecycle hooks fire for create/input/teardown (parity with the
+            granular terminal endpoints). None (the in-process engine path
+            today) means no hooks dispatch — behavior unchanged.
+        orchestration_type: Optional dispatch type for the prompt. Handoff sets
+            this to ``HANDOFF`` so the UI event stream can attach the instruction
+            to the ephemeral worker card; workflow-engine calls leave it unset.
         env_vars: Optional per-step environment variables to inject into a freshly
             created terminal (ignored when reusing a terminal). The run engine (N5)
             uses this to set ``CAO_WORKFLOW_RUN_ID`` / ``CAO_WORKFLOW_STEP_ID`` so
@@ -311,16 +316,17 @@ async def run_agent_step(
 
         # create_terminal already runs provider.initialize() (which waits for
         # IDLE); a failure raises (ValueError/TimeoutError) and propagates.
-        terminal = await terminal_service.create_terminal(
-            provider,
-            agent,
-            session_name=session_name,
-            new_session=new_session,
-            working_directory=working_directory,
-            allowed_tools=allowed_tools,
-            caller_id=caller_id,
-            env_vars=env_vars,
-        )
+        create_kwargs = {
+            "session_name": session_name,
+            "new_session": new_session,
+            "working_directory": working_directory,
+            "allowed_tools": allowed_tools,
+            "caller_id": caller_id,
+            "env_vars": env_vars,
+        }
+        if registry is not None:
+            create_kwargs["registry"] = registry
+        terminal = await terminal_service.create_terminal(provider, agent, **create_kwargs)
         terminal_id = terminal.id
 
         # BR-31: make the just-created terminal visible to U4's orphan sweep
@@ -361,7 +367,14 @@ async def run_agent_step(
     # key sends); run it off the event loop so a slow tmux call cannot freeze
     # the whole server for other requests (same hazard as issue #382, which was
     # only fixed for DELETE /sessions). Any failure raises and propagates.
-    await asyncio.to_thread(terminal_service.send_input, terminal_id, prompt)
+    send_kwargs = {}
+    if registry is not None and caller_id is not None and orchestration_type is not None:
+        send_kwargs = {
+            "registry": registry,
+            "sender_id": caller_id,
+            "orchestration_type": orchestration_type,
+        }
+    await asyncio.to_thread(terminal_service.send_input, terminal_id, prompt, **send_kwargs)
 
     # Wait for completion — IN-PROCESS poll of status_monitor (NOT the
     # HTTP-polling wait_until_terminal_status, which would reintroduce the

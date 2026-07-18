@@ -1143,6 +1143,28 @@ class TestCodexBulletFormatStatusDetection:
 
         assert status == TerminalStatus.PROCESSING
 
+    def test_get_status_processing_tui_spinner_after_two_minutes(self):
+        """PROCESSING when the spinner duration has rolled over to minutes."""
+        output = (
+            "› 연결된 에이전트들과 전체 연결 테스트진행\n"
+            "\n"
+            "• 6개 연결 검사가 모두 전송됐고 현재 워커 응답을 회수 중입니다.\n"
+            "\n"
+            '• Called cao-mcp-server.handoff({"agent_profile":"codex_qa_terra"})\n'
+            '  └ {"success": true, "output": "• QA_CONNECTION_OK"}\n'
+            "\n"
+            "• Working (2m 07s • esc to interrupt)\n"
+            "\n"
+            "› Summarize recent commits\n"
+            "\n"
+            "  gpt-5.6-sol high fast · ~/project\n"
+        )
+
+        provider = CodexProvider("test1234", "test-session", "window-0")
+        status = provider.get_status(output)
+
+        assert status == TerminalStatus.PROCESSING
+
     def test_get_status_processing_tui_thinking_spinner(self):
         """PROCESSING when TUI shows • Thinking spinner."""
         output = (

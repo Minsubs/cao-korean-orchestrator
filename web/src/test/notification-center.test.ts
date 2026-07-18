@@ -3,26 +3,29 @@ import { alertForStatusTransition } from '../components/NotificationCenter'
 
 describe('agent notification transitions', () => {
   it('alerts when an orchestrator starts waiting for approval or input', () => {
-    expect(alertForStatusTransition('cao-hanwha', 'processing', 'waiting_user_answer')).toMatchObject({
+    expect(alertForStatusTransition('cao-hanwha', 'codex_orchestrator_sol', 'processing', 'waiting_user_answer')).toMatchObject({
       kind: 'approval',
-      title: '승인 또는 응답이 필요합니다',
+      title: 'hanwha · 오케스트레이터 입력 필요',
     })
   })
 
   it('alerts when processing completes', () => {
-    expect(alertForStatusTransition('cao-alarm', 'processing', 'completed')).toMatchObject({
+    expect(alertForStatusTransition('cao-alarm', 'codex_qa_terra', 'processing', 'completed')).toMatchObject({
       kind: 'completed',
-      title: '작업이 완료되었습니다',
+      title: 'alarm · 테스트 담당 작업 완료',
     })
-    expect(alertForStatusTransition('cao-alarm', 'processing', 'idle')).toMatchObject({ kind: 'completed' })
+    expect(alertForStatusTransition('cao-alarm', 'codex_qa_terra', 'processing', 'idle')).toMatchObject({ kind: 'completed' })
   })
 
   it('does not alert for initial completed or repeated idle states', () => {
-    expect(alertForStatusTransition('cao-hanwha', undefined, 'completed')).toBeNull()
-    expect(alertForStatusTransition('cao-hanwha', 'idle', 'idle')).toBeNull()
+    expect(alertForStatusTransition('cao-hanwha', 'codex_qa_terra', undefined, 'completed')).toBeNull()
+    expect(alertForStatusTransition('cao-hanwha', 'codex_qa_terra', 'idle', 'idle')).toBeNull()
   })
 
   it('alerts when processing fails', () => {
-    expect(alertForStatusTransition('cao-hanwha', 'processing', 'error')).toMatchObject({ kind: 'error' })
+    expect(alertForStatusTransition('cao-hanwha', 'codex_reviewer_sol', 'processing', 'error')).toMatchObject({
+      kind: 'error',
+      title: 'hanwha · 최종 검토자 작업 오류',
+    })
   })
 })

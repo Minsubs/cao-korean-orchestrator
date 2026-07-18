@@ -156,15 +156,42 @@ class TestHappyPath:
         assert m_create.await_args.kwargs["allowed_tools"] == ["fs_read", "fs_write"]
 
     def test_registry_threaded_to_delete_on_teardown(self):
-        """The plugin registry passed to run_agent_step must reach delete_terminal
-        so post_kill_terminal hooks dispatch (parity with the DELETE endpoint)."""
+        """The plugin registry reaches create and delete lifecycle hooks."""
         from cli_agent_orchestrator.plugins import PluginRegistry
 
         sentinel = PluginRegistry()
         create, send, delete, get_output, exit_cli, wait, status = _patch_terminal_layer()
-        with create, send, delete as m_delete, get_output, exit_cli, wait, status:
+        with create as m_create, send, delete as m_delete, get_output, exit_cli, wait, status:
             asyncio.run(run_agent_step("kiro_cli", "dev", "x", registry=sentinel))
+        assert m_create.await_args.kwargs["registry"] is sentinel
         m_delete.assert_called_once_with("abc12345", registry=sentinel)
+
+    def test_handoff_dispatch_emits_instruction_metadata(self):
+        """A combined handoff step must publish the same prompt metadata as the granular API."""
+        from cli_agent_orchestrator.models.inbox import OrchestrationType
+        from cli_agent_orchestrator.plugins import PluginRegistry
+
+        sentinel = PluginRegistry()
+        create, send, delete, get_output, exit_cli, wait, status = _patch_terminal_layer()
+        with create, send as m_send, delete, get_output, exit_cli, wait, status:
+            asyncio.run(
+                run_agent_step(
+                    "kiro_cli",
+                    "dev",
+                    "inspect the task",
+                    caller_id="sup-123",
+                    registry=sentinel,
+                    orchestration_type=OrchestrationType.HANDOFF,
+                )
+            )
+
+        m_send.assert_called_once_with(
+            "abc12345",
+            "inspect the task",
+            registry=sentinel,
+            sender_id="sup-123",
+            orchestration_type=OrchestrationType.HANDOFF,
+        )
 
 
 class TestFailureRaises:

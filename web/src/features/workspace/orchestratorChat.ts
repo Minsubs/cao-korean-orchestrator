@@ -13,6 +13,7 @@ function stripAnsi(text: string): string {
 
 const TOOL_CALL_LINE = /^\s*•\s*Called\b/
 const SEPARATOR_LINE = /^\s*─{20,}\s*$/m
+const ACTIVE_PROGRESS_LINE = /^\s*•.*\((?:(?:\d+h\s+)?(?:\d+m\s+)?)\d+s\s*•\s*esc to interrupt\)\s*$/m
 export const WAITING_MESSAGE = '오케스트레이터 응답을 기다리는 중…'
 
 function sanitizeResponseBlock(text: string): string {
@@ -37,6 +38,7 @@ function sanitizeResponseBlock(text: string): string {
 export function formatOrchestratorOutput(rawOutput: string): string {
   const clean = stripAnsi(rawOutput || '').replace(/\r/g, '').trim()
   if (!clean) return ''
+  if (ACTIVE_PROGRESS_LINE.test(clean)) return ''
 
   if (SEPARATOR_LINE.test(clean)) {
     const segments = clean
@@ -65,11 +67,22 @@ interface StoredChatMessage {
   id: string
   role: 'user' | 'assistant' | 'system'
   content: string
+  targetId?: string
 }
 
 interface StoredChat {
   messages: StoredChatMessage[]
+  workspaceMessages?: StoredChatMessage[]
   lastOutput: string
+  workspacePendingReply?: WorkspacePendingReply | null
+}
+
+export interface WorkspacePendingReply {
+  messageId: string
+  baseline: string
+  terminalId: string
+  baselineGenerations: Record<string, number>
+  baselineInboxMessageId: number
 }
 
 let sequence = 0
@@ -83,16 +96,22 @@ function storageKey(sessionName: string): string {
 }
 
 /** Load prior chat history for `sessionName`, assigning a monotonic synthetic `ts` (array order preserved). */
-export function loadStoredChat(sessionName: string): { entries: ChatEntry[]; lastOutput: string } {
+export function loadStoredChat(sessionName: string): {
+  entries: ChatEntry[]
+  lastOutput: string
+  pendingReply: WorkspacePendingReply | null
+} {
   try {
     const parsed = JSON.parse(window.localStorage.getItem(storageKey(sessionName)) || '{}') as Partial<StoredChat>
-    const raw = Array.isArray(parsed.messages)
-      ? parsed.messages.filter(
+    const sourceMessages = Array.isArray(parsed.workspaceMessages) ? parsed.workspaceMessages : parsed.messages
+    const raw = Array.isArray(sourceMessages)
+      ? sourceMessages.filter(
           (m: unknown): m is StoredChatMessage =>
             !!m &&
             typeof (m as StoredChatMessage).id === 'string' &&
             ['user', 'assistant', 'system'].includes((m as StoredChatMessage).role) &&
-            typeof (m as StoredChatMessage).content === 'string',
+            typeof (m as StoredChatMessage).content === 'string' &&
+            ((m as StoredChatMessage).targetId === undefined || typeof (m as StoredChatMessage).targetId === 'string'),
         )
       : []
     const cleaned = raw
@@ -101,16 +120,53 @@ export function loadStoredChat(sessionName: string): { entries: ChatEntry[]; las
       .slice(-100)
     const baseTs = Date.now() - cleaned.length * 1000
     const entries: ChatEntry[] = cleaned.map((m, i) => ({ ...m, ts: baseTs + i * 1000 }))
-    return { entries, lastOutput: typeof parsed.lastOutput === 'string' ? parsed.lastOutput : '' }
+    const pending = parsed.workspacePendingReply
+    const validGenerations = !!pending?.baselineGenerations
+      && typeof pending.baselineGenerations === 'object'
+      && !Array.isArray(pending.baselineGenerations)
+      && Object.values(pending.baselineGenerations).every(value => (
+        typeof value === 'number' && Number.isFinite(value) && value >= 0
+      ))
+    const pendingReply = pending
+      && typeof pending.messageId === 'string'
+      && typeof pending.baseline === 'string'
+      && typeof pending.terminalId === 'string'
+      && validGenerations
+      && typeof pending.baselineInboxMessageId === 'number'
+      && Number.isFinite(pending.baselineInboxMessageId)
+      && pending.baselineInboxMessageId >= 0
+      && entries.some(entry => entry.id === pending.messageId && entry.role === 'assistant')
+      ? pending as WorkspacePendingReply
+      : null
+    return {
+      entries,
+      lastOutput: typeof parsed.lastOutput === 'string' ? parsed.lastOutput : '',
+      pendingReply,
+    }
   } catch {
-    return { entries: [], lastOutput: '' }
+    return { entries: [], lastOutput: '', pendingReply: null }
   }
 }
 
-export function saveStoredChat(sessionName: string, entries: ChatEntry[], lastOutput: string): void {
+export function saveStoredChat(
+  sessionName: string,
+  entries: ChatEntry[],
+  lastOutput: string,
+  pendingReply: WorkspacePendingReply | null,
+): void {
   try {
-    const messages: StoredChatMessage[] = entries.slice(-100).map(({ id, role, content }) => ({ id, role, content }))
-    window.localStorage.setItem(storageKey(sessionName), JSON.stringify({ messages, lastOutput }))
+    const existing = JSON.parse(window.localStorage.getItem(storageKey(sessionName)) || '{}') as Record<string, unknown>
+    const workspaceMessages: StoredChatMessage[] = entries
+      .slice(-100)
+      .map(({ id, role, content, targetId }) => ({ id, role, content, ...(targetId ? { targetId } : {}) }))
+    const messages = workspaceMessages.filter(message => !message.targetId)
+    window.localStorage.setItem(storageKey(sessionName), JSON.stringify({
+      ...existing,
+      messages,
+      workspaceMessages,
+      lastOutput,
+      workspacePendingReply: pendingReply,
+    }))
   } catch {
     // Chat remains usable in-memory even when storage is disabled or full.
   }

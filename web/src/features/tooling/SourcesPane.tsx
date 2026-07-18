@@ -58,7 +58,7 @@ export function SourcesPane({ sources, loading, error, onRetry, adapters, onNavi
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-xs text-[var(--text-3)]">스킬·명령·프롬프트·에이전트가 어디에서 오는지 한눈에 확인해요</p>
         <button
           type="button"

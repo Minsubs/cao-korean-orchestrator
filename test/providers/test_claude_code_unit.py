@@ -1201,6 +1201,7 @@ class TestClaudeCodeProviderMisc:
         MOD = "cli_agent_orchestrator.utils.mcp_resolution"
         with (
             patch(f"{MOD}._sibling_script", return_value="/venv/bin/cao-mcp-server"),
+            patch(f"{MOD}._sibling_environment_can_import_server", return_value=True),
             patch(f"{MOD}.shutil.which", return_value=None),
         ):
             command = provider._build_claude_command()

@@ -262,7 +262,7 @@ def aggregate(home: Path, now: datetime) -> Dict[str, Any]:
         session_day = parsed.session_date
         if session_day == today:
             _add(today_bucket, contribution)
-        if session_day is not None and session_day >= week_start:
+        if session_day is not None and week_start <= session_day <= today:
             _add(week_bucket, contribution)
 
     note = _NOTE

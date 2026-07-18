@@ -28,6 +28,7 @@ export default defineConfig({
       '/ui': { target: 'http://localhost:9889', changeOrigin: true },
       '/fs': { target: 'http://localhost:9889', changeOrigin: true },
       '/tooling': { target: 'http://localhost:9889', changeOrigin: true },
+      '/usage': { target: 'http://localhost:9889', changeOrigin: true },
     },
   },
 })

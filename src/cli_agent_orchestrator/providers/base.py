@@ -156,6 +156,11 @@ class BaseProvider(ABC):
     # if CAO_PYTE_STATUS is on — protecting providers (and kiro_cli, which
     # depends on raw \r) whose detectors are tuned for the raw stream.
     supports_screen_detection: bool = False
+    # Opt-in for an on-demand tmux capture-pane fallback when a raw stream is
+    # stuck at PROCESSING. Kept separate from pyte's continuous screen path:
+    # providers must explicitly confirm their rendered-screen detector is safe
+    # for a finite capture-pane snapshot.
+    supports_rendered_pane_status: bool = False
 
     def get_status_from_screen(self, screen_lines: List[str]) -> TerminalStatus:
         """Detect status from a pyte-rendered screen (composited viewport).

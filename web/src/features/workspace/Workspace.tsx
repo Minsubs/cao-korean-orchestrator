@@ -130,15 +130,27 @@ export function Workspace() {
   // `key={contextTerminalId}` if it's already open) without popping a
   // collapsed dock open on its own.
   const restoredWorkbenchSessionRef = useRef<string | null>(null)
+  const workbenchSessionRef = useRef<string | null>(null)
   useEffect(() => {
+    // `useWorkspaceSession` starts its new-session poll in an effect too, so
+    // this effect can briefly observe the previous session's terminal list (or
+    // an empty initial list) while `loading` is still false. Clear the stale
+    // context immediately, but do not mark restoration complete until a
+    // terminal that actually belongs to the selected session is available.
+    if (workbenchSessionRef.current !== selectedSessionId) {
+      workbenchSessionRef.current = selectedSessionId
+      restoredWorkbenchSessionRef.current = null
+      setWorkbenchRequest(current => ({ ...current, terminalId: '' }))
+    }
     if (!selectedSessionId || workspaceSession.loading) return
     if (restoredWorkbenchSessionRef.current === selectedSessionId) return
-    restoredWorkbenchSessionRef.current = selectedSessionId
 
+    const sessionTerminals = workspaceSession.terminals.filter(t => t.tmux_session === selectedSessionId)
     const stored = loadWorkbenchContext(selectedSessionId)
-    const storedStillPresent = !!stored && workspaceSession.terminals.some(t => t.id === stored.terminalId)
-    const resolvedId = storedStillPresent ? stored!.terminalId : workspaceSession.supervisorTerminalId
+    const storedStillPresent = !!stored && sessionTerminals.some(t => t.id === stored.terminalId)
+    const resolvedId = storedStillPresent ? stored!.terminalId : sessionTerminals[0]?.id
     if (!resolvedId) return
+    restoredWorkbenchSessionRef.current = selectedSessionId
     setWorkbenchRequest(current => ({
       ...current,
       terminalId: resolvedId,
@@ -150,7 +162,7 @@ export function Workspace() {
     () =>
       workspaceSession.terminals.map((t, index) => ({
         id: t.id,
-        label: index === 0 ? `${t.agent_profile ?? 'Supervisor'} · Supervisor` : t.agent_profile ?? t.id.slice(0, 8),
+        label: index === 0 ? `${t.agent_profile ?? '오케스트레이터'} · 오케스트레이터` : t.agent_profile ?? t.id.slice(0, 8),
       })),
     [workspaceSession.terminals],
   )
@@ -324,6 +336,7 @@ export function Workspace() {
           sessionName={selectedSessionId}
           terminals={workspaceSession.terminals}
           cards={workspaceSession.cards}
+          teamRoster={workspaceSession.teamRoster}
           terminalStatuses={workspaceSession.terminalStatuses}
           sessionWorkingDirectory={sessionWorkingDirectory}
           gauges={gauges}

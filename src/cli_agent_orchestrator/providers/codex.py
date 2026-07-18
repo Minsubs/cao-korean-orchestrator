@@ -69,12 +69,13 @@ ERROR_PATTERN = r"^(?:Error:|ERROR:|Traceback \(most recent call last\):|panic:)
 # which is shared across v0.111 and v0.136 status bars.
 TUI_FOOTER_PATTERN = r"(?:\?\s+for shortcuts|context left|\d+%\s+left|·\s+[~/])"
 # Codex TUI progress spinner: "• Working (0s • esc to interrupt)",
-# "• Thinking (2s ...)", "• Starting script creation (10s • esc to interrupt)".
+# "• Working (2m 07s ...)", "• Thinking (2s ...)",
+# "• Starting script creation (10s • esc to interrupt)".
 # The prefix text varies but the "(Ns • esc to interrupt)" format is consistent.
 # Appears inline with --no-alt-screen when the agent is actively processing.
 # Must be checked before COMPLETED to avoid false positives (the • matches
 # ASSISTANT_PREFIX_PATTERN and the TUI footer › matches idle prompt).
-TUI_PROGRESS_PATTERN = r"•.*\(\d+s\s*•\s*esc to interrupt\)"
+TUI_PROGRESS_PATTERN = r"•.*\(" r"(?:(?:\d+h\s+)?(?:\d+m\s+)?)\d+s" r"\s*•\s*esc to interrupt\)"
 
 # Workspace trust/approval prompt shown when Codex opens a new directory.
 # Wording differs across Codex versions — all variants must be covered, because
@@ -245,6 +246,8 @@ class ProviderError(Exception):
 
 class CodexProvider(BaseProvider):
     """Provider for Codex CLI tool integration."""
+
+    supports_rendered_pane_status = True
 
     def __init__(
         self,

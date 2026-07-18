@@ -1,0 +1,56 @@
+Codex-to-Codex orchestration QA evidence (2026-07-18, read-only)
+
+== API ==
+$ curl -i --max-time 10 http://127.0.0.1:9889/health
+HTTP/1.1 200 OK
+{"status":"ok","service":"cli-agent-orchestrator","terminal_backend":"tmux","components":{"cao":"ok","herdr":"unavailable","claude":"ok"}}
+
+$ curl -sS http://127.0.0.1:9889/sessions
+[{"id":"cao-7426da03","name":"cao-7426da03","status":"detached"}]
+
+$ curl -sS http://127.0.0.1:9889/sessions/cao-7426da03
+session detached; terminals:
+- cff2a1e5 codex_orchestrator_sol status=completed
+- 53c5e264 codex_orchestrator_sol status=completed
+- 2bd9e73e codex_docs_luna caller_id=53c5e264 status=completed
+
+$ curl -sS http://127.0.0.1:9889/terminals/53c5e264/inbox/messages?limit=50
+[{"id":14,"sender_id":"2bd9e73e","receiver_id":"53c5e264","message":"CONNECTIVITY_OK\nCAO_TERMINAL_ID=2bd9e73e\n\n[Message from terminal 2bd9e73e. Use send_message MCP tool for any follow-up work.]","status":"delivered"}]
+
+$ curl -i http://127.0.0.1:9889/sessions/7426da03
+HTTP/1.1 404 Not Found; {"detail":"Session '7426da03' not found"}
+
+== tmux ==
+$ tmux capture-pane -pt cao-7426da03:codex_orchestrator_sol-f57e -S -80
+... CONNECTIVITY_OK / CAO_TERMINAL_ID=2bd9e73e ...
+... actual send_message callback ...
+CONNECTIVITY_VERIFIED
+worker terminal id: 2bd9e73e
+실제 send_message 콜백의 CONNECTIVITY_OK를 확인했습니다.
+
+$ tmux capture-pane -pt cao-7426da03:codex_orchestrator_sol-a287 -S -80
+... cao session status cao-7426da03 --workers --json ... "workers": [] ...
+팀 프리셋 연결 테스트 결과: 미연결입니다.
+원인: cao-mcp-server 시작 실패
+
+$ tmux capture-pane -pt cao-7426da03:codex_docs_luna-5310 -S -80
+Called cao-mcp-server.send_message({receiver_id:"53c5e264",message:"CONNECTIVITY_OK\nCAO_TERMINAL_ID=2bd9e73e"})
+... success:true, message_id:14 ...
+CONNECTIVITY_OK
+
+== Browser (Chrome extension; in-app browser unavailable) ==
+URL: http://127.0.0.1:9889/
+DOM after polling: session row `7426da03 완료`; parent and worker cards both `완료`; worker card includes `상위: codex_orchestrator_sol`; side panel tab `에이전트 3`; composer textbox `메시지 입력` and recipient button `codex_orchestrator_sol · Supervisor`.
+Default viewport evaluation: {w:1512,h:828,bodyW:1512,bodyH:828}.
+Mobile override 390x844 evaluation: {w:390,h:844,bodyW:390,bodyH:844}; mobile DOM retained workspace tabs, session controls, composer and status areas.
+Console `tab.dev.logs({levels:["error","warn"],limit:100})`: [].
+
+== Focused tests ==
+$ cd web && npm test -- --run src/test/session-chat.test.tsx src/test/workspace-session-completion.test.ts src/test/workspace.test.tsx src/test/workspace-reducer.test.ts src/test/workspace-composer-slash.test.ts
+5 files passed; 70 tests passed. A jsdom HTMLCanvasElement.getContext warning was emitted by xterm setup but did not fail tests.
+
+$ PYTHONPATH=src uv run --no-sync python3 -m pytest test/services/test_status_monitor.py test/services/test_agent_step.py test/e2e/test_assign.py -q --no-cov
+55 passed, 24 deselected in 4.21s
+
+$ PYTHONPATH=src uv run --no-sync python3 -m pytest test/providers/test_claude_code_unit.py -q --no-cov
+131 passed, 1 failed. Failure: test_build_command_resolves_bundled_mcp_command expected /venv/bin/cao-mcp-server but got repository .venv/bin/python3; warning says sibling interpreter unusable because it cannot import cli_agent_orchestrator.mcp_server.server.

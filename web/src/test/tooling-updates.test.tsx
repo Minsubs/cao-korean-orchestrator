@@ -208,11 +208,11 @@ describe('ToolingView — Phase 4b write path (업데이트 탭)', () => {
     expect(addBtn).toBeDisabled()
     expect(addBtn).toHaveAttribute('title', NOT_INSTALLED_REASON)
 
-    const updateAllBtn = screen.getByRole('button', { name: '모두 업데이트' })
+    const updateAllBtn = screen.getByRole('button', { name: '전체 최신 상태 확인' })
     expect(updateAllBtn).toBeDisabled()
     expect(updateAllBtn).toHaveAttribute('title', NOT_INSTALLED_REASON)
 
-    const skillUpdateBtn = screen.getByRole('button', { name: '업데이트' })
+    const skillUpdateBtn = screen.getByRole('button', { name: '최신화' })
     expect(skillUpdateBtn).toBeDisabled()
     expect(skillUpdateBtn).toHaveAttribute('title', NOT_INSTALLED_REASON)
   })
@@ -220,8 +220,8 @@ describe('ToolingView — Phase 4b write path (업데이트 탭)', () => {
   it('enables Skill 관리 controls once generic_skills is installed', async () => {
     await openUpdatesTab()
 
-    expect(screen.getByRole('button', { name: '모두 업데이트' })).not.toBeDisabled()
-    expect(screen.getByRole('button', { name: '업데이트' })).not.toBeDisabled()
+    expect(screen.getByRole('button', { name: '전체 최신 상태 확인' })).not.toBeDisabled()
+    expect(screen.getByRole('button', { name: '최신화' })).not.toBeDisabled()
     expect(screen.getByRole('button', { name: '삭제' })).not.toBeDisabled()
   })
 
@@ -283,14 +283,39 @@ describe('ToolingView — Phase 4b write path (업데이트 탭)', () => {
     8000,
   )
 
-  it('업데이트/삭제 on an installed skill row plans with the skill name as target', async () => {
+  it('최신화/삭제 on an installed skill row plans with the skill name as target', async () => {
     await openUpdatesTab()
 
-    fireEvent.click(screen.getByRole('button', { name: '업데이트' }))
+    fireEvent.click(screen.getByRole('button', { name: '최신화' }))
     expect(await screen.findByRole('dialog', { name: '실행 전 확인' })).toBeInTheDocument()
 
     const planCall = mockFetch.mock.calls.find(c => c[0] === '/tooling/plan')
     expect(bodyOf(planCall)).toEqual({ action: 'update', provider: 'generic_skills', target: 'pdf-tools' })
+  })
+
+  it('shows a completed update-all as latest-state confirmation instead of another pending update', async () => {
+    operations = [
+      {
+        id: 'op-update-all',
+        action: 'update_all',
+        provider: 'generic_skills',
+        target: null,
+        scope: null,
+        status: 'succeeded',
+        created_at: '2026-07-17T14:00:00Z',
+        started_at: '2026-07-17T14:00:01Z',
+        finished_at: '2026-07-17T14:00:03Z',
+        exit_code: 0,
+        error: null,
+        verified: true,
+      },
+    ]
+
+    await openUpdatesTab()
+
+    expect(screen.getByText(/\uCD5C\uC2E0 \uC0C1\uD0DC \uD655\uC778\uB428/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '다시 확인' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '전체 최신 상태 확인' })).not.toBeInTheDocument()
   })
 
   // ── cancel ───────────────────────────────────────────────────────────────
@@ -396,7 +421,7 @@ describe('ToolingView — Phase 4b write path (업데이트 탭)', () => {
     fireEvent.click(await screen.findByRole('tab', { name: /설치됨/ }))
 
     fireEvent.click(await screen.findByRole('option', { name: /pdf-tools/ }))
-    expect(screen.getByRole('button', { name: '업데이트' })).not.toBeDisabled()
+    expect(screen.getByRole('button', { name: '최신화' })).not.toBeDisabled()
     expect(screen.getByRole('button', { name: '삭제' })).not.toBeDisabled()
 
     fireEvent.click(screen.getByRole('option', { name: /frontend-design/ }))

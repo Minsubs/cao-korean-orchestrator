@@ -92,7 +92,9 @@ class TestGetInboxMessagesEndpoint:
             assert response.status_code == 200
             data = response.json()
             assert len(data) == 2
-            mock_get.assert_called_once_with("abcdef12", limit=2, status=None)
+            mock_get.assert_called_once_with(
+                "abcdef12", limit=2, status=None, after_id=None, newest_first=False
+            )
 
     def test_get_messages_with_status_and_limit(self, client, sample_inbox_messages):
         """Test getting messages with both status and limit parameters."""
@@ -104,7 +106,27 @@ class TestGetInboxMessagesEndpoint:
             assert response.status_code == 200
             data = response.json()
             assert len(data) == 1
-            mock_get.assert_called_once_with("abcdef12", limit=5, status=MessageStatus.PENDING)
+            mock_get.assert_called_once_with(
+                "abcdef12",
+                limit=5,
+                status=MessageStatus.PENDING,
+                after_id=None,
+                newest_first=False,
+            )
+
+    def test_get_messages_after_cursor_newest_first(self, client, sample_inbox_messages):
+        """Callback polling can request only messages newer than its baseline."""
+        with patch("cli_agent_orchestrator.api.main.get_inbox_messages") as mock_get:
+            mock_get.return_value = sample_inbox_messages[2:]
+
+            response = client.get(
+                "/terminals/abcdef12/inbox/messages?after_id=2&newest_first=true&limit=1"
+            )
+
+            assert response.status_code == 200
+            mock_get.assert_called_once_with(
+                "abcdef12", limit=1, status=None, after_id=2, newest_first=True
+            )
 
     def test_invalid_status_parameter(self, client):
         """Test error handling for invalid status parameter."""
@@ -115,6 +137,12 @@ class TestGetInboxMessagesEndpoint:
         assert "detail" in data
         assert "Invalid status" in data["detail"]
         assert "pending, delivered, failed" in data["detail"]
+
+    def test_non_positive_limit_is_rejected(self, client):
+        """SQLite treats LIMIT -1 as unlimited, so the API must reject it."""
+        response = client.get("/terminals/abcdef12/inbox/messages?limit=-1")
+
+        assert response.status_code == 422
 
     def test_limit_exceeds_maximum(self, client):
         """Test that limit parameter is properly validated."""

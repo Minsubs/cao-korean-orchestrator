@@ -8,37 +8,24 @@ import {
   nextChatId,
   saveStoredChat,
   WAITING_MESSAGE,
+  type WorkspacePendingReply,
 } from './orchestratorChat'
-import { applyUiEvents, buildThreadItems, mergeSeededCard, seedCardFromTerminalMeta, withCallerNames } from './threadReducer'
+import { applyUiEvents, buildThreadItems, filterUiEventsForSession, mergeSeededCard, seedCardFromTerminalMeta, withCallerNames } from './threadReducer'
 import type { UiConnectionStatus } from './eventsClient'
 import type { ChatEntry, DelegationCard, ThreadItem, UiEvent } from './types'
+import { orchestrationReplyFingerprint, snapshotInputGenerations } from './sessionCompletion'
+import { loadDelegationHistory, saveDelegationHistory } from './delegationHistory'
+import { inferTeamRosterFromOutput, loadTeamRoster, saveTeamRoster, type TeamRosterProfile } from './teamRoster'
 
 const SESSION_POLL_MS = 4000
-const SETTLED_STATUSES = ['completed', 'idle', 'waiting_user_answer', 'error']
 const PENDING_TIMEOUT_MS = 180000
-
-interface PendingReply {
-  messageId: string
-  baseline: string
-  terminalId: string
-}
-
-function eventBelongsToSession(event: UiEvent, sessionIds: Set<string>, knownTerminalIds: Set<string>): boolean {
-  const detail = event.detail as Record<string, unknown>
-  const sid = typeof detail.session_id === 'string' ? detail.session_id : undefined
-  if (sid) return sessionIds.has(sid)
-  const tid = typeof detail.terminal_id === 'string' ? detail.terminal_id : undefined
-  if (tid) return knownTerminalIds.has(tid)
-  const receiver = typeof detail.receiver === 'string' ? detail.receiver : undefined
-  if (receiver) return knownTerminalIds.has(receiver)
-  return false
-}
 
 export interface WorkspaceSessionState {
   loading: boolean
   terminals: TerminalMeta[]
   supervisorTerminalId: string | null
   cards: DelegationCard[]
+  teamRoster: TeamRosterProfile[]
   threadItems: ThreadItem[]
   locations: Record<string, string | null>
   terminalStatuses: Record<string, string>
@@ -71,8 +58,13 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
   const [chatEntries, setChatEntries] = useState<ChatEntry[]>([])
   const [sending, setSending] = useState(false)
   const [composerTargetId, setComposerTargetId] = useState<string | null>(null)
-  const [pendingReply, setPendingReply] = useState<PendingReply | null>(null)
+  const [pendingReply, setPendingReply] = useState<WorkspacePendingReply | null>(null)
+  const [teamRoster, setTeamRoster] = useState<TeamRosterProfile[]>([])
+  const [delegationHistory, setDelegationHistory] = useState<Record<string, DelegationCard>>({})
   const lastOutputRef = useRef<Record<string, string>>({})
+  const storedSupervisorOutputRef = useRef('')
+  const skipPersistForSessionRef = useRef<string | null>(null)
+  const rosterBackfillSessionRef = useRef<string | null>(null)
 
   const supervisorTerminalId = terminals[0]?.id ?? null
 
@@ -80,23 +72,40 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
   useEffect(() => {
     if (!sessionName) {
       setChatEntries([])
+      setTeamRoster([])
+      setDelegationHistory({})
       return
     }
     const stored = loadStoredChat(sessionName)
+    skipPersistForSessionRef.current = sessionName
     setChatEntries(stored.entries)
-    lastOutputRef.current = {}
-    setPendingReply(null)
-    setSending(false)
-    setComposerTargetId(null)
+    storedSupervisorOutputRef.current = stored.lastOutput
+    lastOutputRef.current = stored.pendingReply
+      ? { [stored.pendingReply.terminalId]: stored.pendingReply.baseline }
+      : {}
+    setPendingReply(stored.pendingReply)
+    setSending(Boolean(stored.pendingReply))
+    setComposerTargetId(stored.pendingReply?.terminalId ?? null)
+    setTeamRoster(loadTeamRoster(sessionName))
+    setDelegationHistory(loadDelegationHistory(sessionName))
+    rosterBackfillSessionRef.current = null
   }, [sessionName])
 
-  // Persist only the supervisor-targeted conversation — matches the classic
-  // SessionChatPanel's storage contract exactly (spec: "호환 유지").
+  // Keep Workspace-specific target/pending metadata in the shared storage
+  // object while preserving the classic modal's supervisor-only fields.
   useEffect(() => {
     if (!sessionName) return
-    const supervisorOnly = chatEntries.filter(e => !e.targetId || e.targetId === supervisorTerminalId)
-    saveStoredChat(sessionName, supervisorOnly, lastOutputRef.current[supervisorTerminalId ?? ''] || '')
-  }, [sessionName, chatEntries, supervisorTerminalId])
+    if (skipPersistForSessionRef.current === sessionName) {
+      skipPersistForSessionRef.current = null
+      return
+    }
+    saveStoredChat(
+      sessionName,
+      chatEntries,
+      lastOutputRef.current[supervisorTerminalId ?? ''] || storedSupervisorOutputRef.current,
+      pendingReply,
+    )
+  }, [sessionName, chatEntries, supervisorTerminalId, pendingReply])
 
   // Default composer target to the supervisor once known; snap back if the
   // previously chosen target terminal disappears (closed/killed).
@@ -181,9 +190,33 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
     }
   }, [terminals, setTerminalStatus])
 
+  // Before roster persistence existed, completed handoffs still recorded the
+  // exact agent_profile arguments in supervisor output. Recover them once so
+  // existing sessions gain the same full-team panel without recreation.
+  useEffect(() => {
+    if (!sessionName || loadTeamRoster(sessionName).length > 0) return
+    const supervisor = terminals[0]
+    if (!supervisor || supervisor.tmux_session !== sessionName) return
+    if (rosterBackfillSessionRef.current === sessionName) return
+    rosterBackfillSessionRef.current = sessionName
+    let cancelled = false
+    void api.getTerminalOutput(supervisor.id, 'full').then(result => {
+      if (cancelled) return
+      const inferred = inferTeamRosterFromOutput(result.output || '')
+      if (inferred.length === 0) return
+      saveTeamRoster(sessionName, inferred)
+      setTeamRoster(inferred)
+    }).catch(() => {
+      // No retained output means only live/history cards can be recovered.
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [sessionName, terminals])
+
   // ── Card assembly: REST seed (always) + event overlay (when available) ──
   const cardsRecord = useMemo(() => {
-    let cards: Record<string, DelegationCard> = {}
+    let cards: Record<string, DelegationCard> = { ...delegationHistory }
     terminals.slice(1).forEach(t => {
       const extra = {
         callerId: terminalDetails[t.id]?.caller_id ?? null,
@@ -196,7 +229,7 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
 
     const sessionIds = new Set([sessionIdValue, sessionName].filter((v): v is string => !!v))
     const knownTerminalIds = new Set(terminals.map(t => t.id))
-    const relevantEvents = events.filter(e => eventBelongsToSession(e, sessionIds, knownTerminalIds))
+    const relevantEvents = filterUiEventsForSession(events, sessionIds, knownTerminalIds)
 
     // Fold in any event-known cards not yet visible via REST (e.g. a brand-new
     // terminal_created the next session poll hasn't reflected yet), then
@@ -211,19 +244,25 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
     // (which only ever update an existing card, never create one) land on the
     // REST-seeded cards too.
     cards = applyUiEvents(cards, relevantEvents)
+    if (supervisorTerminalId) delete cards[supervisorTerminalId]
     cards = withCallerNames(cards)
     return cards
-  }, [terminals, terminalDetails, locations, events, sessionIdValue, sessionName])
+  }, [terminals, terminalDetails, locations, events, sessionIdValue, sessionName, delegationHistory, supervisorTerminalId])
 
   const cards = useMemo(
     () => Object.values(cardsRecord).sort((a, b) => a.firstSeenAt - b.firstSeenAt),
     [cardsRecord],
   )
 
+  useEffect(() => {
+    if (!sessionName) return
+    saveDelegationHistory(sessionName, cards)
+  }, [sessionName, cards])
+
   const threadItems = useMemo(() => {
     const sessionIds = new Set([sessionIdValue, sessionName].filter((v): v is string => !!v))
     const knownTerminalIds = new Set(terminals.map(t => t.id))
-    const relevantEvents = events.filter(e => eventBelongsToSession(e, sessionIds, knownTerminalIds))
+    const relevantEvents = filterUiEventsForSession(events, sessionIds, knownTerminalIds)
     return buildThreadItems({ events: relevantEvents, chat: chatEntries, cards: cardsRecord })
   }, [events, chatEntries, cardsRecord, sessionIdValue, sessionName, terminals])
 
@@ -235,7 +274,7 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
     async (text: string, explicitTargetId?: string) => {
       const prompt = text.trim()
       const targetId = explicitTargetId ?? composerTargetId ?? supervisorTerminalId
-      if (!prompt || !targetId || sending) return
+      if (!prompt || !targetId || sending || !sessionName) return
 
       const isSupervisor = targetId === supervisorTerminalId
       const replyId = nextChatId('assistant')
@@ -257,49 +296,85 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
       setSending(true)
 
       try {
+        const [sessionDetail, inboxMessages] = await Promise.all([
+          api.getSession(sessionName),
+          api.getInboxMessages(targetId, 1, undefined, undefined, true),
+        ])
+        const baselineGenerations = snapshotInputGenerations(sessionDetail.terminals)
+        const baselineInboxMessageId = Math.max(0, ...inboxMessages.map(message => message.id))
+        const nextPendingReply: WorkspacePendingReply = {
+          messageId: replyId,
+          baseline: lastOutputRef.current[targetId]
+            || (targetId === supervisorTerminalId ? storedSupervisorOutputRef.current : ''),
+          terminalId: targetId,
+          baselineGenerations,
+          baselineInboxMessageId,
+        }
+        setPendingReply(nextPendingReply)
         await api.sendInput(targetId, prompt)
-        setPendingReply({ messageId: replyId, baseline: lastOutputRef.current[targetId] || '', terminalId: targetId })
       } catch (error: unknown) {
         const err = error as { detail?: string; message?: string }
         replaceChatEntry(replyId, err?.detail || err?.message || '메시지를 보내지 못했습니다.')
+        setPendingReply(null)
         setSending(false)
       }
     },
-    [composerTargetId, supervisorTerminalId, sending, replaceChatEntry],
+    [composerTargetId, supervisorTerminalId, sending, replaceChatEntry, sessionName],
   )
 
   // Generalized pending-reply poll — ported from SessionChatPanel, parameterized by target terminal.
   useEffect(() => {
-    if (!pendingReply) return
+    if (!pendingReply || !sessionName) return
     let cancelled = false
     let timer: ReturnType<typeof setTimeout> | undefined
     let timeoutTimer: ReturnType<typeof setTimeout> | undefined
-    let lastSeen = pendingReply.baseline
-    let stableReads = 0
 
     const poll = async () => {
       try {
-        const [outputResult, terminalStatus] = await Promise.all([
-          api.getTerminalOutput(pendingReply.terminalId, 'last'),
-          api.getTerminalStatus(pendingReply.terminalId),
+        const [sessionBefore, inboxBefore] = await Promise.all([
+          api.getSession(sessionName),
+          api.getInboxMessages(
+            pendingReply.terminalId,
+            100,
+            undefined,
+            pendingReply.baselineInboxMessageId,
+          ),
         ])
         if (cancelled) return
-        const clean = formatOrchestratorOutput(outputResult.output || '')
-        const normalized = (terminalStatus || 'unknown').toLowerCase()
+        const beforeFingerprint = orchestrationReplyFingerprint(
+          sessionBefore.terminals,
+          pendingReply.terminalId,
+          pendingReply.baselineGenerations,
+          inboxBefore,
+          pendingReply.baselineInboxMessageId,
+        )
+        if (!beforeFingerprint) throw new Error('Orchestration is still running')
 
+        const outputResult = await api.getTerminalOutput(pendingReply.terminalId, 'last')
+        const [sessionAfter, inboxAfter] = await Promise.all([
+          api.getSession(sessionName),
+          api.getInboxMessages(
+            pendingReply.terminalId,
+            100,
+            undefined,
+            pendingReply.baselineInboxMessageId,
+          ),
+        ])
+        if (cancelled) return
+        const afterFingerprint = orchestrationReplyFingerprint(
+          sessionAfter.terminals,
+          pendingReply.terminalId,
+          pendingReply.baselineGenerations,
+          inboxAfter,
+          pendingReply.baselineInboxMessageId,
+        )
+        if (beforeFingerprint !== afterFingerprint) throw new Error('Orchestration state changed during output read')
+
+        const clean = formatOrchestratorOutput(outputResult.output || '')
         if (clean && clean !== pendingReply.baseline) {
           replaceChatEntry(pendingReply.messageId, clean)
           lastOutputRef.current[pendingReply.terminalId] = clean
-          if (clean === lastSeen) stableReads += 1
-          else {
-            lastSeen = clean
-            stableReads = 0
-          }
-        }
-
-        const settled = SETTLED_STATUSES.includes(normalized)
-        const hasReply = clean.length > 0 && clean !== pendingReply.baseline
-        if (hasReply && (settled || stableReads >= 2)) {
+          if (pendingReply.terminalId === supervisorTerminalId) storedSupervisorOutputRef.current = clean
           setPendingReply(null)
           setSending(false)
           return
@@ -323,7 +398,7 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
       if (timer) clearTimeout(timer)
       if (timeoutTimer) clearTimeout(timeoutTimer)
     }
-  }, [pendingReply, replaceChatEntry])
+  }, [pendingReply, replaceChatEntry, sessionName, supervisorTerminalId])
 
   const requestStatusCheck = useCallback(
     async (aboutTerminalId: string, agentName: string | null) => {
@@ -339,6 +414,7 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
     terminals,
     supervisorTerminalId,
     cards,
+    teamRoster,
     threadItems,
     locations,
     terminalStatuses,

@@ -7,12 +7,15 @@ import { AddAgentModal } from './AddAgentModal'
 import { ContextGaugeChip } from './ContextGaugeChip'
 import { displaySessionName } from './displayName'
 import type { DelegationCard } from './types'
+import type { TeamRosterProfile } from './teamRoster'
+import { profileLabel } from '../profiles/profilePresentation'
 
 interface AgentSidePanelProps {
   collapsed: boolean
   sessionName: string | null
   terminals: TerminalMeta[]
   cards: DelegationCard[]
+  teamRoster?: TeamRosterProfile[]
   terminalStatuses: Record<string, string>
   /** Session's own (supervisor terminal's) working directory — prefills the [+] modal's directory field. */
   sessionWorkingDirectory: string | null
@@ -47,6 +50,7 @@ export function AgentSidePanel({
   sessionName,
   terminals,
   cards,
+  teamRoster = [],
   terminalStatuses,
   sessionWorkingDirectory,
   gauges = {},
@@ -65,6 +69,9 @@ export function AgentSidePanel({
   if (collapsed) return null
 
   const supervisor = terminals[0]
+  const activeProfileNames = new Set(cards.map(card => card.agentName).filter((name): name is string => Boolean(name)))
+  const waitingRoster = teamRoster.filter(profile => !activeProfileNames.has(profile.name))
+  const agentCount = (supervisor ? 1 : 0) + cards.length + waitingRoster.length
   const queueCards = cards.filter(c => {
     const s = (resolveStatus(c.terminalId, c.status, terminalStatuses) || '').toUpperCase()
     return s === 'PROCESSING' || s === 'WAITING_USER_ANSWER'
@@ -91,7 +98,7 @@ export function AgentSidePanel({
                 tab === t ? 'bg-[var(--accent-soft)] text-[var(--accent-text)]' : 'bg-[var(--surface-2)] text-[var(--text-3)]'
               }`}
             >
-              {t === 'agents' ? `에이전트 ${terminals.length}` : t === 'queue' ? `작업 큐 ${queueCards.length}` : '세션 정보'}
+              {t === 'agents' ? `에이전트 ${agentCount}` : t === 'queue' ? `작업 큐 ${queueCards.length}` : '세션 정보'}
             </button>
           ))}
         </div>
@@ -119,7 +126,7 @@ export function AgentSidePanel({
                 provider={supervisor.provider}
                 status={resolveStatus(supervisor.id, null, terminalStatuses)}
                 percentLeft={gauges[supervisor.id] ?? null}
-                roleLabel="Supervisor"
+                roleLabel="오케스트레이터"
                 subLine={null}
                 callerAgentName={null}
                 location={null}
@@ -137,7 +144,7 @@ export function AgentSidePanel({
                 terminalId={card.terminalId}
                 agentName={card.agentName}
                 provider={card.provider}
-                status={resolveStatus(card.terminalId, card.status, terminalStatuses)}
+                status={card.killed ? (card.status ?? 'completed') : resolveStatus(card.terminalId, card.status, terminalStatuses)}
                 percentLeft={gauges[card.terminalId] ?? null}
                 roleLabel={null}
                 subLine={card.instruction}
@@ -149,7 +156,11 @@ export function AgentSidePanel({
                 onInbox={() => onOpenInbox(card.terminalId)}
                 onStop={() => onRequestStop(card.terminalId, card.agentName)}
                 onDelete={() => onRequestDelete(card.terminalId, card.agentName)}
+                actionsEnabled={!card.killed}
               />
+            ))}
+            {waitingRoster.map(profile => (
+              <TeamRosterCard key={profile.name} profile={profile} />
             ))}
           </div>
         ) : tab === 'queue' ? (
@@ -176,7 +187,7 @@ export function AgentSidePanel({
           <div className="space-y-0.5 text-xs">
             <InfoRow k="세션" v={displaySessionName(sessionName)} />
             <InfoRow k="터미널" v={`${terminals.length}개`} />
-            <InfoRow k="Provider" v={providers.join(', ') || '—'} />
+            <InfoRow k="실행 AI" v={providers.join(', ') || '—'} />
             <InfoRow k="시작" v={fmtAbs(startedAt) ?? '확인할 수 없음'} />
             <InfoRow k="Git branch" v="확인할 수 없음" muted />
             <button
@@ -200,6 +211,22 @@ export function AgentSidePanel({
         />
       )}
     </aside>
+  )
+}
+
+function TeamRosterCard({ profile }: { profile: TeamRosterProfile }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-[var(--border)] p-2.5">
+      <div className="flex items-center gap-2">
+        <AgentAvatar name={profile.name} />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[12.5px] font-bold text-[var(--text)]">{profileLabel(profile.name)}</div>
+          <div className="truncate text-[10.5px] text-[var(--text-3)]">{profile.provider ?? '프로필 자동 결정'} · 호출 대기</div>
+        </div>
+        <StatusBadge status="idle" />
+      </div>
+      <p className="mt-1.5 text-[10.5px] text-[var(--text-3)]">선택한 팀원 · 오케스트레이터가 위임하면 진행 카드로 전환돼요.</p>
+    </div>
   )
 }
 
@@ -228,6 +255,7 @@ function AgentCard({
   onInbox,
   onStop,
   onDelete,
+  actionsEnabled = true,
 }: {
   terminalId: string
   agentName: string | null
@@ -244,6 +272,7 @@ function AgentCard({
   onInbox: () => void
   onStop: () => void
   onDelete: () => void
+  actionsEnabled?: boolean
 }) {
   return (
     <div className="rounded-2xl border border-[var(--border)] p-2.5">
@@ -251,7 +280,7 @@ function AgentCard({
         <AgentAvatar name={agentName} />
         <div className="min-w-0 flex-1">
           <div className="truncate text-[12.5px] font-bold text-[var(--text)]">
-            {agentName ?? terminalId.slice(0, 8)}
+            {agentName ? profileLabel(agentName) : terminalId.slice(0, 8)}
             {roleLabel && <span className="ml-1.5 rounded bg-[var(--surface-3)] px-1 py-0.5 text-[9.5px] font-bold text-[var(--text-2)]">{roleLabel}</span>}
           </div>
           <div className="truncate text-[10.5px] text-[var(--text-3)]">
@@ -268,14 +297,18 @@ function AgentCard({
           {location && <div className="truncate font-mono text-[10.5px] text-[var(--text-3)]">{location}</div>}
         </div>
       )}
-      <div className="mt-2 flex gap-1">
-        <IconButton title="메시지 보내기" onClick={onMessage}><MessageSquare size={13} /></IconButton>
-        <IconButton title="터미널 열기" onClick={onTerminal}><TermIcon size={13} /></IconButton>
-        <IconButton title="Output 열기" onClick={onOutput}><FileText size={13} /></IconButton>
-        <IconButton title="받은편지함" onClick={onInbox}><Mail size={13} /></IconButton>
-        <IconButton title="중지" onClick={onStop} warn><Square size={13} /></IconButton>
-        <IconButton title="삭제" onClick={onDelete} warn><Trash2 size={13} /></IconButton>
-      </div>
+      {actionsEnabled ? (
+        <div className="mt-2 flex gap-1">
+          <IconButton title="메시지 보내기" onClick={onMessage}><MessageSquare size={13} /></IconButton>
+          <IconButton title="터미널 열기" onClick={onTerminal}><TermIcon size={13} /></IconButton>
+          <IconButton title="Output 열기" onClick={onOutput}><FileText size={13} /></IconButton>
+          <IconButton title="받은편지함" onClick={onInbox}><Mail size={13} /></IconButton>
+          <IconButton title="중지" onClick={onStop} warn><Square size={13} /></IconButton>
+          <IconButton title="삭제" onClick={onDelete} warn><Trash2 size={13} /></IconButton>
+        </div>
+      ) : (
+        <p className="mt-2 text-[10.5px] text-[var(--text-3)]">완료 후 자동 정리된 작업 기록</p>
+      )}
     </div>
   )
 }

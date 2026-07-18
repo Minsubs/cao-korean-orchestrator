@@ -184,6 +184,28 @@ class TestResolveProvider:
 
         assert result == "kiro_cli"
 
+    @patch("cli_agent_orchestrator.utils.agent_profiles.load_agent_profile")
+    def test_infers_provider_from_native_agent_directory(self, mock_load, tmp_path, monkeypatch):
+        """A native Claude profile without CAO frontmatter still routes to Claude."""
+        native_dir = tmp_path / "claude-agents"
+        native_dir.mkdir()
+        (native_dir / "frontend-developer.md").write_text(
+            "---\nname: frontend-developer\ndescription: Frontend specialist\n---\nPrompt"
+        )
+        mock_load.return_value = AgentProfile(
+            name="frontend-developer", description="Frontend specialist"
+        )
+        monkeypatch.setattr(
+            "cli_agent_orchestrator.services.settings_service.get_agent_dirs",
+            lambda: {"claude_code": str(native_dir)},
+        )
+        monkeypatch.setattr(
+            "cli_agent_orchestrator.services.settings_service.get_disabled_agent_dirs",
+            lambda: [],
+        )
+
+        assert resolve_provider("frontend-developer", fallback_provider="codex") == "claude_code"
+
 
 class TestListAgentProfiles:
     """Tests for list_agent_profiles function."""
@@ -493,6 +515,55 @@ class TestListAgentProfilesBuiltinAdditive:
         assert "multi-agent system" not in by_name["developer"]["description"]
 
 
+class TestCuratedTeamProfiles:
+    """The fixed orchestrator team ships in the wheel and matches its source copies."""
+
+    PROFILE_NAMES = (
+        "codex_orchestrator_sol",
+        "claude_orchestrator_sonnet",
+        "claude_scout_haiku",
+        "claude_architect_opus",
+        "claude_developer_sonnet",
+        "codex_qa_terra",
+        "codex_reviewer_sol",
+        "codex_docs_luna",
+    )
+
+    def test_curated_profiles_are_packaged_and_in_sync(self):
+        repo_root = Path(__file__).resolve().parents[2]
+        source_dir = repo_root / "agent-profiles"
+        packaged_dir = repo_root / "src" / "cli_agent_orchestrator" / "agent_store"
+
+        for name in self.PROFILE_NAMES:
+            assert (packaged_dir / f"{name}.md").read_text() == (
+                source_dir / f"{name}.md"
+            ).read_text()
+
+    def test_orchestrators_are_noninteractive_and_read_only(self):
+        repo_root = Path(__file__).resolve().parents[2]
+        source_dir = repo_root / "agent-profiles"
+
+        codex = parse_agent_profile_text(
+            (source_dir / "codex_orchestrator_sol.md").read_text(),
+            "codex_orchestrator_sol",
+        )
+        claude = parse_agent_profile_text(
+            (source_dir / "claude_orchestrator_sonnet.md").read_text(),
+            "claude_orchestrator_sonnet",
+        )
+
+        assert codex.role == "supervisor"
+        assert codex.codexApprovalPolicy == "never"
+        assert codex.codexSandbox == "read-only"
+        assert codex.codexConfig == {
+            "model_reasoning_effort": "high",
+            "mcp_servers.cao-mcp-server.default_tools_approval_mode": "approve",
+        }
+        assert claude.role == "supervisor"
+        assert claude.permissionMode == "bypassPermissions"
+        assert claude.allowedTools == ["fs_read", "fs_list", "@cao-mcp-server"]
+
+
 class TestScanDirectory:
     """Tests for _scan_directory helper function."""
 
@@ -521,6 +592,34 @@ class TestScanDirectory:
         assert profiles["my-agent"]["description"] == "My agent"
         assert profiles["my-agent"]["source"] == "local"
 
+    def test_scan_directory_exposes_ui_role_and_specialty(self, tmp_path):
+        from cli_agent_orchestrator.utils.agent_profiles import _scan_directory
+
+        (tmp_path / "fine-grained.md").write_text(
+            "---\nname: fine-grained\ndescription: Security specialist\n"
+            "uiRole: Security\nspecialty: Application Security\n---\nPrompt"
+        )
+        profiles = {}
+
+        _scan_directory(tmp_path, "local", profiles)
+
+        assert profiles["fine-grained"]["ui_role"] == "Security"
+        assert profiles["fine-grained"]["specialty"] == "Application Security"
+
+    def test_scan_directory_uses_native_source_as_provider_when_frontmatter_omits_it(
+        self, tmp_path
+    ):
+        from cli_agent_orchestrator.utils.agent_profiles import _scan_directory
+
+        (tmp_path / "backend-developer.md").write_text(
+            "---\nname: backend-developer\ndescription: Backend specialist\n---\nPrompt"
+        )
+        profiles = {}
+
+        _scan_directory(tmp_path, "claude_code", profiles)
+
+        assert profiles["backend-developer"]["provider"] == "claude_code"
+
     def test_scan_directory_finds_subdirectory_profiles(self, tmp_path):
         """Test that _scan_directory finds agent.md inside subdirectories."""
         from cli_agent_orchestrator.utils.agent_profiles import _scan_directory
@@ -537,6 +636,19 @@ class TestScanDirectory:
         assert "sub-agent" in profiles
         assert profiles["sub-agent"]["description"] == "Sub agent"
         assert profiles["sub-agent"]["source"] == "kiro"
+
+    def test_scan_directory_skips_grouping_folders_without_agent_md(self, tmp_path):
+        from cli_agent_orchestrator.utils.agent_profiles import _scan_directory
+
+        disabled = tmp_path / "disabled"
+        disabled.mkdir()
+        (disabled / "archived-agent.md").write_text("---\ndescription: Disabled\n---\nPrompt")
+        profiles = {}
+
+        _scan_directory(tmp_path, "claude_code", profiles)
+
+        assert "disabled" not in profiles
+        assert "archived-agent" not in profiles
 
     def test_scan_directory_does_not_overwrite_existing_profile(self, tmp_path):
         """Test that _scan_directory does not overwrite an already-discovered profile."""

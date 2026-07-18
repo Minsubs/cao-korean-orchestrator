@@ -718,6 +718,7 @@ async def _handoff_impl(
             "prompt": shaped_message,
             "teardown": True,
             "timeout": float(timeout),
+            "orchestration_type": OrchestrationType.HANDOFF.value,
         }
         if ctx.session_name:
             payload["session_name"] = ctx.session_name

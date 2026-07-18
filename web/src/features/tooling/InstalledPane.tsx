@@ -8,17 +8,17 @@ import { ActionButton, GENERIC_SKILLS_ADAPTER_ID, TypeChip, UNKNOWN, gateCapabil
 // Type/Provider filter set rather than a separate screen — see "설치됨 탭
 // 확장" in the phase5b spec.
 const KIND_OPTIONS: { value: ExtensionKind; label: string }[] = [
-  { value: 'skill', label: 'Skill' },
-  { value: 'plugin', label: 'Plugin' },
-  { value: 'profile', label: 'Profile' },
+  { value: 'skill', label: '스킬 (Skill)' },
+  { value: 'plugin', label: '플러그인 (Plugin)' },
+  { value: 'profile', label: '에이전트 (Profile)' },
   { value: 'mcp', label: 'MCP' },
 ]
 const SCOPE_OPTIONS: { value: ExtensionScope; label: string }[] = [
-  { value: 'built-in', label: 'Built-in' },
-  { value: 'user', label: 'User' },
+  { value: 'built-in', label: '기본 제공 (Built-in)' },
+  { value: 'user', label: '직접 설치 (User)' },
 ]
-const KIND_LABEL: Record<ExtensionKind, string> = { skill: 'Skill', plugin: 'Plugin', profile: 'Profile', mcp: 'MCP' }
-const SCOPE_LABEL: Record<ExtensionScope, string> = { 'built-in': 'Built-in', user: 'User' }
+const KIND_LABEL: Record<ExtensionKind, string> = { skill: '스킬', plugin: '플러그인', profile: '에이전트', mcp: 'MCP' }
+const SCOPE_LABEL: Record<ExtensionScope, string> = { 'built-in': '기본 제공', user: '직접 설치' }
 /** Shared "provider unset" bucket for the Provider filter — keeps null providers visible/filterable instead of silently vanishing. */
 const NO_PROVIDER = '__none__'
 
@@ -61,8 +61,17 @@ export function InstalledPane({ extensions, selectedId, onSelect, adapters, adap
     }
     return Array.from(counts.entries())
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([value, count]) => ({ value, label: value === NO_PROVIDER ? UNKNOWN : value, count }))
-  }, [extensions])
+      .map(([value, count]) => ({
+        value,
+        label:
+          value === NO_PROVIDER
+            ? UNKNOWN
+            : value === 'cao'
+              ? 'MS Orchestrator'
+              : adapters.find(adapter => adapter.id === value)?.display_name ?? value,
+        count,
+      }))
+  }, [extensions, adapters])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -70,10 +79,12 @@ export function InstalledPane({ extensions, selectedId, onSelect, adapters, adap
       if (!kindFilter.has(e.kind)) return false
       if (!scopeFilter.has(e.scope)) return false
       if (providerFilter && !providerFilter.has(e.provider ?? NO_PROVIDER)) return false
-      if (q && !e.name.toLowerCase().includes(q) && !(e.description ?? '').toLowerCase().includes(q)) return false
+      const providerName = providerOptions.find(option => option.value === (e.provider ?? NO_PROVIDER))?.label ?? ''
+      const haystack = [e.name, e.description ?? '', e.kind, KIND_LABEL[e.kind], e.scope, SCOPE_LABEL[e.scope], e.provider ?? '', providerName].join(' ').toLowerCase()
+      if (q && !haystack.includes(q)) return false
       return true
     })
-  }, [extensions, kindFilter, scopeFilter, providerFilter, search])
+  }, [extensions, kindFilter, scopeFilter, providerFilter, providerOptions, search])
 
   // Keep the selection valid: default to the first visible row whenever the
   // current selection falls outside the filtered set (initial load, a filter
@@ -119,7 +130,7 @@ export function InstalledPane({ extensions, selectedId, onSelect, adapters, adap
     <div className="flex h-full min-h-[420px] overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-sm">
       {/* Filters */}
       <aside className="w-[180px] shrink-0 overflow-y-auto border-r border-[var(--border)] p-3">
-        <FilterGroup title="Type">
+        <FilterGroup title="종류">
           {KIND_OPTIONS.map(o => (
             <FilterCheckbox
               key={o.value}
@@ -130,7 +141,7 @@ export function InstalledPane({ extensions, selectedId, onSelect, adapters, adap
             />
           ))}
         </FilterGroup>
-        <FilterGroup title="Scope">
+        <FilterGroup title="설치 위치">
           {SCOPE_OPTIONS.map(o => (
             <FilterCheckbox
               key={o.value}
@@ -142,7 +153,7 @@ export function InstalledPane({ extensions, selectedId, onSelect, adapters, adap
           ))}
         </FilterGroup>
         {providerOptions.length > 0 && (
-          <FilterGroup title="Provider">
+          <FilterGroup title="연결 도구">
             {providerOptions.map(o => (
               <FilterCheckbox
                 key={o.value}
@@ -164,11 +175,14 @@ export function InstalledPane({ extensions, selectedId, onSelect, adapters, adap
             <input
               value={searchInput}
               onChange={e => setSearchInput(e.target.value)}
-              placeholder="설치된 확장 검색…"
+              placeholder="이름·설명·종류·도구 검색…"
               aria-label="설치된 확장 검색"
               className="w-full border-none bg-transparent text-xs text-[var(--text)] outline-none placeholder:text-[var(--text-3)]"
             />
           </div>
+          <p className="mt-1.5 px-1 text-[10.5px] text-[var(--text-3)]">
+            검색 결과 <span className="font-bold text-[var(--text-2)]">{filtered.length}개</span> / 전체 {extensions.length}개
+          </p>
         </div>
         {filtered.length === 0 ? (
           <div className="px-4 py-8 text-center text-xs text-[var(--text-3)]">
@@ -321,7 +335,7 @@ function ExtensionDetail({
         <DetailRow label="ID" value={ext.id} mono />
         <DetailRow label="종류" value={KIND_LABEL[ext.kind]} />
         <DetailRow label="범위" value={SCOPE_LABEL[ext.scope]} />
-        <DetailRow label="Provider" value={ext.provider ?? UNKNOWN} />
+        <DetailRow label="연결 도구" value={ext.provider === 'cao' ? 'MS Orchestrator' : activeAdapter?.display_name ?? ext.provider ?? UNKNOWN} />
         <DetailRow label="활성화" value={ext.enabled ? '예' : '아니오'} />
         <DetailRow label="소스 경로" value={ext.source_path ?? UNKNOWN} mono breakAll />
       </dl>
@@ -332,7 +346,7 @@ function ExtensionDetail({
           icon={<Download size={12} />}
           onClick={() => activeAdapter && onRequestAction({ action: 'update', provider: activeAdapter.id, target: ext.name })}
         >
-          업데이트
+          {isSkill ? '최신화' : '업데이트'}
         </ActionButton>
         <ActionButton
           variant="danger"

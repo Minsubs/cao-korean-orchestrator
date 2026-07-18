@@ -5,6 +5,14 @@ import type { AgentProfileInfoWithModel } from '../../api.profiles'
 import { useStore } from '../../store'
 import { CustomSelect, type SelectOption } from '../../components/CustomSelect'
 import { filterVisibleProviders, loadHiddenProviders } from '../profiles/hiddenProviders'
+import {
+  isOrchestratorProfile,
+  profileDescription,
+  profileDetail,
+  profileLabel,
+  profileSectionLabel,
+} from '../profiles/profilePresentation'
+import { providerLabel } from '../profiles/roleData'
 import { DirectoryPicker } from './DirectoryPicker'
 
 // Mirrors AgentPanel.tsx's FALLBACK_PROVIDERS (classic "에이전트 추가" inline
@@ -74,6 +82,8 @@ export function AddAgentModal({ sessionName, defaultWorkingDirectory, onClose, o
     [providers, hiddenProviders],
   )
 
+  const workerProfiles = useMemo(() => profiles.filter(item => !isOrchestratorProfile(item.name)), [profiles])
+
   // Keep the selection pointed at a still-visible provider — e.g. the
   // 'kiro_cli' initial default is one of the feedback #8 defaults-hidden
   // entries, so without this the select would show a value with no matching
@@ -86,16 +96,16 @@ export function AddAgentModal({ sessionName, defaultWorkingDirectory, onClose, o
 
   const providerOptions: SelectOption[] = visibleProviders.map(p => ({
     value: p.name,
-    label: p.name,
+    label: providerLabel(p.name),
     sublabel: !p.installed ? '설치되지 않음' : undefined,
     disabled: !p.installed,
   }))
 
-  const profileOptions: SelectOption[] = profiles.map(p => ({
+  const profileOptions: SelectOption[] = workerProfiles.map(p => ({
     value: p.name,
-    label: p.name,
-    sublabel: p.description || undefined,
-    group: p.source,
+    label: profileLabel(p.name),
+    sublabel: `${profileDetail(p)} · ${profileDescription(p) ?? p.name}`,
+    group: profileSectionLabel(p),
   }))
 
   // Feedback #1's principle applied here too: once a profile with a real
@@ -140,11 +150,11 @@ export function AddAgentModal({ sessionName, defaultWorkingDirectory, onClose, o
 
         <div className="space-y-4 px-4 py-4">
           <p className="text-[11px] leading-relaxed text-[var(--text-3)]">
-            이 세션에 워커 에이전트를 추가해요. 같은 세션의 에이전트는 서로 메시지를 보내고, Supervisor가 작업을 위임할 수 있어요.
+            이 세션에 팀원을 추가해요. 같은 세션의 에이전트는 서로 메시지를 보내고, 오케스트레이터가 작업을 위임할 수 있어요.
           </p>
 
           <div>
-            <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-[var(--text-3)]">제공자</label>
+            <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-[var(--text-3)]">실행 AI</label>
             <CustomSelect value={provider} onChange={setProvider} placeholder="제공자 선택..." options={providerOptions} />
           </div>
 
@@ -152,7 +162,7 @@ export function AddAgentModal({ sessionName, defaultWorkingDirectory, onClose, o
             <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-[var(--text-3)]">에이전트 프로필</label>
             {loadingProfiles ? (
               <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-2 text-xs text-[var(--text-3)]">프로필 불러오는 중...</div>
-            ) : profiles.length > 0 ? (
+            ) : workerProfiles.length > 0 ? (
               <CustomSelect value={profile} onChange={handleProfileChange} placeholder="프로필 선택..." options={profileOptions} />
             ) : (
               <input

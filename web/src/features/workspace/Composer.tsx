@@ -303,7 +303,7 @@ export function Composer({
               if (slashOpen) setSlashDismissed(true)
             }}
             rows={2}
-            placeholder="Supervisor에게 작업을 요청하세요 · Shift+Enter 줄바꿈"
+            placeholder="오케스트레이터에게 작업을 요청하세요 · Shift+Enter 줄바꿈"
             aria-label="메시지 입력"
             className="max-h-40 min-h-[44px] w-full resize-none border-none bg-transparent text-[13px] text-[var(--text)] outline-none placeholder:text-[var(--text-3)]"
           />

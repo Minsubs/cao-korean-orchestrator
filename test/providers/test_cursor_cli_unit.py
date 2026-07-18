@@ -792,6 +792,7 @@ class TestBuildCommand:
         )
         with (
             patch(f"{MOD}._sibling_script", return_value="/venv/bin/cao-mcp-server"),
+            patch(f"{MOD}._sibling_environment_can_import_server", return_value=True),
             patch(f"{MOD}.shutil.which", side_effect=which_cursor_keeps_working),
         ):
             cmd = provider._build_cursor_command()

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Bot, Loader2, MessageCircle, RefreshCw, Send, User, X } from 'lucide-react'
 import { api } from '../api'
+import { orchestrationReplyFingerprint, snapshotInputGenerations } from '../features/workspace/sessionCompletion'
 
 function stripAnsi(text: string): string {
   return text.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').replace(/\x1b\][^\x07]*\x07/g, '')
@@ -8,6 +9,7 @@ function stripAnsi(text: string): string {
 
 const TOOL_CALL_LINE = /^\s*•\s*Called\b/
 const SEPARATOR_LINE = /^\s*─{20,}\s*$/m
+const ACTIVE_PROGRESS_LINE = /^\s*•.*\((?:(?:\d+h\s+)?(?:\d+m\s+)?)\d+s\s*•\s*esc to interrupt\)\s*$/m
 const WAITING_MESSAGE = '오케스트레이터 응답을 기다리는 중…'
 const STORAGE_PREFIX = 'cao:session-chat:v2:'
 
@@ -33,6 +35,10 @@ function sanitizeResponseBlock(text: string): string {
 export function formatOrchestratorOutput(rawOutput: string): string {
   const clean = stripAnsi(rawOutput || '').replace(/\r/g, '').trim()
   if (!clean) return ''
+  // Never promote a live Codex progress frame to a chat reply. Status polling
+  // normally blocks this first, but this output-level guard also protects the
+  // brief pane/status race around synchronous handoff tool completions.
+  if (ACTIVE_PROGRESS_LINE.test(clean)) return ''
 
   // CAO places the final answer between full-width separators after tool calls.
   // Taking the last useful segment hides tool payloads and loaded skill bodies.
@@ -73,11 +79,14 @@ interface ChatMessage {
 interface StoredChat {
   messages: ChatMessage[]
   lastOutput: string
+  pendingReply: PendingReply | null
 }
 
 interface PendingReply {
   messageId: string
   baseline: string
+  baselineGenerations: Record<string, number>
+  baselineInboxMessageId: number
 }
 
 interface SessionChatPanelProps {
@@ -119,20 +128,45 @@ function loadStoredChat(sessionName: string): StoredChat {
           : message
       )).filter((message: ChatMessage) => message.content.length > 0).slice(-100)
       : []
+    const pending = parsed.pendingReply
+    const validGenerations = pending?.baselineGenerations
+      && typeof pending.baselineGenerations === 'object'
+      && !Array.isArray(pending.baselineGenerations)
+      && Object.values(pending.baselineGenerations).every(value => (
+        typeof value === 'number' && Number.isFinite(value) && value >= 0
+      ))
+    const pendingReply = pending
+      && typeof pending.messageId === 'string'
+      && typeof pending.baseline === 'string'
+      && validGenerations
+      && typeof pending.baselineInboxMessageId === 'number'
+      && Number.isFinite(pending.baselineInboxMessageId)
+      && pending.baselineInboxMessageId >= 0
+      ? pending as PendingReply
+      : null
     return {
       messages,
       lastOutput: typeof parsed.lastOutput === 'string' ? parsed.lastOutput : '',
+      pendingReply,
     }
   } catch {
-    return { messages: [], lastOutput: '' }
+    return { messages: [], lastOutput: '', pendingReply: null }
   }
 }
 
-function saveStoredChat(sessionName: string, messages: ChatMessage[], lastOutput: string) {
+function saveStoredChat(
+  sessionName: string,
+  messages: ChatMessage[],
+  lastOutput: string,
+  pendingReply: PendingReply | null,
+) {
   try {
+    const existing = JSON.parse(window.localStorage.getItem(storageKey(sessionName)) || '{}') as Record<string, unknown>
     window.localStorage.setItem(storageKey(sessionName), JSON.stringify({
+      ...existing,
       messages: messages.slice(-100),
       lastOutput,
+      pendingReply,
     }))
   } catch {
     // Chat remains usable when storage is disabled or full.
@@ -142,20 +176,14 @@ function saveStoredChat(sessionName: string, messages: ChatMessage[], lastOutput
 export function SessionChatPanel({ sessionName, terminalId, onClose }: SessionChatPanelProps) {
   const initialChat = useRef<StoredChat | null>(null)
   if (initialChat.current === null) initialChat.current = loadStoredChat(sessionName)
-  const initialPendingMessage = [...initialChat.current.messages].reverse().find(message => (
-    message.role === 'assistant' && message.content === WAITING_MESSAGE
-  ))
 
   const [messages, setMessages] = useState<ChatMessage[]>(initialChat.current.messages)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(true)
-  const [sending, setSending] = useState(Boolean(initialPendingMessage))
+  const [sending, setSending] = useState(Boolean(initialChat.current.pendingReply))
   const [status, setStatus] = useState<string | null>(null)
   const [lastOutput, setLastOutput] = useState(initialChat.current.lastOutput)
-  const [pendingReply, setPendingReply] = useState<PendingReply | null>(initialPendingMessage ? {
-    messageId: initialPendingMessage.id,
-    baseline: initialChat.current.lastOutput,
-  } : null)
+  const [pendingReply, setPendingReply] = useState<PendingReply | null>(initialChat.current.pendingReply)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const replaceMessage = (id: string, content: string) => {
@@ -171,7 +199,7 @@ export function SessionChatPanel({ sessionName, terminalId, onClose }: SessionCh
       ])
       const clean = formatOrchestratorOutput(outputResult.output || '')
       setStatus(terminalStatus)
-      if (clean) {
+      if (clean && !pendingReply) {
         setMessages(current => {
           const pendingIndex = current.findIndex(message => (
             message.role === 'assistant' && message.content === WAITING_MESSAGE
@@ -185,10 +213,6 @@ export function SessionChatPanel({ sessionName, terminalId, onClose }: SessionCh
           }
           return current
         })
-        if (pendingReply && clean !== pendingReply.baseline) {
-          setPendingReply(null)
-          setSending(false)
-        }
         setLastOutput(clean)
       }
     } catch {
@@ -205,8 +229,8 @@ export function SessionChatPanel({ sessionName, terminalId, onClose }: SessionCh
   }, [terminalId])
 
   useEffect(() => {
-    saveStoredChat(sessionName, messages, lastOutput)
-  }, [sessionName, messages, lastOutput])
+    saveStoredChat(sessionName, messages, lastOutput, pendingReply)
+  }, [sessionName, messages, lastOutput, pendingReply])
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -226,34 +250,46 @@ export function SessionChatPanel({ sessionName, terminalId, onClose }: SessionCh
     let cancelled = false
     let timer: ReturnType<typeof setTimeout> | undefined
     let timeoutTimer: ReturnType<typeof setTimeout> | undefined
-    let lastSeen = pendingReply.baseline
-    let stableReads = 0
 
     const poll = async () => {
       try {
-        const [outputResult, terminalStatus] = await Promise.all([
-          api.getTerminalOutput(terminalId, 'last'),
-          api.getTerminalStatus(terminalId),
+        const [sessionBefore, inboxBefore] = await Promise.all([
+          api.getSession(sessionName),
+          api.getInboxMessages(terminalId, 100, undefined, pendingReply.baselineInboxMessageId),
         ])
         if (cancelled) return
 
+        const beforeFingerprint = orchestrationReplyFingerprint(
+          sessionBefore.terminals,
+          terminalId,
+          pendingReply.baselineGenerations,
+          inboxBefore,
+          pendingReply.baselineInboxMessageId,
+        )
+        if (!beforeFingerprint) throw new Error('Orchestration is still running')
+
+        const outputResult = await api.getTerminalOutput(terminalId, 'last')
+        const [sessionAfter, inboxAfter] = await Promise.all([
+          api.getSession(sessionName),
+          api.getInboxMessages(terminalId, 100, undefined, pendingReply.baselineInboxMessageId),
+        ])
+        if (cancelled) return
+        const afterFingerprint = orchestrationReplyFingerprint(
+          sessionAfter.terminals,
+          terminalId,
+          pendingReply.baselineGenerations,
+          inboxAfter,
+          pendingReply.baselineInboxMessageId,
+        )
+        if (beforeFingerprint !== afterFingerprint) throw new Error('Orchestration state changed during output read')
+
         const clean = formatOrchestratorOutput(outputResult.output || '')
-        const normalizedStatus = terminalStatus?.toLowerCase() || 'unknown'
+        const terminalStatus = sessionAfter.terminals.find(item => item.id === terminalId)?.status ?? null
         setStatus(terminalStatus)
 
         if (clean && clean !== pendingReply.baseline) {
           replaceMessage(pendingReply.messageId, clean)
           setLastOutput(clean)
-          if (clean === lastSeen) stableReads += 1
-          else {
-            lastSeen = clean
-            stableReads = 0
-          }
-        }
-
-        const settled = ['completed', 'idle', 'waiting_user_answer', 'error'].includes(normalizedStatus)
-        const hasReply = clean.length > 0 && clean !== pendingReply.baseline
-        if (hasReply && (settled || stableReads >= 2)) {
           setPendingReply(null)
           setSending(false)
           return
@@ -278,7 +314,7 @@ export function SessionChatPanel({ sessionName, terminalId, onClose }: SessionCh
       if (timer) clearTimeout(timer)
       if (timeoutTimer) clearTimeout(timeoutTimer)
     }
-  }, [pendingReply, terminalId])
+  }, [pendingReply, sessionName, terminalId])
 
   const handleSend = async () => {
     const prompt = input.trim()
@@ -294,10 +330,23 @@ export function SessionChatPanel({ sessionName, terminalId, onClose }: SessionCh
     setSending(true)
 
     try {
+      const [sessionDetail, inboxMessages] = await Promise.all([
+        api.getSession(sessionName),
+        api.getInboxMessages(terminalId, 1, undefined, undefined, true),
+      ])
+      const baselineGenerations = snapshotInputGenerations(sessionDetail.terminals)
+      const baselineInboxMessageId = Math.max(0, ...inboxMessages.map(message => message.id))
+      const nextPendingReply: PendingReply = {
+        messageId: replyId,
+        baseline: lastOutput,
+        baselineGenerations,
+        baselineInboxMessageId,
+      }
+      setPendingReply(nextPendingReply)
       await api.sendInput(terminalId, prompt)
-      setPendingReply({ messageId: replyId, baseline: lastOutput })
     } catch (error: any) {
       replaceMessage(replyId, error?.detail || error?.message || '프롬프트를 보내지 못했습니다.')
+      setPendingReply(null)
       setSending(false)
     }
   }

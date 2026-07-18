@@ -6,6 +6,7 @@ import { computeStall, stallMinutes } from './stall'
 import { useNowTick } from './useNowTick'
 import type { UiConnectionStatus } from './eventsClient'
 import type { ChatEntry, DelegationCard, ThreadItem } from './types'
+import { profileLabel } from '../profiles/profilePresentation'
 
 interface ThreadProps {
   sessionName: string | null
@@ -22,6 +23,7 @@ interface ThreadProps {
 }
 
 function resolveStatus(card: DelegationCard, terminalStatuses: Record<string, string>): string | null {
+  if (card.killed) return (card.status ?? 'completed').toUpperCase()
   return terminalStatuses[card.terminalId] || (card.status ? card.status.toUpperCase() : null)
 }
 
@@ -86,7 +88,7 @@ function DelegationCardBlock({
         <AgentAvatar name={card.agentName} title={card.agentName ?? undefined} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5 text-[13px] font-bold text-[var(--text)]">
-            {card.agentName ?? card.terminalId.slice(0, 8)}
+            {card.agentName ? profileLabel(card.agentName) : card.terminalId.slice(0, 8)}
             {card.location && (
               <span className="inline-flex items-center gap-1 rounded-md bg-[var(--p-lilac)] px-1.5 py-0.5 font-mono text-[10px] font-bold text-[var(--p-lilac-ink)]">
                 {card.location}
@@ -145,36 +147,38 @@ function DelegationCardBlock({
         </div>
       )}
 
-      <div className="mt-2.5 flex flex-wrap gap-1.5">
-        <button type="button" onClick={() => onMessageTarget(card.terminalId)} className="flex items-center gap-1.5 rounded-full bg-[var(--accent-soft)] px-2.5 py-1 text-[11.5px] font-semibold text-[var(--accent-text)]">
-          <MessageSquare size={12} />
-          추가 지시
-        </button>
-        <button type="button" onClick={() => onOpenTerminal(card.terminalId)} className="flex items-center gap-1.5 rounded-full bg-[var(--surface-2)] px-2.5 py-1 text-[11.5px] font-semibold text-[var(--text-2)]">
-          <TermIcon size={12} />
-          터미널
-        </button>
-        <button type="button" onClick={() => onOpenOutput(card.terminalId)} className="flex items-center gap-1.5 rounded-full bg-[var(--surface-2)] px-2.5 py-1 text-[11.5px] font-semibold text-[var(--text-2)]">
-          <FileText size={12} />
-          Output
-        </button>
-        <button
-          type="button"
-          onClick={() => void onRequestStatusCheck(card.terminalId, card.agentName)}
-          className="flex items-center gap-1.5 rounded-full bg-[var(--surface-2)] px-2.5 py-1 text-[11.5px] font-semibold text-[var(--text-2)]"
-        >
-          <Eye size={12} />
-          상태 확인
-        </button>
-        <button
-          type="button"
-          onClick={() => onRequestStop(card.terminalId, card.agentName)}
-          className="flex items-center gap-1.5 rounded-full bg-[var(--surface-2)] px-2.5 py-1 text-[11.5px] font-semibold text-[var(--text-2)] hover:bg-[var(--danger-bg)] hover:text-[var(--danger)]"
-        >
-          <Square size={12} />
-          중지
-        </button>
-      </div>
+      {!card.killed && (
+        <div className="mt-2.5 flex flex-wrap gap-1.5">
+          <button type="button" onClick={() => onMessageTarget(card.terminalId)} className="flex items-center gap-1.5 rounded-full bg-[var(--accent-soft)] px-2.5 py-1 text-[11.5px] font-semibold text-[var(--accent-text)]">
+            <MessageSquare size={12} />
+            추가 지시
+          </button>
+          <button type="button" onClick={() => onOpenTerminal(card.terminalId)} className="flex items-center gap-1.5 rounded-full bg-[var(--surface-2)] px-2.5 py-1 text-[11.5px] font-semibold text-[var(--text-2)]">
+            <TermIcon size={12} />
+            터미널
+          </button>
+          <button type="button" onClick={() => onOpenOutput(card.terminalId)} className="flex items-center gap-1.5 rounded-full bg-[var(--surface-2)] px-2.5 py-1 text-[11.5px] font-semibold text-[var(--text-2)]">
+            <FileText size={12} />
+            Output
+          </button>
+          <button
+            type="button"
+            onClick={() => void onRequestStatusCheck(card.terminalId, card.agentName)}
+            className="flex items-center gap-1.5 rounded-full bg-[var(--surface-2)] px-2.5 py-1 text-[11.5px] font-semibold text-[var(--text-2)]"
+          >
+            <Eye size={12} />
+            상태 확인
+          </button>
+          <button
+            type="button"
+            onClick={() => onRequestStop(card.terminalId, card.agentName)}
+            className="flex items-center gap-1.5 rounded-full bg-[var(--surface-2)] px-2.5 py-1 text-[11.5px] font-semibold text-[var(--text-2)] hover:bg-[var(--danger-bg)] hover:text-[var(--danger)]"
+          >
+            <Square size={12} />
+            중지
+          </button>
+        </div>
+      )}
     </div>
   )
 }

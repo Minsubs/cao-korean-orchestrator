@@ -21,6 +21,8 @@ export const STORAGE_KEYS = {
   rpanelCollapsed: 'cao:workspace:rpanel-collapsed',
   workbench: 'cao:workspace:workbench:v1',
   composerHistory: 'cao:workspace:composer-history:v1:',
+  teamRoster: 'cao:workspace:team-roster:v1:',
+  delegationHistory: 'cao:workspace:delegation-history:v1:',
   // Shared with the classic SessionChatPanel (src/components/SessionChatPanel.tsx) —
   // ported logic reads/writes the SAME key prefix so history stays compatible
   // whichever surface (classic modal vs. inline Thread) is used.

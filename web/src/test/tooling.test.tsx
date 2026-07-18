@@ -220,7 +220,7 @@ describe('ToolingView', () => {
     expect(await screen.findByRole('option', { name: /codex_orchestrator_sol/ })).toBeInTheDocument()
 
     // Search (debounced 200ms)
-    fireEvent.change(screen.getByPlaceholderText('설치된 확장 검색…'), { target: { value: 'supervisor' } })
+    fireEvent.change(screen.getByLabelText('설치된 확장 검색'), { target: { value: 'supervisor' } })
     await waitFor(() => {
       expect(screen.queryByRole('option', { name: /frontend-design/ })).not.toBeInTheDocument()
     })
@@ -234,7 +234,7 @@ describe('ToolingView', () => {
     // generic_skills adapter's capabilities (replacing the old static "Phase 4"
     // placeholder). This test's fetch mock doesn't serve /tooling/adapters, so
     // they're honestly disabled with a reason rather than silently missing.
-    const updateBtn = await screen.findByRole('button', { name: '업데이트' })
+    const updateBtn = await screen.findByRole('button', { name: '최신화' })
     expect(updateBtn).toBeDisabled()
     expect(updateBtn).toHaveAttribute('title', '어댑터 정보를 불러오지 못했어요')
   })

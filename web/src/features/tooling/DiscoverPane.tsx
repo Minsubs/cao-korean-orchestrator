@@ -78,11 +78,11 @@ interface DiscoverPaneProps {
 }
 
 export function DiscoverPane({ catalog, loading, error, onRetry, adapters, onRequestAction }: DiscoverPaneProps) {
-  const [kindFilter, setKindFilter] = useState<Set<CatalogKind>>(() => new Set(KIND_OPTIONS.map(o => o.value)))
-  // Providers are data-driven (5a adds claude_code/codex/antigravity over
-  // time), so — like InstalledPane's Provider filter — `null` means "not yet
-  // touched by the user", i.e. everything passes.
-  const [providerFilter, setProviderFilter] = useState<Set<string> | null>(null)
+  // These are chips, not checkboxes: selecting "Plugin 13" must show those
+  // 13 plugins, not remove plugins from an initially-all set. `null` is the
+  // explicit 전체 choice for both filter groups.
+  const [kindFilter, setKindFilter] = useState<CatalogKind | null>(null)
+  const [providerFilter, setProviderFilter] = useState<string | null>(null)
   const [searchInput, setSearchInput] = useState('')
   const search = useDebouncedValue(searchInput, 200)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -104,12 +104,21 @@ export function DiscoverPane({ catalog, loading, error, onRetry, adapters, onReq
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     return catalog.filter(item => {
-      if (!kindFilter.has(item.kind)) return false
-      if (providerFilter && !item.providers.some(p => providerFilter.has(p))) return false
-      if (q && !item.name.toLowerCase().includes(q) && !item.description_ko.toLowerCase().includes(q)) return false
+      if (kindFilter && item.kind !== kindFilter) return false
+      if (providerFilter && !item.providers.includes(providerFilter)) return false
+      const haystack = [
+        item.name,
+        item.description_ko,
+        item.category,
+        item.kind,
+        KIND_LABEL[item.kind],
+        ...item.providers,
+        ...item.providers.map(provider => providerLabel(adapters, provider)),
+      ].join(' ').toLowerCase()
+      if (q && !haystack.includes(q)) return false
       return true
     })
-  }, [catalog, kindFilter, providerFilter, search])
+  }, [catalog, kindFilter, providerFilter, search, adapters])
 
   // Keep the selection valid, same pattern as InstalledPane: default to the
   // first visible row whenever the current selection falls outside the
@@ -125,23 +134,6 @@ export function DiscoverPane({ catalog, loading, error, onRetry, adapters, onReq
   }, [filtered, selectedId])
 
   const selected = filtered.find(item => item.id === selectedId) ?? null
-
-  const toggleKind = (v: CatalogKind) => {
-    setKindFilter(prev => {
-      const next = new Set(prev)
-      if (next.has(v)) next.delete(v)
-      else next.add(v)
-      return next
-    })
-  }
-  const toggleProvider = (v: string) => {
-    setProviderFilter(prev => {
-      const next = new Set(prev ?? providerOptions.map(o => o.value))
-      if (next.has(v)) next.delete(v)
-      else next.add(v)
-      return next
-    })
-  }
 
   if (loading) return <DiscoverSkeleton />
 
@@ -177,25 +169,27 @@ export function DiscoverPane({ catalog, loading, error, onRetry, adapters, onReq
           <input
             value={searchInput}
             onChange={e => setSearchInput(e.target.value)}
-            placeholder="이름·설명으로 검색…"
+            placeholder="이름·설명·분류 검색…"
             aria-label="카탈로그 검색"
             className="w-full border-none bg-transparent text-xs text-[var(--text)] outline-none placeholder:text-[var(--text-3)]"
           />
         </div>
         <div role="group" aria-label="종류 필터" className="flex flex-wrap gap-1.5">
+          <FilterChip label="전체" count={catalog.length} active={kindFilter === null} onClick={() => setKindFilter(null)} />
           {KIND_OPTIONS.map(o => (
-            <FilterChip key={o.value} label={o.label} count={kindCounts[o.value] ?? 0} active={kindFilter.has(o.value)} onClick={() => toggleKind(o.value)} />
+            <FilterChip key={o.value} label={o.label} count={kindCounts[o.value] ?? 0} active={kindFilter === o.value} onClick={() => setKindFilter(o.value)} />
           ))}
         </div>
         {providerOptions.length > 0 && (
           <div role="group" aria-label="Provider 필터" className="flex flex-wrap gap-1.5">
+            <FilterChip label="전체" count={catalog.length} active={providerFilter === null} onClick={() => setProviderFilter(null)} />
             {providerOptions.map(o => (
               <FilterChip
                 key={o.value}
                 label={o.label}
                 count={o.count}
-                active={providerFilter ? providerFilter.has(o.value) : true}
-                onClick={() => toggleProvider(o.value)}
+                active={providerFilter === o.value}
+                onClick={() => setProviderFilter(o.value)}
               />
             ))}
           </div>
@@ -205,6 +199,9 @@ export function DiscoverPane({ catalog, loading, error, onRetry, adapters, onReq
       {/* List + Detail */}
       <div className="flex h-full min-h-[420px] flex-1 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-sm">
         <div className="min-w-[280px] flex-1 overflow-y-auto border-r border-[var(--border)]">
+          <div className="sticky top-0 z-10 border-b border-[var(--border-soft)] bg-[var(--surface)] px-3 py-2 text-[10.5px] text-[var(--text-3)]">
+            검색 결과 <span className="font-bold text-[var(--text-2)]">{filtered.length}개</span> / 전체 {catalog.length}개
+          </div>
           {filtered.length === 0 ? (
             <div className="px-4 py-8 text-center text-xs text-[var(--text-3)]">
               {catalog.length === 0 ? '카탈로그가 비어 있어요' : '필터 조건에 맞는 항목이 없어요'}

@@ -31,6 +31,7 @@ def _install(monkeypatch, *, help_text=_FULL_HELP, list_out="", help_rc=0):
 
 def test_not_installed_detects_absent(monkeypatch):
     monkeypatch.setattr(generic_skills.shutil, "which", lambda _b: None)
+    monkeypatch.setattr(GenericSkillsAdapter, "_fallback_binary", staticmethod(lambda: None))
     env = GenericSkillsAdapter().detect()
     assert env.installed is False
     assert env.path is None
@@ -39,6 +40,7 @@ def test_not_installed_detects_absent(monkeypatch):
 
 def test_not_installed_all_caps_false_with_reasons(monkeypatch):
     monkeypatch.setattr(generic_skills.shutil, "which", lambda _b: None)
+    monkeypatch.setattr(GenericSkillsAdapter, "_fallback_binary", staticmethod(lambda: None))
     caps = GenericSkillsAdapter().capabilities()
     assert not any(
         [
@@ -58,7 +60,22 @@ def test_not_installed_all_caps_false_with_reasons(monkeypatch):
 
 def test_not_installed_list_is_empty(monkeypatch):
     monkeypatch.setattr(generic_skills.shutil, "which", lambda _b: None)
+    monkeypatch.setattr(GenericSkillsAdapter, "_fallback_binary", staticmethod(lambda: None))
     assert GenericSkillsAdapter().list_installed() == []
+
+
+def test_detects_npm_prefix_fallback_when_gui_path_is_missing(monkeypatch):
+    monkeypatch.setattr(generic_skills.shutil, "which", lambda _b: None)
+    monkeypatch.setattr(
+        GenericSkillsAdapter,
+        "_fallback_binary",
+        staticmethod(lambda: "/managed/node/bin/skills"),
+    )
+
+    env = GenericSkillsAdapter().detect()
+
+    assert env.installed is True
+    assert env.path == "/managed/node/bin/skills"
 
 
 def test_detect_does_not_execute_binary(monkeypatch):
@@ -133,6 +150,24 @@ def test_plan_global_scope_omitted_when_unsupported(monkeypatch):
     _install(monkeypatch)  # no --global in help
     argv = GenericSkillsAdapter().plan("install", "x", "global").argv
     assert "--global" not in argv
+
+
+def test_plan_catalog_skill_uses_repository_and_skill_name(monkeypatch):
+    _install(monkeypatch, help_text=_FULL_HELP + "  --global\n")
+
+    argv = (
+        GenericSkillsAdapter().plan_skill_add("anthropics/skills", "frontend-design", "global").argv
+    )
+
+    assert argv == [
+        "skills",
+        "add",
+        "anthropics/skills",
+        "--skill",
+        "frontend-design",
+        "--yes",
+        "--global",
+    ]
 
 
 def test_plan_requires_target(monkeypatch):

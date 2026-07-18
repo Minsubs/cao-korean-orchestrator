@@ -166,3 +166,51 @@ class TestInstallAgentProfileEndpoint:
         )
 
         assert response.status_code == 422
+
+
+class TestInstallAgentProfileContentEndpoint:
+    """Tests for POST /agents/profiles used by the in-app agent composer."""
+
+    def test_installs_inline_profile_content(self, client) -> None:
+        content = (
+            "---\nname: nova\ndescription: Security reviewer\n"
+            "provider: codex\nuiRole: Reviewer\n"
+            "specialty: Application Security\n---\nReview the implementation."
+        )
+        service_result = InstallResult(
+            success=True,
+            message="Agent 'nova' installed successfully",
+            agent_name="nova",
+            provider="codex",
+        )
+
+        with patch(
+            "cli_agent_orchestrator.api.main.install_agent_content",
+            return_value=service_result,
+        ) as mock_install:
+            response = client.post(
+                "/agents/profiles",
+                json={"name": "nova", "content": content, "provider": "codex"},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["agent_name"] == "nova"
+        mock_install.assert_called_once_with(
+            name="nova",
+            content=content,
+            provider="codex",
+            overwrite=False,
+        )
+
+    def test_surfaces_inline_profile_validation_failure(self, client) -> None:
+        with patch(
+            "cli_agent_orchestrator.api.main.install_agent_content",
+            return_value=InstallResult(success=False, message="Invalid agent name"),
+        ):
+            response = client.post(
+                "/agents/profiles",
+                json={"name": "../bad", "content": "---\n---\nprompt"},
+            )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Invalid agent name"

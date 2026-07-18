@@ -31,7 +31,7 @@ const DISABLED_TITLE = 'Phase 4~6에서 제공돼요'
 const TABS: { key: TabKey; label: string; active: boolean }[] = [
   { key: 'overview', label: '개요', active: true },
   { key: 'installed', label: '설치됨', active: true },
-  { key: 'discover', label: '탐색', active: true },
+  { key: 'discover', label: '탐색·추천', active: true },
   { key: 'updates', label: '업데이트', active: true },
   { key: 'sources', label: '소스', active: true },
   { key: 'envprofiles', label: '환경 프로필', active: true },
@@ -242,10 +242,10 @@ export function ToolingView() {
           <Blocks size={20} className="text-[var(--accent-text)]" />
           도구 및 확장
         </h1>
-        <p className="mt-0.5 text-xs text-[var(--text-3)]">AI CLI · Plugin · Skill · Profile 통합을 한곳에서 확인해요</p>
+        <p className="mt-0.5 text-xs text-[var(--text-3)]">설치된 AI 도구를 확인하고, 검증된 MCP·플러그인·스킬을 추천에서 추가해요.</p>
       </div>
 
-      <div role="tablist" aria-label="도구 및 확장 하위 탭" className="flex flex-wrap gap-1 border-b border-[var(--border)]">
+      <div role="tablist" aria-label="도구 및 확장 하위 탭" className="grid grid-cols-3 gap-1 border-b border-[var(--border)] sm:flex sm:flex-wrap">
         {TABS.map(t => {
           if (!t.active) {
             return (

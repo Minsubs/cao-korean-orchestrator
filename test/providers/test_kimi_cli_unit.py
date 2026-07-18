@@ -619,6 +619,7 @@ class TestKimiCliProviderBuildCommand:
         with (
             patch("cli_agent_orchestrator.providers.kimi_cli.Path.home", return_value=tmp_path),
             patch(f"{MOD}._sibling_script", return_value="/venv/bin/cao-mcp-server"),
+            patch(f"{MOD}._sibling_environment_can_import_server", return_value=True),
             patch(f"{MOD}.shutil.which", return_value=None),
         ):
             command = provider._build_kimi_command()

@@ -1,0 +1,109 @@
+Codex-only team connection and chat finality QA re-review (2026-07-18)
+
+LIVE HTTP
+$ curl -i --max-time 10 http://127.0.0.1:9889/health
+HTTP/1.1 200 OK
+{"status":"ok","service":"cli-agent-orchestrator","terminal_backend":"tmux","components":{"cao":"ok","herdr":"unavailable","claude":"ok"}}
+
+$ curl -sS http://127.0.0.1:9889/sessions/cao-7426da03
+session detached; terminals cff2a1e5 completed, 53c5e264 completed, 2bd9e73e caller_id=53c5e264 completed; parent/worker input_generation=0 ready_generation=0.
+
+$ curl -sS 'http://127.0.0.1:9889/terminals/53c5e264/inbox/messages?limit=50&after_id=0'
+Delivered callback IDs 14 CONNECTIVITY_OK, 16 RECHECK_OK, 18 FINAL_PROVENANCE_OK, 20 UI_PROVENANCE_OK; all sender_id=2bd9e73e.
+
+$ curl -sS 'http://127.0.0.1:9889/terminals/53c5e264/inbox/messages?limit=50&after_id=19'
+Only callback id 20 returned.
+
+$ curl ... '?limit=0'
+HTTP 422; FastAPI validation greater_than_equal ge=1.
+
+$ curl -sS http://127.0.0.1:9889/terminals/53c5e264/output?mode=full
+Parent output contains the send_message call, UI_PROVENANCE_OK callback text, and final UI_PROVENANCE_VERIFIED after the callback.
+
+$ curl -sS http://127.0.0.1:9889/terminals/2bd9e73e/output?mode=full
+Worker output contains send_message(receiver_id=53c5e264, message=UI_PROVENANCE_OK), success true/message_id 20, and UI_PROVENANCE_OK.
+
+$ curl ... /sessions/no-such-7426
+HTTP 404; unknown session did not mutate live state.
+
+TARGETED TESTS
+$ PYTHONPATH=src uv run --no-sync python3 -m pytest test/services/test_status_monitor.py test/services/test_session_service.py test/api/test_inbox_messages.py test/utils/test_mcp_resolution.py test/providers/test_claude_code_unit.py test/providers/test_copilot_cli_unit.py test/providers/test_cursor_cli_unit.py test/providers/test_kimi_cli_unit.py -q --no-cov
+434 passed, 3 warnings, exit 0.
+
+$ cd web && npm test -- --run src/test/session-chat.test.tsx src/test/workspace-session-completion.test.ts src/test/workspace.test.tsx
+3 files passed, 39 tests passed, exit 0. jsdom emitted known HTMLCanvasElement.getContext diagnostic from xterm.
+
+$ cd web && npm run build
+tsc and vite build passed; 1801 modules transformed; output written to src/cli_agent_orchestrator/web_ui.
+
+EXISTING LIVE UI ARTIFACT
+.omo/evidence/review_qa/codex-orchestration-evidence.txt records browser DOM/status/composer checks at http://127.0.0.1:9889/ and desktop/mobile layout checks with no console warnings.
+
+CURRENT BROWSER RECHECK
+Chrome tab at http://127.0.0.1:9889/ after reload: session button `7426da03 완료`; parent `53c5e264 완료`; worker `2bd9e73e 완료` with `상위: codex_orchestrator_sol`; `에이전트 3` tab selected; recipient selector and `메시지 입력` textbox visible; `보내기` disabled while empty. No interaction or send was performed.
+
+COMPETITIVE-FIX REGRESSION RECHECK (read-only)
+$ cd web && npm test -- --run src/test/workspace.test.tsx src/test/session-chat.test.tsx src/test/workspace-session-completion.test.ts src/test/appshell.test.tsx
+4 files passed; 52 tests passed; exit 0. Known jsdom xterm HTMLCanvasElement.getContext diagnostics only.
+
+$ PYTHONPATH=src uv run --no-sync python3 -m pytest test/services/test_status_monitor.py test/services/test_session_service.py test/api/test_inbox_messages.py -q --no-cov
+67 passed; exit 0 (only existing Starlette/Pydantic deprecation warnings).
+
+$ cd web && npm run build
+TypeScript and Vite build passed; 1801 modules transformed; output index-C7Rt3OdZ.js.
+
+$ git diff --check
+PASS; no whitespace errors.
+
+$ curl -sS http://127.0.0.1:9889/sessions/cao-7426da03
+Read-only live session unchanged: cff2a1e5, 53c5e264, and 2bd9e73e all completed with input_generation=0 and ready_generation=0.
+
+FINAL RAW-DETECTION STRADDLE RECHECK (read-only)
+$ PYTHONPATH=src uv run --no-sync python3 -m pytest test/services/test_status_monitor.py -q --no-cov
+35 passed; exit 0. Includes raw detection straddling new input, rendered capture straddling new input, rendered idle-frame protection, rendered probe coalescing, and generation counters.
+
+FINAL EVENT-DRIVEN/PERSISTENCE RECHECK (read-only)
+$ cd web && npm test -- --run src/test/workspace.test.tsx src/test/session-chat.test.tsx src/test/workspace-session-completion.test.ts src/test/appshell.test.tsx
+4 files passed; 53 tests passed; exit 0. Includes pending persistence before sendInput resolves, unresolved-request unmount/remount recovery, stored lastOutput restoration, Workspace pending remount, and completion snapshot races. Known jsdom xterm canvas diagnostics only.
+
+$ PYTHONPATH=src uv run --no-sync python3 -m pytest test/services/test_status_monitor.py -q --no-cov
+36 passed; exit 0. Includes event-driven raw/screen detection generation pinning and prior straddle/coalescing regressions.
+
+$ cd web && npm run build
+TypeScript and Vite build passed; 1801 modules transformed; output index-D8OVTaJC.js.
+
+$ curl -sS http://127.0.0.1:9889/sessions/cao-7426da03
+Read-only live session unchanged: cff2a1e5, 53c5e264, and 2bd9e73e all completed with input_generation=0 and ready_generation=0.
+
+FINAL HERDR/CODEX CALLBACK RECHECK (read-only)
+$ PYTHONPATH=src uv run --no-sync python3 -m pytest test/services/test_status_monitor.py -q --no-cov
+38 passed; exit 0. Includes Herdr native get_status lifecycle, native straddle protection, and generation pinning.
+
+$ cd web && npm test -- --run src/test/workspace-session-completion.test.ts src/test/session-chat.test.tsx src/test/workspace.test.tsx
+3 files passed; 41 tests passed; exit 0. Includes semantic ready-generation proof for idle delegated workers and callback-sender provenance gating. Known jsdom xterm canvas diagnostic only.
+
+$ curl -sS http://127.0.0.1:9889/sessions/cao-7426da03
+Live read-only state: supervisor 53c5e264 completed input_generation=2/ready_generation=2; direct Codex worker 2bd9e73e idle input_generation=1/ready_generation=1, caller_id=53c5e264.
+
+$ curl -sS 'http://127.0.0.1:9889/terminals/53c5e264/inbox/messages?limit=50&after_id=19'
+Delivered callbacks from direct worker include id 20 UI_PROVENANCE_OK and id 22 LATEST_CALLBACK_OK.
+
+$ curl -sS /terminals/{53c5e264,2bd9e73e}/output?mode=full
+Parent output contains LATEST_ORCHESTRATION_VERIFIED after callback; worker output contains LATEST_CALLBACK_OK. No prompt or message was sent by QA.
+
+FINAL ZERO-GENERATION GAP RECHECK (read-only)
+$ cd web && npm test -- --run src/test/workspace-session-completion.test.ts src/test/session-chat.test.tsx src/test/workspace.test.tsx
+FAIL — 3 files discovered, 41 passed and 1 failed. `does not accept a newly discovered idle worker with zero generations` expected false for direct child input_generation=0/ready_generation=0 with delivered callback, but `isOrchestrationReplyReady` returned true. The 1/1 companion assertion passes. This is a real completion-gating regression, not the known jsdom canvas diagnostic.
+
+$ PYTHONPATH=src uv run --no-sync python3 -m pytest test/services/test_status_monitor.py -q --no-cov
+38 passed; exit 0.
+
+ZERO-GENERATION GAP FIX RECHECK (read-only)
+$ cd web && npm test -- --run src/test/workspace-session-completion.test.ts
+1 file passed; 18 tests passed; exit 0. The 0/0 newly discovered idle worker case is now false, while the 1/1 case remains true.
+
+$ cd web && npm test -- --run src/test/workspace-session-completion.test.ts src/test/session-chat.test.tsx src/test/workspace.test.tsx
+3 files passed; 42 tests passed; exit 0. Known jsdom xterm canvas diagnostic only.
+
+$ cd web && npm run build
+TypeScript and Vite build passed; 1801 modules transformed; output index-BqLtumkM.js.

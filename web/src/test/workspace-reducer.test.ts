@@ -4,6 +4,7 @@ import {
   applyUiEvents,
   buildCardFromTerminalCreated,
   buildThreadItems,
+  filterUiEventsForSession,
   mergeSeededCard,
   seedCardFromTerminalMeta,
   withCallerNames,
@@ -16,6 +17,29 @@ function ev(id: number, type: UiEvent['type'], detail: Record<string, unknown>, 
 }
 
 describe('threadReducer: event → card mapping (spec §3)', () => {
+  it('keeps status and teardown events for an ephemeral handoff worker absent from REST polling', () => {
+    const events: UiEvent[] = [
+      ev(1, 'status_changed', { terminal_id: 'worker01', status: 'processing', prev: 'idle' }),
+      ev(2, 'terminal_created', { terminal_id: 'worker01', agent_name: 'codex_qa_terra', provider: 'codex', session_id: 'sess-1' }),
+      ev(3, 'message_sent', { sender: 'super001', receiver: 'worker01', message: '연결 테스트', orchestration_type: 'handoff', session_id: 'sess-1' }),
+      ev(4, 'status_changed', { terminal_id: 'worker01', status: 'completed', prev: 'processing' }),
+      ev(5, 'status_changed', { terminal_id: 'worker01', status: 'processing', prev: 'completed' }),
+      ev(6, 'terminal_killed', { terminal_id: 'worker01', agent_name: 'codex_qa_terra', provider: 'codex', session_id: 'sess-1' }),
+      ev(7, 'status_changed', { terminal_id: 'other001', status: 'processing', prev: 'idle' }),
+    ]
+
+    const filtered = filterUiEventsForSession(events, new Set(['sess-1']), new Set(['super001']))
+    const cards = applyUiEvents({}, filtered)
+
+    expect(filtered.map(event => event.id)).toEqual([1, 2, 3, 4, 5, 6])
+    expect(cards.worker01).toMatchObject({
+      agentName: 'codex_qa_terra',
+      instruction: '연결 테스트',
+      status: 'completed',
+      killed: true,
+    })
+  })
+
   it('terminal_created creates exactly one new card with agent/provider/session identity', () => {
     const cards = applyUiEventToCards({}, ev(1, 'terminal_created', { terminal_id: 'aaaaaaaa', agent_name: 'sonnet', provider: 'claude_code', session_id: 's1' }))
     expect(Object.keys(cards)).toEqual(['aaaaaaaa'])

@@ -15,6 +15,7 @@ describe('AppShell', () => {
   const mockFetch = vi.fn(async (url: string) => {
     if (url.startsWith('/settings/memory')) return jsonResponse({ enabled: memoryEnabled })
     if (url.startsWith('/settings/agent-dirs')) return jsonResponse({ agent_dirs: {}, extra_dirs: [], disabled_dirs: [] })
+    if (url.startsWith('/usage')) return jsonResponse({ accounts: [], scanned_at: new Date().toISOString() })
     return jsonResponse([])
   })
 
@@ -33,6 +34,7 @@ describe('AppShell', () => {
   it('renders the rail with the Workspace view selected by default', async () => {
     render(<AppShell />)
     expect(await screen.findByRole('tab', { name: '작업공간' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('button', { name: 'AI 사용량' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: '자동화' })).toHaveAttribute('aria-selected', 'false')
     expect(screen.getByRole('tab', { name: '도구 및 확장' })).toHaveAttribute('aria-selected', 'false')
     expect(screen.getByRole('tab', { name: 'Agent 프로필' })).toHaveAttribute('aria-selected', 'false')
@@ -79,7 +81,7 @@ describe('AppShell', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Agent 프로필' }))
     // mockFetch answers /agents/profiles with [] — the real view's honest empty state.
     expect(await screen.findByText('설치된 에이전트 프로필이 없어요')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /에이전트 추가/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /에이전트 만들기/ })).toBeInTheDocument()
   })
 
   it('toggles documentElement.dataset.theme when the theme button is clicked', async () => {

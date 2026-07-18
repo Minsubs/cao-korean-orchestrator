@@ -22,6 +22,7 @@ The ``--help`` and ``list`` reads use the read-only :mod:`probe` runner (argv,
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 from pathlib import Path
@@ -61,6 +62,7 @@ _KNOWN_SUBCOMMANDS = ("list", "find", "add", "remove", "update")
 
 # A plausible skill-name shape for conservative ``skills list`` parsing.
 _NAME_RE = re.compile(r"^[A-Za-z0-9@._/-]+$")
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 _NOT_INSTALLED_REASON = (
     "skills 실행 파일이 감지되지 않았어요 — '도구 및 확장'의 탐색 탭에서 "
@@ -77,9 +79,49 @@ class GenericSkillsAdapter(ExtensionAdapter):
 
     # -- detection ---------------------------------------------------------
 
+    @staticmethod
+    def _fallback_binary() -> Optional[str]:
+        """Find an npm-global ``skills`` binary even when its prefix is off PATH.
+
+        Hermes and other managed Node runtimes commonly install global npm
+        packages under their own prefix without exporting that prefix to GUI
+        apps.  Reading these conventional locations is enough to recognize the
+        installed CLI without spawning npm or downloading anything.
+        """
+        home = Path.home()
+        candidates = []
+        prefix = os.environ.get("NPM_CONFIG_PREFIX") or os.environ.get("npm_config_prefix")
+        if prefix:
+            candidates.append(Path(prefix) / "bin" / _BINARY)
+        npmrc = home / ".npmrc"
+        try:
+            for line in npmrc.read_text(encoding="utf-8", errors="replace").splitlines():
+                key, separator, value = line.partition("=")
+                if separator and key.strip().lower() == "prefix" and value.strip():
+                    candidates.append(Path(value.strip()).expanduser() / "bin" / _BINARY)
+        except OSError:
+            pass
+        candidates.extend(
+            [
+                home / ".hermes" / "node" / "bin" / _BINARY,
+                home / ".npm-global" / "bin" / _BINARY,
+                home / ".volta" / "bin" / _BINARY,
+                home / ".local" / "bin" / _BINARY,
+            ]
+        )
+        for candidate in candidates:
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                return str(candidate)
+        return None
+
+    def _command(self) -> str:
+        return (
+            _BINARY if shutil.which(_BINARY) is not None else (self._fallback_binary() or _BINARY)
+        )
+
     def detect(self) -> AdapterEnv:
-        """Locate the ``skills`` binary with ``which`` only (no execution)."""
-        path = shutil.which(_BINARY)
+        """Locate ``skills`` on PATH or in a known npm-global prefix."""
+        path = shutil.which(_BINARY) or self._fallback_binary()
         # Version intentionally left None: detection must not execute the binary
         # (avoids any download-on-invoke behavior). Populating it is Phase 5.
         return AdapterEnv(installed=path is not None, path=path, version=None)
@@ -97,7 +139,7 @@ class GenericSkillsAdapter(ExtensionAdapter):
         if cached is not None:
             return cast(Optional[str], cached if cached != "" else None)
 
-        result = probe.run([_BINARY, "--help"], timeout=_HELP_TIMEOUT_SECONDS)
+        result = probe.run([self._command(), "--help"], timeout=_HELP_TIMEOUT_SECONDS)
         text: Optional[str]
         if result.timed_out or result.returncode is None:
             text = None
@@ -191,17 +233,31 @@ class GenericSkillsAdapter(ExtensionAdapter):
         """
         if not self.detect().installed:
             return []
-        result = probe.run([_BINARY, "list"], timeout=_LIST_TIMEOUT_SECONDS)
-        if result.returncode is None:
-            return []
+        commands = [[self._command(), "list"]]
+        if self._supports_global():
+            commands.append([self._command(), "list", "--global"])
         items: List[Dict[str, Any]] = []
-        for line in result.stdout.splitlines():
-            stripped = line.strip()
-            if not stripped:
+        seen: set[tuple[Optional[str], str]] = set()
+        for argv in commands:
+            result = probe.run(argv, timeout=_LIST_TIMEOUT_SECONDS)
+            if result.returncode is None:
                 continue
-            first = stripped.split()[0]
-            name = first if _NAME_RE.match(first) else None
-            items.append({"name": name, "raw": stripped})
+            for line in result.stdout.splitlines():
+                raw = line.strip()
+                if not raw:
+                    continue
+                stripped = _ANSI_RE.sub("", raw).strip()
+                first = stripped.split()[0]
+                # Current Skills CLI uses cyan for actual skill rows and bold
+                # for section headings. Preserve unknown headings as raw, but
+                # never misreport them as installed skill names.
+                heading = "\x1b[" in raw and "\x1b[36m" not in raw
+                name = first if not heading and _NAME_RE.match(first) else None
+                key = (name, stripped)
+                if key in seen:
+                    continue
+                seen.add(key)
+                items.append({"name": name, "raw": stripped})
         return items
 
     def _installed_names(self) -> set[str]:
@@ -216,12 +272,12 @@ class GenericSkillsAdapter(ExtensionAdapter):
             raise ValueError(f"unsupported action: {action!r}")
 
         if action == "update_all":
-            argv = [_BINARY, "update"]
+            argv = [self._command(), "update"]
             target_desc = "all installed skills"
         else:
             if not target:
                 raise ValueError(f"action {action!r} requires a target")
-            argv = [_BINARY, subcommand, target]
+            argv = [self._command(), subcommand, target]
             target_desc = target
 
         if scope == "global" and self._supports_global():
@@ -238,6 +294,20 @@ class GenericSkillsAdapter(ExtensionAdapter):
             verify_description = f"Confirm {target_desc} is present in `skills list`"
         return ExecutionPlan(
             argv=argv, cwd=cwd, description=description, verify_description=verify_description
+        )
+
+    def plan_skill_add(self, repository: str, name: str, scope: Optional[str]) -> ExecutionPlan:
+        """Install one named skill from a curated repository non-interactively."""
+        if not repository or not name:
+            raise ValueError("repository and skill name are required")
+        argv = [self._command(), "add", repository, "--skill", name, "--yes"]
+        if scope == "global" and self._supports_global():
+            argv.append("--global")
+        return ExecutionPlan(
+            argv=argv,
+            cwd=str(Path.home()),
+            description=f"Install {name} from {repository}",
+            verify_description=f"Confirm {name} is present in `skills list`",
         )
 
     # -- verification ------------------------------------------------------

@@ -44,8 +44,14 @@ export function ConfirmModal({
   if (!open) return null
 
   const colors = variant === 'danger'
-    ? { icon: 'text-red-400 bg-red-900/40', btn: 'bg-red-600 hover:bg-red-500 focus:ring-red-500' }
-    : { icon: 'text-yellow-400 bg-yellow-900/40', btn: 'bg-yellow-600 hover:bg-yellow-500 focus:ring-yellow-500' }
+    ? {
+        icon: 'text-[var(--danger)] bg-[var(--danger-bg)]',
+        btn: 'bg-[var(--danger)] text-[var(--on-accent)] hover:brightness-95 focus:ring-[var(--danger)]',
+      }
+    : {
+        icon: 'text-[var(--warning)] bg-[var(--warning-bg)]',
+        btn: 'bg-[var(--warning)] text-[var(--on-accent)] hover:brightness-95 focus:ring-[var(--warning)]',
+      }
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center" role="dialog" aria-modal="true" aria-label={title}>
@@ -53,47 +59,52 @@ export function ConfirmModal({
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onCancel} />
 
       {/* Modal */}
-      <div className="relative bg-gray-900 border border-gray-700/50 rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden animate-in fade-in zoom-in-95">
+      <div className="relative mx-4 w-full max-w-md overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl animate-in fade-in zoom-in-95">
         {/* Header */}
         <div className="flex items-start gap-4 p-6 pb-4">
           <div className={`shrink-0 w-10 h-10 rounded-xl flex items-center justify-center ${colors.icon}`}>
             <AlertTriangle size={20} />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="text-base font-semibold text-white">{title}</h3>
-            <p className="text-sm text-gray-400 mt-1">{message}</p>
+            <h3 className="text-base font-semibold text-[var(--text)]">{title}</h3>
+            <p className="mt-1 text-sm text-[var(--text-2)]">{message}</p>
           </div>
-          <button onClick={onCancel} className="shrink-0 p-1 text-gray-500 hover:text-white rounded transition-colors">
+          <button
+            type="button"
+            onClick={onCancel}
+            aria-label="닫기"
+            className="shrink-0 rounded p-1 text-[var(--text-3)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
+          >
             <X size={16} />
           </button>
         </div>
 
         {/* Details */}
         {details && details.length > 0 && (
-          <div className="mx-6 mb-4 bg-gray-800/60 border border-gray-700/40 rounded-lg p-3 space-y-1.5">
+          <div className="mx-6 mb-4 space-y-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3">
             {details.map(d => (
               <div key={d.label} className="flex items-center justify-between text-xs">
-                <span className="text-gray-500">{d.label}</span>
-                <span className="text-gray-300 font-mono">{d.value}</span>
+                <span className="text-[var(--text-3)]">{d.label}</span>
+                <span className="font-mono text-[var(--text-2)]">{d.value}</span>
               </div>
             ))}
           </div>
         )}
 
         {/* Actions */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 bg-gray-800/30 border-t border-gray-700/30">
+        <div className="flex items-center justify-end gap-3 border-t border-[var(--border-soft)] bg-[var(--surface-2)] px-6 py-4">
           <button
             ref={cancelRef}
             onClick={onCancel}
             disabled={loading}
-            className="px-4 py-2 text-sm font-medium text-gray-300 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500"
+            className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-medium text-[var(--text-2)] transition-colors hover:bg-[var(--surface-3)] hover:text-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
           >
             {cancelLabel}
           </button>
           <button
             onClick={onConfirm}
             disabled={loading}
-            className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-all focus:outline-none focus:ring-2 disabled:opacity-60 flex items-center gap-2 ${colors.btn}`}
+            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-all focus:outline-none focus:ring-2 disabled:opacity-60 ${colors.btn}`}
           >
             {loading && <Loader2 size={14} className="animate-spin" />}
             {loading ? '처리 중...' : confirmLabel}

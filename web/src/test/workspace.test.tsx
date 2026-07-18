@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { Workspace } from '../features/workspace/Workspace'
 import { useStore } from '../store'
 
@@ -28,8 +28,13 @@ function installMockFetch() {
     if (url.startsWith('/terminals/aaaaaaaa/working-directory')) return jsonResponse({ working_directory: '~/work/alarm-solution' })
     if (url.startsWith('/terminals/aaaaaaaa/output')) return jsonResponse({ output: '', mode: 'last' })
     if (url.startsWith('/terminals/aaaaaaaa/input')) return jsonResponse({ success: true })
-    if (url.startsWith('/agents/profiles')) return jsonResponse([{ name: 'sol', description: 'Supervisor', source: 'codex' }])
-    if (url.startsWith('/agents/providers')) return jsonResponse([{ name: 'codex', binary: 'codex', installed: true }])
+    if (url.startsWith('/agents/profiles')) {
+      return jsonResponse([
+        { name: 'codex_orchestrator_sol', description: 'Orchestrator', source: 'local', provider: 'codex', model: 'gpt-5.6-sol' },
+        { name: 'claude_orchestrator_sonnet', description: 'Orchestrator', source: 'local', provider: 'claude_code', model: 'sonnet' },
+      ])
+    }
+    if (url.startsWith('/agents/providers')) return jsonResponse([{ name: 'codex', binary: 'codex', installed: true }, { name: 'claude_code', binary: 'claude', installed: true }])
     if (url.startsWith('/ui/events/history')) return jsonResponse({ events: [] })
     return jsonResponse([])
   })
@@ -65,6 +70,38 @@ describe('Workspace (Phase 2b render-level)', () => {
     expect(await screen.findByText(/이벤트 없음/)).toBeInTheDocument()
   })
 
+  it('selects the session orchestrator as the Workbench context once its terminals load', async () => {
+    installMockFetch()
+    useStore.setState({ sessions: [SESSION], connected: true })
+    render(<Workspace />)
+
+    await waitFor(() => {
+      expect(screen.queryByText('컨텍스트: 선택된 에이전트 없음')).not.toBeInTheDocument()
+      expect(screen.getByText((_, element) => (
+        element?.tagName === 'SPAN'
+        && element.textContent?.includes('컨텍스트:') === true
+        && element.textContent?.includes('aaaaaaaa') === true
+      ))).toBeInTheDocument()
+    })
+  })
+
+  it('shows every selected team profile in the right agent tab before delegation', async () => {
+    window.localStorage.setItem('cao:workspace:team-roster:v1:sess-1', JSON.stringify([
+      { name: 'claude_developer_sonnet', provider: 'claude_code' },
+      { name: 'codex_qa_terra', provider: 'codex' },
+      { name: 'codex_docs_luna', provider: 'codex' },
+    ]))
+    installMockFetch()
+    useStore.setState({ sessions: [SESSION], connected: true })
+    render(<Workspace />)
+
+    expect(await screen.findByRole('tab', { name: '에이전트 4' })).toBeInTheDocument()
+    expect(screen.getByText('개발자')).toBeInTheDocument()
+    expect(screen.getByText('테스트 담당')).toBeInTheDocument()
+    expect(screen.getByText('문서 정리')).toBeInTheDocument()
+    expect(screen.getAllByText(/호출 대기/)).toHaveLength(3)
+  })
+
   it('collapses and re-expands the sidebar from the workspace toolbar toggle', async () => {
     installMockFetch()
     render(<Workspace />)
@@ -77,7 +114,7 @@ describe('Workspace (Phase 2b render-level)', () => {
     expect(await screen.findByLabelText('프로젝트와 세션')).toBeInTheDocument()
   })
 
-  it('opens the New Task modal and only enables submit once instruction + Supervisor profile are filled', async () => {
+  it('keeps the orchestrator role fixed and enables submit once an instruction is filled', async () => {
     installMockFetch()
     render(<Workspace />)
 
@@ -88,17 +125,11 @@ describe('Workspace (Phase 2b render-level)', () => {
     const dialog = await screen.findByRole('dialog', { name: '새 작업' })
     const submit = within(dialog).getByRole('button', { name: /작업 시작/ })
     expect(submit).toBeDisabled()
+    expect(within(dialog).getByText('고정 역할')).toBeInTheDocument()
+    expect(within(dialog).getByRole('radio', { name: 'Codex 오케스트레이터' })).toHaveAttribute('aria-checked', 'true')
+    expect(within(dialog).getByRole('radio', { name: 'Claude 오케스트레이터' })).toBeEnabled()
 
     fireEvent.change(within(dialog).getByPlaceholderText(/세션 만료 후 재로그인/), { target: { value: '버그를 고쳐줘' } })
-    expect(submit).toBeDisabled() // still no Supervisor profile chosen
-
-    fireEvent.click(within(dialog).getByText('프로필 선택...'))
-    // "sol" also appears in the (display-only) 팀 프리셋 checklist once no
-    // Supervisor is chosen yet, so scope to the dropdown *option* specifically
-    // — the only role="button" whose accessible name contains it.
-    const profileOption = await within(dialog).findByRole('button', { name: /^sol/ })
-    fireEvent.click(profileOption)
-
     expect(submit).not.toBeDisabled()
   })
 
@@ -130,6 +161,96 @@ describe('Workspace (Phase 2b render-level)', () => {
       expect(calls.some(([url, opts]) => url.startsWith('/terminals/aaaaaaaa/input') && opts?.method === 'POST')).toBe(true)
     })
     expect((textarea as HTMLTextAreaElement).value).toBe('')
+  })
+
+  it('keeps the active Workspace turn pending while a delegated worker is processing', async () => {
+    let sent = false
+    const worker = { ...SUPERVISOR, id: 'bbbbbbbb', tmux_window: '2', agent_profile: 'terra' }
+    const mockFetch = vi.fn(async (url: string) => {
+      if (url === '/sessions') return jsonResponse([SESSION])
+      if (url.startsWith('/sessions/sess-1')) {
+        return jsonResponse({
+          session: SESSION,
+          terminals: sent
+            ? [
+                { ...SUPERVISOR, status: 'completed', caller_id: null, input_generation: 1, ready_generation: 1 },
+                { ...worker, status: 'processing', caller_id: 'aaaaaaaa', input_generation: 1, ready_generation: 0 },
+              ]
+            : [{ ...SUPERVISOR, status: 'idle', caller_id: null, input_generation: 0, ready_generation: 0 }],
+        })
+      }
+      if (url === '/terminals/aaaaaaaa') {
+        return jsonResponse({ ...SUPERVISOR, name: 'supervisor', session_name: 'sess-1', caller_id: null, status: sent ? 'completed' : 'idle', last_output_at: null })
+      }
+      if (url === '/terminals/bbbbbbbb') {
+        return jsonResponse({ ...worker, name: 'worker', session_name: 'sess-1', caller_id: 'aaaaaaaa', status: 'processing', last_output_at: null })
+      }
+      if (url.startsWith('/terminals/aaaaaaaa/output')) return jsonResponse({ output: sent ? '워커에게 위임했습니다.' : '', mode: 'last' })
+      if (url.startsWith('/terminals/aaaaaaaa/input')) {
+        sent = true
+        return jsonResponse({ success: true })
+      }
+      if (url.includes('/working-directory')) return jsonResponse({ working_directory: '~/work/alarm-solution' })
+      if (url.startsWith('/ui/events/history')) return jsonResponse({ events: [] })
+      return jsonResponse([])
+    })
+    vi.stubGlobal('fetch', mockFetch)
+    useStore.setState({ sessions: [SESSION], connected: true })
+    render(<Workspace />)
+
+    const textarea = await screen.findByLabelText('메시지 입력')
+    fireEvent.change(textarea, { target: { value: '팀 연결 테스트' } })
+    fireEvent.keyDown(textarea, { key: 'Enter', metaKey: true })
+
+    expect(await screen.findByText('오케스트레이터 응답을 기다리는 중…')).toBeInTheDocument()
+    expect(screen.queryByText('워커에게 위임했습니다.')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '전송 중' })).toBeDisabled()
+  })
+
+  it('persists pending metadata before input resolves and restores it after remount', async () => {
+    let resolveInput: ((value: ReturnType<typeof jsonResponse>) => void) | undefined
+    const inputRequest = new Promise<ReturnType<typeof jsonResponse>>(resolve => {
+      resolveInput = resolve
+    })
+    const mockFetch = vi.fn(async (url: string, opts?: RequestInit) => {
+      if (url === '/sessions') return jsonResponse([SESSION])
+      if (url.startsWith('/sessions/sess-1')) {
+        return jsonResponse({
+          session: SESSION,
+          terminals: [{ ...SUPERVISOR, status: 'idle', caller_id: null, input_generation: 0, ready_generation: 0 }],
+        })
+      }
+      if (url === '/terminals/aaaaaaaa') return jsonResponse({ ...SUPERVISOR, name: 'supervisor', session_name: 'sess-1', caller_id: null, status: 'idle', last_output_at: null })
+      if (url.startsWith('/terminals/aaaaaaaa/output')) return jsonResponse({ output: '이전 응답', mode: 'last' })
+      if (url.startsWith('/terminals/aaaaaaaa/input') && opts?.method === 'POST') return inputRequest
+      if (url.includes('/working-directory')) return jsonResponse({ working_directory: '~/work/alarm-solution' })
+      if (url.startsWith('/ui/events/history')) return jsonResponse({ events: [] })
+      return jsonResponse([])
+    })
+    vi.stubGlobal('fetch', mockFetch)
+    useStore.setState({ sessions: [SESSION], connected: true })
+
+    const first = render(<Workspace />)
+    const textarea = await screen.findByLabelText('메시지 입력')
+    fireEvent.change(textarea, { target: { value: '팀 연결 테스트' } })
+    fireEvent.keyDown(textarea, { key: 'Enter', metaKey: true })
+
+    await waitFor(() => {
+      const stored = JSON.parse(window.localStorage.getItem('cao:session-chat:v2:sess-1') || '{}')
+      expect(stored.workspacePendingReply).toMatchObject({
+        terminalId: 'aaaaaaaa',
+        baselineGenerations: { aaaaaaaa: 0 },
+        baselineInboxMessageId: 0,
+      })
+    })
+    first.unmount()
+    await act(async () => resolveInput?.(jsonResponse({ success: true })))
+
+    render(<Workspace />)
+
+    expect(await screen.findByText('팀 연결 테스트')).toBeInTheDocument()
+    expect(screen.getByText('오케스트레이터 응답을 기다리는 중…')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '전송 중' })).toBeDisabled()
   })
 
   it('feedback #3: "세션 종료" calls DELETE /sessions/{name}, then clears the selection and refreshes the list', async () => {
@@ -184,13 +305,14 @@ describe('Workspace (Phase 2b render-level)', () => {
     expect(screen.queryByText('cao-abc12345')).not.toBeInTheDocument()
   })
 
-  it('feedback #1 + #5: omits the provider query param for a profile with no provider, and prepends checked team-preset names to the first instruction', async () => {
+  it('starts the fixed Codex orchestrator and prepends checked role-based team profiles to the first instruction', async () => {
     const mockFetch = vi.fn(async (url: string) => {
       if (url === '/sessions') return jsonResponse([])
       if (url.startsWith('/agents/profiles')) {
         return jsonResponse([
-          { name: 'sol', description: 'Supervisor', source: 'codex', provider: null, model: null },
-          { name: 'nova', description: 'Worker', source: 'built-in', provider: 'claude_code', model: 'sonnet' },
+          { name: 'codex_orchestrator_sol', description: 'Orchestrator', source: 'local', provider: 'codex', model: 'gpt-5.6-sol' },
+          { name: 'claude_orchestrator_sonnet', description: 'Orchestrator', source: 'local', provider: 'claude_code', model: 'sonnet' },
+          { name: 'claude_developer_sonnet', description: 'Worker', source: 'local', provider: 'claude_code', model: 'sonnet' },
         ])
       }
       if (url.startsWith('/sessions?')) return jsonResponse({ id: 'term-1', session_name: 'auto-1' })
@@ -210,14 +332,10 @@ describe('Workspace (Phase 2b render-level)', () => {
     const dialog = await screen.findByRole('dialog', { name: '새 작업' })
 
     fireEvent.change(within(dialog).getByPlaceholderText(/세션 만료 후 재로그인/), { target: { value: '버그를 고쳐줘' } })
-    fireEvent.click(within(dialog).getByText('프로필 선택...'))
-    fireEvent.click(await within(dialog).findByRole('button', { name: /^sol/ }))
 
-    // Feedback #11: the remaining preset candidate ('nova' — 'sol' is now the
-    // chosen Supervisor, excluded from its own preset list) is grouped by its
-    // real `provider` field, with a visible count.
-    expect(await within(dialog).findByText(/Claude Code/)).toBeInTheDocument()
+    expect(await within(dialog).findByText('구현')).toBeInTheDocument()
     expect(within(dialog).getByText('(1)')).toBeInTheDocument()
+    expect(within(dialog).getByText('개발자')).toBeInTheDocument()
 
     const submit = within(dialog).getByRole('button', { name: /작업 시작/ })
     await waitFor(() => expect(submit).not.toBeDisabled())
@@ -227,15 +345,37 @@ describe('Workspace (Phase 2b render-level)', () => {
       expect(mockFetch.mock.calls.some(([u]) => (u as string).startsWith('/sessions?'))).toBe(true)
     })
     const [createUrl] = mockFetch.mock.calls.find(([u]) => (u as string).startsWith('/sessions?'))!
-    expect(createUrl as string).not.toContain('provider=')
+    expect(createUrl as string).toContain('provider=codex')
+    expect(createUrl as string).toContain('agent_profile=codex_orchestrator_sol')
 
     await waitFor(() => {
       expect(mockFetch.mock.calls.some(([u]) => (u as string).startsWith('/terminals/term-1/input'))).toBe(true)
     })
     const [inputUrl] = mockFetch.mock.calls.find(([u]) => (u as string).startsWith('/terminals/term-1/input'))!
     const sentMessage = decodeURIComponent((inputUrl as string).split('message=')[1])
-    expect(sentMessage).toContain('[팀] 위임 가능한 워커 프로필: nova')
+    expect(sentMessage).toContain('[팀] 위임 가능한 워커 프로필: claude_developer_sonnet')
     expect(sentMessage).toContain('assign/handoff 시 이 프로필 이름을 사용하세요.')
+    expect(JSON.parse(window.localStorage.getItem('cao:workspace:team-roster:v1:auto-1') || '[]')).toEqual([
+      { name: 'claude_developer_sonnet', provider: 'claude_code' },
+    ])
+  })
+
+  it('switches only the fixed orchestrator execution AI when Claude is selected', async () => {
+    const mockFetch = installMockFetch()
+    render(<Workspace />)
+
+    fireEvent.click(await screen.findByRole('button', { name: '새 작업' }))
+    const dialog = await screen.findByRole('dialog', { name: '새 작업' })
+    fireEvent.change(within(dialog).getByPlaceholderText(/세션 만료 후 재로그인/), { target: { value: '설계를 검토해줘' } })
+    fireEvent.click(within(dialog).getByRole('radio', { name: 'Claude 오케스트레이터' }))
+    expect(within(dialog).getByRole('radio', { name: 'Claude 오케스트레이터' })).toHaveAttribute('aria-checked', 'true')
+
+    fireEvent.click(within(dialog).getByRole('button', { name: /작업 시작/ }))
+
+    await waitFor(() => expect(mockFetch.mock.calls.some(([u]) => (u as string).startsWith('/sessions?'))).toBe(true))
+    const [createUrl] = mockFetch.mock.calls.find(([u]) => (u as string).startsWith('/sessions?'))!
+    expect(createUrl as string).toContain('provider=claude_code')
+    expect(createUrl as string).toContain('agent_profile=claude_orchestrator_sonnet')
   })
 
   it('feedback #12: client-validates the session name against the server pattern and disables submit for invalid characters', async () => {
@@ -246,8 +386,6 @@ describe('Workspace (Phase 2b render-level)', () => {
     const dialog = await screen.findByRole('dialog', { name: '새 작업' })
 
     fireEvent.change(within(dialog).getByPlaceholderText(/세션 만료 후 재로그인/), { target: { value: '버그를 고쳐줘' } })
-    fireEvent.click(within(dialog).getByText('프로필 선택...'))
-    fireEvent.click(await within(dialog).findByRole('button', { name: /^sol/ }))
     const submit = within(dialog).getByRole('button', { name: /작업 시작/ })
     await waitFor(() => expect(submit).not.toBeDisabled())
 

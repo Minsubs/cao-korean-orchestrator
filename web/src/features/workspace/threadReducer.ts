@@ -24,6 +24,36 @@ import type {
   UiEvent,
 } from './types'
 
+/**
+ * Keep all events belonging to one session, including status/activity signals
+ * for short-lived handoff terminals that may be created and deleted between
+ * two REST terminal-list polls.
+ */
+export function filterUiEventsForSession(
+  events: UiEvent[],
+  sessionIds: Set<string>,
+  knownTerminalIds: Set<string>,
+): UiEvent[] {
+  const sessionTerminalIds = new Set(knownTerminalIds)
+  for (const event of events) {
+    const detail = event.detail as Record<string, unknown>
+    if (event.type !== 'terminal_created') continue
+    if (typeof detail.session_id !== 'string' || !sessionIds.has(detail.session_id)) continue
+    if (typeof detail.terminal_id === 'string') sessionTerminalIds.add(detail.terminal_id)
+  }
+
+  return events.filter(event => {
+    const detail = event.detail as Record<string, unknown>
+    const sessionId = typeof detail.session_id === 'string' ? detail.session_id : null
+    if (sessionId) return sessionIds.has(sessionId)
+    const terminalId = typeof detail.terminal_id === 'string' ? detail.terminal_id : null
+    if (terminalId) return sessionTerminalIds.has(terminalId)
+    const sender = typeof detail.sender === 'string' ? detail.sender : null
+    const receiver = typeof detail.receiver === 'string' ? detail.receiver : null
+    return Boolean((sender && sessionTerminalIds.has(sender)) || (receiver && sessionTerminalIds.has(receiver)))
+  })
+}
+
 function parseTs(iso: string): number {
   const value = Date.parse(iso)
   return Number.isNaN(value) ? Date.now() : value
@@ -138,7 +168,16 @@ export function applyUiEventToCards(cards: Record<string, DelegationCard>, event
       const detail = event.detail as unknown as TerminalKilledDetail
       const existing = detail?.terminal_id ? cards[detail.terminal_id] : undefined
       if (!existing) return cards
-      return { ...cards, [detail.terminal_id]: { ...existing, killed: true } }
+      const endedStatus = existing.status === 'error' ? 'error' : 'completed'
+      return {
+        ...cards,
+        [detail.terminal_id]: {
+          ...existing,
+          status: endedStatus,
+          prevStatus: existing.status ?? existing.prevStatus,
+          killed: true,
+        },
+      }
     }
 
     case 'message_sent': {
@@ -175,7 +214,14 @@ export function applyUiEventToCards(cards: Record<string, DelegationCard>, event
 }
 
 export function applyUiEvents(cards: Record<string, DelegationCard>, events: UiEvent[]): Record<string, DelegationCard> {
-  return events.reduce(applyUiEventToCards, cards)
+  // Lifecycle plugin dispatch is asynchronous: initialization status signals
+  // can reach the ring just before post_create_terminal. Pre-seed identities
+  // from every create event, then replay chronologically so those early status
+  // updates are not dropped as "unknown terminal" signals.
+  const seeded = events
+    .filter(event => event.type === 'terminal_created')
+    .reduce(applyUiEventToCards, cards)
+  return events.reduce(applyUiEventToCards, seeded)
 }
 
 /** Resolve each card's caller/parent display name once the caller's own card (or itself) is known. */

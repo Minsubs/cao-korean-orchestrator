@@ -3,7 +3,9 @@ import type { ToolingDiagnostic } from '../../api.tooling'
 import { EmptyPane, SeverityPill } from './shared'
 
 export function DiagnosticsPane({ diagnostics }: { diagnostics: ToolingDiagnostic[] }) {
-  if (diagnostics.length === 0) {
+  const actionable = diagnostics.filter(diagnostic => diagnostic.severity !== 'info')
+
+  if (actionable.length === 0) {
     return (
       <EmptyPane
         icon={<Sparkles size={20} />}
@@ -15,7 +17,7 @@ export function DiagnosticsPane({ diagnostics }: { diagnostics: ToolingDiagnosti
 
   return (
     <div className="space-y-3">
-      {diagnostics.map((d, i) => (
+      {actionable.map((d, i) => (
         <div key={`${d.code}-${i}`} className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-sm">
           <div className="flex flex-wrap items-center gap-2">
             <SeverityPill severity={d.severity} />

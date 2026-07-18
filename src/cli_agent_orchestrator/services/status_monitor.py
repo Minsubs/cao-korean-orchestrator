@@ -8,6 +8,7 @@ import asyncio
 import logging
 import threading
 from datetime import datetime, timezone
+from time import monotonic
 from typing import Dict, List, Optional, Tuple
 
 from cli_agent_orchestrator.constants import (
@@ -23,6 +24,8 @@ from cli_agent_orchestrator.services.event_bus import bus
 from cli_agent_orchestrator.utils.event import terminal_id_from_topic
 
 logger = logging.getLogger(__name__)
+
+_RENDERED_PANE_PROBE_COOLDOWN_S = 1.0
 
 # Statuses that represent a stable "ready" state — the agent has finished
 # producing output and is waiting for further input. Once latched, the
@@ -69,6 +72,21 @@ class StatusMonitor:
         # IDLE/COMPLETED would freeze the terminal forever even when the
         # agent is genuinely processing new work.
         self._allow_processing_revert: Dict[str, bool] = {}
+        # Monotonic per-terminal turn counters. Every externally delivered input
+        # (user prompt or inbox callback) advances input_generation. A ready
+        # generation is recorded only after that turn was observed PROCESSING
+        # and then reached a sticky ready state. The web chat uses this semantic
+        # cycle proof instead of guessing from terminal-output timestamps.
+        self._input_generation: Dict[str, int] = {}
+        self._ready_generation: Dict[str, int] = {}
+        self._last_rendered_probe_at: Dict[str, float] = {}
+        # A rendered pane is only a point-in-time frame. Codex can briefly show
+        # its footer without a spinner while a callback is still starting, so a
+        # single capture must never finish a semantic turn. Store a candidate
+        # ready result and require the same result on a later probe. IDLE is not
+        # a valid post-input proof at all: only an actual response (COMPLETED),
+        # an input request, or an error can settle an active turn.
+        self._rendered_ready_candidate: Dict[str, Tuple[int, TerminalStatus, float]] = {}
         # Per-terminal ISO-8601 UTC timestamp of the last output event observed
         # on ``terminal.{id}.output`` (recorded in _process_chunk under _lock).
         # Additive: surfaced via get_last_output_at() for the Terminal API's
@@ -153,6 +171,7 @@ class StatusMonitor:
                 buffer = buffer[-STATE_BUFFER_MAX:]
             self._buffers[terminal_id] = buffer
             self._last_output_at[terminal_id] = datetime.now(timezone.utc).isoformat()
+            detection_generation = self._input_generation.get(terminal_id, 0)
             if use_screen:
                 self._feed_screen_locked(terminal_id, chunk)
 
@@ -162,12 +181,18 @@ class StatusMonitor:
             # (catches PROCESSING transition), then waits for output to settle
             # before re-detecting (catches IDLE/COMPLETED without running costly
             # regex on every single chunk during bursts).
-            self._schedule_raw_detection(terminal_id, buffer)
+            self._schedule_raw_detection(terminal_id, buffer, detection_generation)
             return
 
-        self._schedule_screen_detection(terminal_id, provider)
+        self._schedule_screen_detection(terminal_id, provider, detection_generation)
 
-    def _apply_detection(self, terminal_id: str, detected: TerminalStatus) -> None:
+    def _apply_detection(
+        self,
+        terminal_id: str,
+        detected: TerminalStatus,
+        *,
+        expected_generation: Optional[int] = None,
+    ) -> bool:
         """Apply the sticky-latch rules to a freshly detected status and publish
         on change. Shared by the raw and pyte detection paths.
 
@@ -181,6 +206,11 @@ class StatusMonitor:
         paste into a busy agent).
         """
         with self._lock:
+            if (
+                expected_generation is not None
+                and self._input_generation.get(terminal_id, 0) != expected_generation
+            ):
+                return False
             last = self._last_status.get(terminal_id)
 
             # UNKNOWN is "no signal", not a state: never let it overwrite a known
@@ -203,7 +233,7 @@ class StatusMonitor:
             # test_armed_unknown_then_ready_rerender_keeps_processing. The initial
             # UNKNOWN (last is None, nothing detected yet) is still allowed through.
             if detected == TerminalStatus.UNKNOWN and last is not None:
-                return
+                return False
 
             armed = self._allow_processing_revert.get(terminal_id, False)
             if not armed:
@@ -211,23 +241,26 @@ class StatusMonitor:
                     TerminalStatus.PROCESSING,
                     TerminalStatus.UNKNOWN,
                 ):
-                    return
+                    return False
                 if last == TerminalStatus.COMPLETED and detected == TerminalStatus.IDLE:
-                    return
+                    return False
 
             if detected == last:
-                return
+                return False
 
             self._last_status[terminal_id] = detected
             if detected == TerminalStatus.PROCESSING:
                 self._allow_processing_revert[terminal_id] = False
             elif detected in _STICKY_READY_STATUSES and last not in _STICKY_READY_STATUSES:
                 self._allow_processing_revert[terminal_id] = False
+                if last == TerminalStatus.PROCESSING:
+                    self._ready_generation[terminal_id] = self._input_generation.get(terminal_id, 0)
 
         # Publish outside the lock — subscribers must never be able to
         # re-enter StatusMonitor while the latch state is mid-update.
         bus.publish(f"terminal.{terminal_id}.status", {"status": detected.value})
         logger.info(f"Terminal {terminal_id} status changed: {detected.value}")
+        return True
 
     # ----- pyte rendered-screen detection (edge-debounced) -------------------
 
@@ -283,7 +316,12 @@ class StatusMonitor:
             logger.exception(f"Error detecting screen status for {terminal_id}")
             return TerminalStatus.UNKNOWN
 
-    def _schedule_screen_detection(self, terminal_id: str, provider) -> None:
+    def _schedule_screen_detection(
+        self,
+        terminal_id: str,
+        provider,
+        snapshot_generation: Optional[int] = None,
+    ) -> None:
         """Edge-debounce detection on the pyte screen.
 
         Rising edge (first chunk after quiet) → detect immediately (catches the
@@ -293,11 +331,18 @@ class StatusMonitor:
         mid-burst, which is what eliminates the flaps naive per-chunk rendered
         detection produces.
         """
+        if snapshot_generation is None:
+            with self._lock:
+                snapshot_generation = self._input_generation.get(terminal_id, 0)
         loop = self._loop or self._running_loop()
         if loop is None:
             # No event loop (unit tests / offline replay): detect immediately
             # on the current screen — deterministic, no timing.
-            self._apply_detection(terminal_id, self._detect_screen(terminal_id, provider))
+            self._apply_detection(
+                terminal_id,
+                self._detect_screen(terminal_id, provider),
+                expected_generation=snapshot_generation,
+            )
             return
 
         with self._lock:
@@ -307,7 +352,11 @@ class StatusMonitor:
         self._cancel_quiesce_handle(handle)
 
         if not was_bursting:
-            self._apply_detection(terminal_id, self._detect_screen(terminal_id, provider))
+            self._apply_detection(
+                terminal_id,
+                self._detect_screen(terminal_id, provider),
+                expected_generation=snapshot_generation,
+            )
 
         self._arm_quiesce_timer(loop, terminal_id, self._on_screen_quiescent, provider)
 
@@ -320,18 +369,32 @@ class StatusMonitor:
         with self._lock:
             self._bursting[terminal_id] = False
             self._quiesce_handle.pop(terminal_id, None)
+            snapshot_generation = self._input_generation.get(terminal_id, 0)
 
         async def _detect_and_apply() -> None:
             detected = await asyncio.to_thread(self._detect_screen, terminal_id, provider)
-            self._apply_detection(terminal_id, detected)
+            self._apply_detection(
+                terminal_id,
+                detected,
+                expected_generation=snapshot_generation,
+            )
 
         loop = self._loop or self._running_loop()
         if loop is None:
-            self._apply_detection(terminal_id, self._detect_screen(terminal_id, provider))
+            self._apply_detection(
+                terminal_id,
+                self._detect_screen(terminal_id, provider),
+                expected_generation=snapshot_generation,
+            )
         else:
             self._spawn_tracked(loop, _detect_and_apply())
 
-    def _schedule_raw_detection(self, terminal_id: str, buffer: str) -> None:
+    def _schedule_raw_detection(
+        self,
+        terminal_id: str,
+        buffer: str,
+        snapshot_generation: Optional[int] = None,
+    ) -> None:
         """Edge-debounce detection on the raw rolling buffer.
 
         Detects on every chunk while the terminal is in a ready/armed state
@@ -348,11 +411,18 @@ class StatusMonitor:
         captured loop via ``call_soon_threadsafe`` rather than the current
         thread's (nonexistent) loop.
         """
+        if snapshot_generation is None:
+            with self._lock:
+                snapshot_generation = self._input_generation.get(terminal_id, 0)
         loop = self._loop or self._running_loop()
         if loop is None:
             # No loop ever captured (unit tests / offline replay): detect
             # inline and skip the debounce timer.
-            self._apply_detection(terminal_id, self._detect_status(terminal_id, buffer))
+            self._apply_detection(
+                terminal_id,
+                self._detect_status(terminal_id, buffer),
+                expected_generation=snapshot_generation,
+            )
             return
 
         with self._lock:
@@ -367,7 +437,11 @@ class StatusMonitor:
         # delivery by InboxService). Once PROCESSING is observed, debounce.
         if not was_bursting or last_status in _STICKY_READY_STATUSES or last_status is None:
             detected = self._detect_status(terminal_id, buffer)
-            self._apply_detection(terminal_id, detected)
+            self._apply_detection(
+                terminal_id,
+                detected,
+                expected_generation=snapshot_generation,
+            )
 
         self._arm_quiesce_timer(loop, terminal_id, self._on_raw_quiescent)
 
@@ -417,14 +491,23 @@ class StatusMonitor:
             self._bursting[terminal_id] = False
             self._quiesce_handle.pop(terminal_id, None)
             buffer = self._buffers.get(terminal_id, "")
+            snapshot_generation = self._input_generation.get(terminal_id, 0)
 
         async def _detect_and_apply() -> None:
             detected = await asyncio.to_thread(self._detect_status, terminal_id, buffer)
-            self._apply_detection(terminal_id, detected)
+            self._apply_detection(
+                terminal_id,
+                detected,
+                expected_generation=snapshot_generation,
+            )
 
         loop = self._loop or self._running_loop()
         if loop is None:
-            self._apply_detection(terminal_id, self._detect_status(terminal_id, buffer))
+            self._apply_detection(
+                terminal_id,
+                self._detect_status(terminal_id, buffer),
+                expected_generation=snapshot_generation,
+            )
         else:
             self._spawn_tracked(loop, _detect_and_apply())
 
@@ -480,6 +563,9 @@ class StatusMonitor:
         """
         with self._lock:
             self._allow_processing_revert[terminal_id] = True
+            self._input_generation[terminal_id] = self._input_generation.get(terminal_id, 0) + 1
+            self._last_rendered_probe_at.pop(terminal_id, None)
+            self._rendered_ready_candidate.pop(terminal_id, None)
 
     def clear_rolling_buffer(self, terminal_id: str) -> None:
         """Clear ONLY the rolling byte buffer for a terminal — preserves
@@ -520,10 +606,18 @@ class StatusMonitor:
             self._buffers[terminal_id] = snapshot[-STATE_BUFFER_MAX:]
             self._last_status.pop(terminal_id, None)
             self._allow_processing_revert.pop(terminal_id, None)
+            snapshot_generation = self._input_generation.get(terminal_id, 0)
 
         detected = self._detect_status(terminal_id, self._buffers[terminal_id])
-        self._apply_detection(terminal_id, detected)
-        return detected
+        applied = self._apply_detection(
+            terminal_id,
+            detected,
+            expected_generation=snapshot_generation,
+        )
+        if applied:
+            return detected
+        with self._lock:
+            return self._last_status.get(terminal_id, TerminalStatus.UNKNOWN)
 
     def clear_terminal(self, terminal_id: str) -> None:
         """Free buffer and status for a deleted terminal."""
@@ -531,6 +625,10 @@ class StatusMonitor:
             self._buffers.pop(terminal_id, None)
             self._last_status.pop(terminal_id, None)
             self._allow_processing_revert.pop(terminal_id, None)
+            self._input_generation.pop(terminal_id, None)
+            self._ready_generation.pop(terminal_id, None)
+            self._last_rendered_probe_at.pop(terminal_id, None)
+            self._rendered_ready_candidate.pop(terminal_id, None)
             self._last_output_at.pop(terminal_id, None)
             self._screens.pop(terminal_id, None)
             self._bursting.pop(terminal_id, None)
@@ -550,6 +648,8 @@ class StatusMonitor:
             self._buffers[terminal_id] = ""
             self._last_status.pop(terminal_id, None)
             self._allow_processing_revert.pop(terminal_id, None)
+            self._last_rendered_probe_at.pop(terminal_id, None)
+            self._rendered_ready_candidate.pop(terminal_id, None)
             # Drop the rendered screen too so the relaunched CLI mode is
             # detected against a fresh viewport, not the failed attempt's.
             self._screens.pop(terminal_id, None)
@@ -570,7 +670,8 @@ class StatusMonitor:
         """
         from cli_agent_orchestrator.backends.registry import get_backend
 
-        if get_backend().supports_event_inbox():
+        backend = get_backend()
+        if backend.supports_event_inbox():
             try:
                 provider = provider_manager.get_provider(terminal_id)
             except Exception:
@@ -578,13 +679,23 @@ class StatusMonitor:
             if provider is not None:
                 with self._lock:
                     buffer = self._buffers.get(terminal_id, "")
+                    native_generation = self._input_generation.get(terminal_id, 0)
                 try:
                     # The native (herdr) path ignores the buffer arg; pass the
                     # rolling buffer (empty for herdr) so the rare
                     # get_native_status()==None fallback still gets what we have.
                     # provider.get_status may shell out to the herdr CLI — call
                     # it outside the lock.
-                    return provider.get_status(buffer)
+                    detected = provider.get_status(buffer)
+                    self._apply_detection(
+                        terminal_id,
+                        detected,
+                        expected_generation=native_generation,
+                    )
+                    with self._lock:
+                        if self._input_generation.get(terminal_id, 0) != native_generation:
+                            return self._last_status.get(terminal_id, TerminalStatus.UNKNOWN)
+                        return self._last_status.get(terminal_id, detected)
                 except Exception as e:
                     logger.error(f"Error deriving native status for {terminal_id}: {e}")
                     return TerminalStatus.UNKNOWN
@@ -599,8 +710,10 @@ class StatusMonitor:
             # PROCESSING→ready transition without waiting for stream silence.
             if cached == TerminalStatus.PROCESSING:
                 buffer = self._buffers.get(terminal_id, "")
+                buffer_generation = self._input_generation.get(terminal_id, 0)
             else:
                 buffer = ""
+                buffer_generation = 0
 
         if cached == TerminalStatus.PROCESSING and buffer:
             fresh = self._detect_status(terminal_id, buffer)
@@ -609,8 +722,79 @@ class StatusMonitor:
                 f"fresh={fresh.value}, buffer_len={len(buffer)}"
             )
             if fresh != TerminalStatus.PROCESSING and fresh != TerminalStatus.UNKNOWN:
-                self._apply_detection(terminal_id, fresh)
-                return fresh
+                with self._lock:
+                    if self._input_generation.get(terminal_id, 0) != buffer_generation:
+                        return self._last_status.get(terminal_id, cached)
+                    self._rendered_ready_candidate.pop(terminal_id, None)
+                if self._apply_detection(
+                    terminal_id,
+                    fresh,
+                    expected_generation=buffer_generation,
+                ):
+                    return fresh
+                return cached
+            if fresh == TerminalStatus.PROCESSING:
+                with self._lock:
+                    now = monotonic()
+                    last_probe = self._last_rendered_probe_at.get(terminal_id, 0.0)
+                    if now - last_probe < _RENDERED_PANE_PROBE_COOLDOWN_S:
+                        return cached
+                    # Reserve the cooldown before leaving the lock so concurrent
+                    # HTTP polls coalesce into one capture-pane subprocess.
+                    self._last_rendered_probe_at[terminal_id] = now
+                    probe_generation = self._input_generation.get(terminal_id, 0)
+                try:
+                    provider = provider_manager.get_provider(terminal_id)
+                    if provider is not None and provider.supports_rendered_pane_status:
+                        pane = backend.get_history(
+                            provider.session_name,
+                            provider.window_name,
+                            tail_lines=120,
+                            strip_escapes=False,
+                        )
+                        rendered = provider.get_status_from_screen(pane.splitlines())
+                        rendered_ready = rendered in (
+                            TerminalStatus.COMPLETED,
+                            TerminalStatus.WAITING_USER_ANSWER,
+                            TerminalStatus.ERROR,
+                        )
+                        confirmed = False
+                        with self._lock:
+                            generation = self._input_generation.get(terminal_id, 0)
+                            if generation != probe_generation:
+                                self._rendered_ready_candidate.pop(terminal_id, None)
+                                return self._last_status.get(terminal_id, cached)
+                            candidate = self._rendered_ready_candidate.get(terminal_id)
+                            if rendered_ready:
+                                if (
+                                    candidate is not None
+                                    and candidate[0] == generation
+                                    and candidate[1] == rendered
+                                    and now - candidate[2] >= _RENDERED_PANE_PROBE_COOLDOWN_S
+                                ):
+                                    confirmed = True
+                                    self._rendered_ready_candidate.pop(terminal_id, None)
+                                else:
+                                    self._rendered_ready_candidate[terminal_id] = (
+                                        generation,
+                                        rendered,
+                                        now,
+                                    )
+                            else:
+                                self._rendered_ready_candidate.pop(terminal_id, None)
+                        if confirmed:
+                            if self._apply_detection(
+                                terminal_id,
+                                rendered,
+                                expected_generation=probe_generation,
+                            ):
+                                return rendered
+                except Exception:
+                    logger.debug(
+                        "Rendered-pane status fallback failed for %s",
+                        terminal_id,
+                        exc_info=True,
+                    )
         return cached
 
     def get_buffer(self, terminal_id: str) -> str:
@@ -626,6 +810,16 @@ class StatusMonitor:
         """
         with self._lock:
             return self._last_output_at.get(terminal_id)
+
+    def get_input_generation(self, terminal_id: str) -> int:
+        """Return the number of external input cycles delivered to a terminal."""
+        with self._lock:
+            return self._input_generation.get(terminal_id, 0)
+
+    def get_ready_generation(self, terminal_id: str) -> int:
+        """Return the latest input generation observed PROCESSING then ready."""
+        with self._lock:
+            return self._ready_generation.get(terminal_id, 0)
 
 
 # Module-level singleton

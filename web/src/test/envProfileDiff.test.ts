@@ -24,6 +24,7 @@ function makeSnapshot(overrides: Partial<EnvSnapshot> = {}): EnvSnapshot {
     extensions_summary: [],
     agent_profiles: [],
     inventory_counts: {},
+    cli_versions: [],
     ...overrides,
   }
 }
@@ -49,6 +50,28 @@ describe('computeEnvDiff', () => {
     const diff = computeEnvDiff(snapshot, live)
     expect(diff.hasDiff).toBe(true)
     expect(diff.environmentFieldDiffs).toEqual([{ field: 'server_version', snapshotValue: 'v2.3.0', liveValue: 'v2.4.0' }])
+  })
+
+  it('reports installed CLI version drift independently from server metadata', () => {
+    const snapshot = makeSnapshot({
+      cli_versions: [
+        { name: 'codex', display_name: 'Codex CLI', version: '0.144.4' },
+        { name: 'claude_code', display_name: 'Claude Code', version: '2.1.212' },
+      ],
+    })
+    const live = makeSnapshot({
+      cli_versions: [
+        { name: 'codex', display_name: 'Codex CLI', version: '0.144.5' },
+        { name: 'claude_code', display_name: 'Claude Code', version: '2.1.212' },
+      ],
+    })
+
+    const diff = computeEnvDiff(snapshot, live)
+
+    expect(diff.cliVersionDiffs).toEqual([
+      { cli: 'codex', displayName: 'Codex CLI', snapshotVersion: '0.144.4', liveVersion: '0.144.5' },
+    ])
+    expect(diff.hasDiff).toBe(true)
   })
 
   it('formats boolean/null environment fields honestly (예/아니오, null stays null) and ignores checked_at entirely', () => {

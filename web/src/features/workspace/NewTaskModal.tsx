@@ -1,11 +1,23 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Loader2, Send, Sparkles, X } from 'lucide-react'
+import { Bot, Check, Loader2, Lock, Send, Sparkles, X } from 'lucide-react'
 import { api } from '../../api'
 import { createSessionWithOptionalProvider, type AgentProfileInfoWithModel } from '../../api.profiles'
 import { useStore } from '../../store'
 import { CustomSelect, type SelectOption } from '../../components/CustomSelect'
-import { providerLabel } from '../profiles/roleData'
+import {
+  ADDITIONAL_ROLE_LABELS,
+  additionalProfileRole,
+  defaultTeamWorkers,
+  ORCHESTRATOR_PROFILES,
+  profileDetail,
+  profileLabel,
+  profileSection,
+  type OrchestratorProvider,
+  workerGroup,
+  WORKER_GROUPS,
+} from '../profiles/profilePresentation'
 import { findGroupById, groupContextLine, listProjectTargets } from './projects'
+import { saveTeamRoster } from './teamRoster'
 import type { ProjectsData } from './types'
 
 interface NewTaskModalProps {
@@ -16,6 +28,15 @@ interface NewTaskModalProps {
 }
 
 const DIRECT_KEY = '__direct__'
+
+const ORCHESTRATOR_CHOICES: Array<{
+  provider: OrchestratorProvider
+  label: string
+  description: string
+}> = [
+  { provider: 'codex', label: 'Codex', description: '정확한 구현 조율과 최종 판단에 적합해요.' },
+  { provider: 'claude_code', label: 'Claude', description: '긴 맥락의 분석과 설계 조율에 적합해요.' },
+]
 
 /**
  * Server rule (utils/terminal.py `_VALID_TMUX_NAME`, confirmed by 5.5-A):
@@ -42,7 +63,7 @@ export function NewTaskModal({ projects, defaultTarget, onClose, onCreated }: Ne
   })
   const [directPath, setDirectPath] = useState('')
   const [profiles, setProfiles] = useState<AgentProfileInfoWithModel[]>([])
-  const [supervisorProfile, setSupervisorProfile] = useState('')
+  const [orchestratorProvider, setOrchestratorProvider] = useState<OrchestratorProvider>('codex')
   const [sessionName, setSessionName] = useState('')
   const [presetChecks, setPresetChecks] = useState<Record<string, boolean>>({})
   const [creating, setCreating] = useState(false)
@@ -60,23 +81,30 @@ export function NewTaskModal({ projects, defaultTarget, onClose, onCreated }: Ne
   }, [])
 
   useEffect(() => {
+    if (profiles.length === 0) return
+    const currentProfile = ORCHESTRATOR_PROFILES[orchestratorProvider]
+    if (profiles.some(profile => profile.name === currentProfile)) return
+    const fallback = ORCHESTRATOR_CHOICES.find(choice =>
+      profiles.some(profile => profile.name === ORCHESTRATOR_PROFILES[choice.provider]),
+    )
+    if (fallback) setOrchestratorProvider(fallback.provider)
+  }, [orchestratorProvider, profiles])
+
+  useEffect(() => {
     setPresetChecks(prev => {
       const next = { ...prev }
       profiles.forEach(p => {
-        if (!(p.name in next)) next[p.name] = true
+        // The compact default team is ready to use. Discovered specialist
+        // agents stay individually selectable but opt-in, so importing a
+        // detailed roster never silently dispatches every agent.
+        if (!(p.name in next)) next[p.name] = workerGroup(p) !== null
       })
       return next
     })
   }, [profiles])
 
-  const selectedProfile = profiles.find(p => p.name === supervisorProfile) ?? null
-  // Feedback #1: the profile's own (now real, nullable) `provider` field is
-  // authoritative. Never force a fallback (the confirmed bug: an unresolved
-  // provider silently became the literal string 'claude_code' at submit
-  // time) — null flows straight through to createSessionWithOptionalProvider,
-  // which omits the query param entirely so the backend resolves it from the
-  // profile's own frontmatter instead of a guessed/incorrect one.
-  const effectiveProvider = selectedProfile?.provider ?? null
+  const selectedProfile =
+    profiles.find(profile => profile.name === ORCHESTRATOR_PROFILES[orchestratorProvider]) ?? null
 
   const selectOptions: SelectOption[] = [
     ...targets.map(t => ({
@@ -92,36 +120,46 @@ export function NewTaskModal({ projects, defaultTarget, onClose, onCreated }: Ne
     if (targetKey === DIRECT_KEY) return '직접 입력한 경로에서 세션을 시작해요.'
     const opt = targets.find(t => t.key === targetKey)
     if (opt?.kind === 'group-root') {
-      return '그룹에 지시해요 — Supervisor가 그룹 루트에서 시작해 하위 프로젝트 중 어디 작업인지 판단하고, 워커를 해당 프로젝트 폴더에서 실행해요.'
+      return '그룹에 지시해요 — 오케스트레이터가 그룹 루트에서 시작해 하위 프로젝트 중 어디 작업인지 판단하고, 워커를 해당 프로젝트 폴더에서 실행해요.'
     }
     return '이 프로젝트 폴더에서 바로 세션을 시작해요.'
   })()
 
   const sessionNameValid = sessionName.length === 0 || SESSION_NAME_RE.test(sessionName)
 
-  // Feedback #11: same candidate list the checklist renders, grouped by
-  // provider — reused again at submit time (#5) so both features read one
-  // source of truth instead of drifting apart.
-  const presetCandidates = useMemo(() => profiles.filter(p => p.name !== supervisorProfile).slice(0, 8), [profiles, supervisorProfile])
+  const presetCandidates = useMemo(() => defaultTeamWorkers(profiles), [profiles])
+  const additionalCandidates = useMemo(
+    () => profiles.filter(profile => profileSection(profile) === 'additional'),
+    [profiles],
+  )
+  const delegatableCandidates = useMemo(
+    () => [...presetCandidates, ...additionalCandidates],
+    [presetCandidates, additionalCandidates],
+  )
 
   const presetGroups = useMemo(() => {
-    const order: string[] = []
     const byKey = new Map<string, AgentProfileInfoWithModel[]>()
     presetCandidates.forEach(p => {
-      // Real `provider` wins; a profile with none yet falls back to its
-      // `source` tag purely so it still lands in *a* labeled group instead
-      // of being dropped — never fabricates a provider value.
-      const key = p.provider ?? p.source
-      if (!byKey.has(key)) {
-        byKey.set(key, [])
-        order.push(key)
-      }
+      const key = workerGroup(p)
+      if (!key) return
+      if (!byKey.has(key)) byKey.set(key, [])
       byKey.get(key)!.push(p)
     })
-    return order.map(key => ({ key, items: byKey.get(key)! }))
+    return [...byKey.entries()]
+      .map(([key, items]) => ({ key: key as keyof typeof WORKER_GROUPS, items }))
+      .sort((a, b) => WORKER_GROUPS[a.key].order - WORKER_GROUPS[b.key].order)
   }, [presetCandidates])
 
-  const canSubmit = instruction.trim().length > 0 && supervisorProfile.trim().length > 0 && sessionNameValid && !creating
+  const additionalGroups = useMemo(() => {
+    const byRole = new Map<string, AgentProfileInfoWithModel[]>()
+    additionalCandidates.forEach(profile => {
+      const role = additionalProfileRole(profile)
+      byRole.set(role, [...(byRole.get(role) ?? []), profile])
+    })
+    return [...byRole.entries()]
+  }, [additionalCandidates])
+
+  const canSubmit = instruction.trim().length > 0 && selectedProfile !== null && sessionNameValid && !creating
 
   const handleSubmit = async () => {
     if (!canSubmit) return
@@ -143,18 +181,22 @@ export function NewTaskModal({ projects, defaultTarget, onClose, onCreated }: Ne
       // Feedback #5: name the checked preset profiles for the Supervisor so
       // assign/handoff has concrete names to target — omitted entirely when
       // nothing is checked (never an empty "[팀]" line).
-      const checkedPresetNames = presetCandidates.filter(p => presetChecks[p.name] !== false).map(p => p.name)
+      const checkedPresetNames = delegatableCandidates.filter(p => presetChecks[p.name] === true).map(p => p.name)
       if (checkedPresetNames.length > 0) {
         contextLines.push(`[팀] 위임 가능한 워커 프로필: ${checkedPresetNames.join(', ')} — assign/handoff 시 이 프로필 이름을 사용하세요.`)
       }
       const contextPrefix = contextLines.length > 0 ? `${contextLines.join('\n')}\n\n` : ''
 
       const terminal = await createSessionWithOptionalProvider(
-        effectiveProvider,
-        supervisorProfile.trim(),
+        orchestratorProvider,
+        selectedProfile.name,
         sessionName.trim() || undefined,
         workingDirectory,
       )
+      saveTeamRoster(terminal.session_name, checkedPresetNames.map(name => {
+        const profile = delegatableCandidates.find(candidate => candidate.name === name)
+        return { name, provider: profile?.provider ?? null }
+      }))
       await api.sendInput(terminal.id, `${contextPrefix}${instruction.trim()}`)
       showSnackbar({ type: 'success', message: '작업을 시작했어요' })
       await fetchSessions()
@@ -225,27 +267,64 @@ export function NewTaskModal({ projects, defaultTarget, onClose, onCreated }: Ne
             {!sessionNameValid && <p className="mt-1 text-[10.5px] text-[var(--danger)]">세션 이름은 영문/숫자/-/_만 가능해요</p>}
           </div>
 
-          <div>
-            <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-[var(--text-3)]">Supervisor</label>
-            <CustomSelect
-              value={supervisorProfile}
-              onChange={setSupervisorProfile}
-              placeholder="프로필 선택..."
-              options={profiles.map(p => ({ value: p.name, label: p.name, sublabel: p.description || undefined, group: p.source }))}
-            />
-            {selectedProfile && (
-              <p className="mt-1 text-[10.5px] text-[var(--text-3)]">provider: {effectiveProvider ?? '프로필 기본값 사용 (자동 판단)'}</p>
-            )}
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-3">
+            <div className="mb-2.5 flex items-start gap-2">
+              <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[var(--accent-soft)] text-[var(--accent-text)]">
+                <Lock size={14} />
+              </div>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs font-bold text-[var(--text)]">오케스트레이터</span>
+                  <span className="rounded-full bg-[var(--surface-3)] px-2 py-0.5 text-[9.5px] font-bold text-[var(--text-3)]">고정 역할</span>
+                </div>
+                <p className="mt-0.5 text-[10.5px] leading-relaxed text-[var(--text-3)]">
+                  오케스트레이터로 실행할 AI만 고르세요. 팀 구성과 결과 종합은 같은 고정 역할이 맡아요.
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="오케스트레이터 실행 AI">
+              {ORCHESTRATOR_CHOICES.map(choice => {
+                const profileName = ORCHESTRATOR_PROFILES[choice.provider]
+                const available = profiles.some(profile => profile.name === profileName)
+                const selected = orchestratorProvider === choice.provider
+                return (
+                  <button
+                    key={choice.provider}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    aria-label={`${choice.label} 오케스트레이터`}
+                    disabled={!available}
+                    onClick={() => setOrchestratorProvider(choice.provider)}
+                    className={`rounded-xl border p-2.5 text-left transition-colors ${
+                      selected
+                        ? 'border-[var(--accent)] bg-[var(--surface)] shadow-sm'
+                        : 'border-[var(--border)] bg-[var(--surface)] hover:border-[var(--accent-soft)]'
+                    } disabled:cursor-not-allowed disabled:opacity-45`}
+                  >
+                    <span className="flex items-center gap-1.5 text-xs font-bold text-[var(--text)]">
+                      <Bot size={13} className="text-[var(--accent-text)]" />
+                      {choice.label}
+                      {selected && <Check size={12} className="ml-auto text-[var(--accent-text)]" />}
+                    </span>
+                    <span className="mt-1 block text-[10px] leading-relaxed text-[var(--text-3)]">{choice.description}</span>
+                    <span className="mt-1 block font-mono text-[9px] text-[var(--text-3)]">
+                      {available ? profileName : '프로필 설치 필요'}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
           </div>
 
           {presetGroups.length > 0 && (
             <div>
-              <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-[var(--text-3)]">팀 프리셋 — Supervisor가 위임할 수 있는 에이전트</label>
+              <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-[var(--text-3)]">기본 팀 — 오케스트레이터가 위임할 역할</label>
               <div className="space-y-1.5">
                 {presetGroups.map(group => (
                   <details key={group.key} open className="rounded-lg border border-[var(--border)] px-2.5 py-1.5">
                     <summary className="cursor-pointer select-none text-[11px] font-semibold text-[var(--text-2)]">
-                      {providerLabel(group.key)} <span className="font-normal text-[var(--text-3)]">({group.items.length})</span>
+                      {WORKER_GROUPS[group.key].label} <span className="font-normal text-[var(--text-3)]">({group.items.length})</span>
                     </summary>
                     <div className="mt-1.5 space-y-1">
                       {group.items.map(p => (
@@ -256,7 +335,10 @@ export function NewTaskModal({ projects, defaultTarget, onClose, onCreated }: Ne
                             onChange={e => setPresetChecks(prev => ({ ...prev, [p.name]: e.target.checked }))}
                             className="accent-[var(--accent)]"
                           />
-                          <span className="text-xs font-medium text-[var(--text)]">{p.name}</span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-xs font-medium text-[var(--text)]">{profileLabel(p.name)}</span>
+                            <span className="block truncate text-[9.5px] text-[var(--text-3)]">{profileDetail(p)}</span>
+                          </span>
                         </label>
                       ))}
                     </div>
@@ -264,8 +346,39 @@ export function NewTaskModal({ projects, defaultTarget, onClose, onCreated }: Ne
                 ))}
               </div>
               <p className="mt-1 text-[10.5px] text-[var(--text-3)]">
-                표시용 로스터예요 — 실제 워커 터미널은 Supervisor가 작업을 나눌 때 생성돼요. 미리 실행되지 않아요. 체크된 이름은 Supervisor의 첫 지시에 함께 전달돼요.
+                실제 워커는 오케스트레이터가 작업을 나눌 때만 생성돼요. 체크한 역할의 내부 프로필 ID가 첫 지시에 함께 전달됩니다.
               </p>
+            </div>
+          )}
+
+          {additionalGroups.length > 0 && (
+            <div>
+              <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-[var(--text-3)]">추가 전문 에이전트 — 필요할 때 선택</label>
+              <div className="space-y-1.5">
+                {additionalGroups.map(([role, items]) => (
+                  <details key={role} className="rounded-lg border border-[var(--border)] px-2.5 py-1.5">
+                    <summary className="cursor-pointer select-none text-[11px] font-semibold text-[var(--text-2)]">
+                      {ADDITIONAL_ROLE_LABELS[role] ?? role} <span className="font-normal text-[var(--text-3)]">({items.length})</span>
+                    </summary>
+                    <div className="mt-1.5 space-y-1">
+                      {items.map(profile => (
+                        <label key={profile.name} className="flex cursor-pointer items-center gap-2 rounded-lg border border-[var(--border)] px-2.5 py-1.5">
+                          <input
+                            type="checkbox"
+                            checked={presetChecks[profile.name] === true}
+                            onChange={event => setPresetChecks(prev => ({ ...prev, [profile.name]: event.target.checked }))}
+                            className="accent-[var(--accent)]"
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-xs font-medium text-[var(--text)]">{profileLabel(profile.name)}</span>
+                            <span className="block truncate text-[9.5px] text-[var(--text-3)]">{profileDetail(profile)}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </details>
+                ))}
+              </div>
             </div>
           )}
         </div>

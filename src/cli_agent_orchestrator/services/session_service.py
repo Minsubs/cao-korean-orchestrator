@@ -114,6 +114,8 @@ def get_session(session_name: str) -> Dict:
 
         for terminal in terminals:
             terminal["status"] = status_monitor.get_status(terminal["id"]).value
+            terminal["input_generation"] = status_monitor.get_input_generation(terminal["id"])
+            terminal["ready_generation"] = status_monitor.get_ready_generation(terminal["id"])
         return {"session": session_data, "terminals": terminals}
 
     except Exception as e:

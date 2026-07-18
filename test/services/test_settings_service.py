@@ -101,6 +101,7 @@ class TestGetAgentDirs:
         """get_agent_dirs returns all default dirs when no settings file exists."""
         result = get_agent_dirs()
         assert result == _DEFAULTS
+        assert result["claude_code"] == str(Path.home() / ".claude" / "agents")
 
     def test_returns_saved_overrides_merged_with_defaults(self, settings_file):
         """get_agent_dirs merges saved overrides on top of defaults."""

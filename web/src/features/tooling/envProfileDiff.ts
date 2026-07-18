@@ -32,9 +32,18 @@ export interface InventoryCountDiff {
   liveCount: number
 }
 
+export interface CliVersionDiff {
+  cli: string
+  displayName: string
+  snapshotVersion: string
+  liveVersion: string
+}
+
 export interface EnvProfileDiffResult {
-  /** "CLI 버전 드리프트" — see field list + rationale below. */
+  /** Host/server metadata drift. */
   environmentFieldDiffs: EnvFieldDiff[]
+  /** Real installed CLI versions from /tooling/providers. */
+  cliVersionDiffs: CliVersionDiff[]
   /** A whole CLI's inventory present on only one side (inferred from a zero vs. non-zero total — see below). */
   cliPresenceDiffs: CliPresenceDiff[]
   onlyInSnapshot: { agentProfiles: NamedDiffEntry[]; extensions: NamedDiffEntry[] }
@@ -44,14 +53,6 @@ export interface EnvProfileDiffResult {
   hasDiff: boolean
 }
 
-// The spec's 4-endpoint snapshot schema carries a single passthrough
-// `environment` object — there is no per-CLI-binary version array in scope
-// (that lives in /tooling/providers, which this schema deliberately doesn't
-// fetch). "CLI 버전 드리프트" is therefore read off this object's own
-// version-shaped fields, generalized to every comparable field: the feature's
-// actual use case (회사 Windows/WSL ↔ 개인 mac) cares about OS/shell drift
-// just as much as a version string, and `server_version` (CAO's own version)
-// is the one literal "버전" field this schema captures.
 // `checked_at` is excluded on purpose — it's a scan timestamp, not
 // environment state, so it would "differ" on every comparison and never be a
 // meaningful drift signal.
@@ -90,6 +91,21 @@ export function computeEnvDiff(snapshot: EnvSnapshot, live: EnvSnapshot): EnvPro
     const liveValue = formatFieldValue(liveEnv[field])
     if (snapshotValue !== liveValue) {
       environmentFieldDiffs.push({ field, snapshotValue, liveValue })
+    }
+  }
+
+  const cliVersionDiffs: CliVersionDiff[] = []
+  if (snapshot.cli_versions && live.cli_versions) {
+    const liveVersions = new Map(live.cli_versions.map(item => [item.name, item]))
+    for (const item of snapshot.cli_versions) {
+      const liveItem = liveVersions.get(item.name)
+      if (!liveItem || item.version === null || liveItem.version === null || item.version === liveItem.version) continue
+      cliVersionDiffs.push({
+        cli: item.name,
+        displayName: item.display_name || liveItem.display_name,
+        snapshotVersion: item.version,
+        liveVersion: liveItem.version,
+      })
     }
   }
 
@@ -138,6 +154,7 @@ export function computeEnvDiff(snapshot: EnvSnapshot, live: EnvSnapshot): EnvPro
 
   const hasDiff =
     environmentFieldDiffs.length > 0 ||
+    cliVersionDiffs.length > 0 ||
     cliPresenceDiffs.length > 0 ||
     inventoryCountDiffs.length > 0 ||
     onlyInSnapshotProfiles.length > 0 ||
@@ -147,6 +164,7 @@ export function computeEnvDiff(snapshot: EnvSnapshot, live: EnvSnapshot): EnvPro
 
   return {
     environmentFieldDiffs,
+    cliVersionDiffs,
     cliPresenceDiffs,
     onlyInSnapshot: { agentProfiles: onlyInSnapshotProfiles, extensions: onlyInSnapshotExt },
     onlyInLive: { agentProfiles: onlyInLiveProfiles, extensions: onlyInLiveExt },

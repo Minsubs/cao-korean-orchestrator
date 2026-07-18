@@ -55,6 +55,12 @@ class FakeMcpAdapter:
             ["claude", "mcp", "add", name, "--", *command_tokens], "/home", f"add {name}", "v"
         )
 
+    def plan_skill_add(self, repository, name, scope):
+        argv = ["skills", "add", repository, "--skill", name, "--yes"]
+        if scope == "global":
+            argv.append("--global")
+        return ExecutionPlan(argv, "/home", f"add {name}", "v")
+
     def verify(self, action, target):
         return True, "ok"
 
@@ -126,6 +132,29 @@ def test_plan_catalog_filesystem_appends_home_path(client):
     )
     assert resp.status_code == 200
     assert resp.json()["argv"][-1] == home
+
+
+def test_plan_catalog_skill_uses_repository_and_exact_skill_name(client):
+    resp = client.post(
+        "/tooling/plan",
+        json={
+            "action": "install",
+            "provider": "generic_skills",
+            "target": "catalog:frontend-design",
+            "scope": "global",
+        },
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["argv"] == [
+        "skills",
+        "add",
+        "anthropics/skills",
+        "--skill",
+        "frontend-design",
+        "--yes",
+        "--global",
+    ]
 
 
 def test_plan_catalog_filesystem_missing_path_400(client):

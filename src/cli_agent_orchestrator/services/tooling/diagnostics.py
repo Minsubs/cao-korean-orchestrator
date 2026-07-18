@@ -3,7 +3,6 @@
 Each check reuses an existing read-only collector and emits zero or more
 structured findings; an empty list means "nothing to report". Checks:
 
-* provider binary missing              -> info    (``provider_missing``)
 * provider version probe failed        -> warning (``version_probe_failed``)
 * skill folder fails to parse/validate -> warning (``skill_parse_error``)
 * agent profile name defined twice     -> warning (``profile_duplicate``)
@@ -28,28 +27,17 @@ def _provider_diagnostics() -> List[Dict[str, Any]]:
         name = provider["name"]
         display = provider["display_name"]
         binary = provider["binary"]
-        if not provider["installed"]:
-            diagnostics.append(
-                {
-                    "severity": "info",
-                    "code": "provider_missing",
-                    "title": f"{display} is not installed",
-                    "cause": f"No '{binary}' binary was found on PATH.",
-                    "impact": f"Sessions using the {display} provider cannot start.",
-                    "recommendation": f"Install {display} and ensure '{binary}' is on PATH.",
-                    "provider": name,
-                    "path": None,
-                }
-            )
-        elif provider["version_error"]:
+        # Missing providers are optional choices, not defects. They stay visible
+        # in the environment inventory but do not create diagnostic noise.
+        if provider["installed"] and provider["version_error"]:
             diagnostics.append(
                 {
                     "severity": "warning",
                     "code": "version_probe_failed",
-                    "title": f"Could not determine {display} version",
+                    "title": f"{display} 버전을 확인하지 못했어요",
                     "cause": provider["version_error"],
-                    "impact": "Version-dependent compatibility checks are unavailable.",
-                    "recommendation": f"Verify that '{binary} --version' runs correctly.",
+                    "impact": "버전에 따른 호환성 검사를 사용할 수 없어요.",
+                    "recommendation": f"터미널에서 '{binary} --version'이 정상 실행되는지 확인하세요.",
                     "provider": name,
                     "path": provider["path"],
                 }
@@ -94,19 +82,25 @@ def _skill_diagnostics() -> List[Dict[str, Any]]:
 def _profile_diagnostics() -> List[Dict[str, Any]]:
     diagnostics: List[Dict[str, Any]] = []
     for profile in list_agent_profiles():
-        duplicated_in = profile.get("duplicated_in") or []
+        duplicated_in = list(profile.get("duplicated_in") or [])
+        source = profile.get("source")
+        if source == "local":
+            duplicated_in = [
+                item for item in duplicated_in if item not in {"installed", "built-in"}
+            ]
+        elif source == "installed":
+            duplicated_in = [item for item in duplicated_in if item != "built-in"]
         if not duplicated_in:
             continue
         name = profile["name"]
-        source = profile.get("source")
         diagnostics.append(
             {
                 "severity": "warning",
                 "code": "profile_duplicate",
-                "title": f"Agent profile '{name}' is defined in multiple locations",
-                "cause": f"'{name}' also exists in: {', '.join(duplicated_in)}.",
-                "impact": f"The copy from '{source}' wins; the others are shadowed.",
-                "recommendation": "Remove or disable the duplicate directories to resolve ambiguity.",
+                "title": f"에이전트 프로필 '{name}'이 여러 위치에 있어요",
+                "cause": f"다른 위치: {', '.join(duplicated_in)}",
+                "impact": f"'{source}' 위치의 프로필이 우선 적용돼요.",
+                "recommendation": "의도하지 않은 중복 폴더를 제거하거나 비활성화하세요.",
                 "provider": None,
                 "path": None,
             }

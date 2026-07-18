@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Blocks, Download, Info, Plus, RefreshCw, RotateCcw, Sparkles, Trash2 } from 'lucide-react'
+import { Blocks, CheckCircle2, Download, Info, Plus, RefreshCw, RotateCcw, Sparkles, Trash2 } from 'lucide-react'
 import type { ToolingAdapter, ToolingExtension, ToolingOperation, ToolingPlanRequest } from '../../api.tooling'
 import {
   ACTION_LABELS,
@@ -42,10 +42,9 @@ interface UpdatesPaneProps {
  * "v1.4.0 → v1.5.1" version diffs and an "N개 업데이트 가능" count. The real
  * schema here (ToolingExtension/ToolingAdapter, phase3a+4a) has no per-skill
  * version or update-availability field — only the adapter's own installed
- * version. Fabricating a diff/count would violate "가짜 성공 상태 금지", so
- * this pane instead always offers 업데이트/모두 업데이트 as real actions
- * (the underlying `skills update` is a no-op when already current) rather
- * than pretending to know what needs updating.
+ * version. The controls are therefore labelled as explicit "latest state"
+ * actions, never as a claim that another update is available. A successful
+ * update_all operation is shown as the latest confirmed check.
  */
 export function UpdatesPane({
   adapters,
@@ -83,6 +82,12 @@ export function UpdatesPane({
 
   const skillExtensions = extensions.filter(e => e.kind === 'skill')
   const sortedOperations = [...operations].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+  const lastSuccessfulUpdateAll = sortedOperations.find(op => (
+    op.provider === GENERIC_SKILLS_ADAPTER_ID
+    && op.action === 'update_all'
+    && op.status === 'succeeded'
+    && op.verified !== false
+  ))
 
   return (
     <div className="space-y-5">
@@ -123,8 +128,16 @@ export function UpdatesPane({
 
         <div className="mt-3 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-sm">
           <div className="flex items-center justify-between border-b border-[var(--border-soft)] px-4 py-2.5">
-            <span className="text-xs font-bold text-[var(--text)]">설치된 Skill ({skillExtensions.length})</span>
-            <UpdateAllButton adapter={skillsAdapter} adapterMissingReason={adapterMissingReason} onRequestAction={onRequestAction} />
+            <div>
+              <span className="text-xs font-bold text-[var(--text)]">설치된 Skill ({skillExtensions.length})</span>
+              <p className="mt-0.5 text-[10px] text-[var(--text-3)]">Skills CLI는 사전 업데이트 개수를 제공하지 않아 실행하면서 최신 상태를 확인해요.</p>
+            </div>
+            <UpdateAllButton
+              adapter={skillsAdapter}
+              adapterMissingReason={adapterMissingReason}
+              lastSuccessfulAt={lastSuccessfulUpdateAll?.finished_at ?? null}
+              onRequestAction={onRequestAction}
+            />
           </div>
           {skillExtensions.length === 0 ? (
             <div className="px-4 py-6 text-center text-xs text-[var(--text-3)]">설치된 skill이 없어요</div>
@@ -270,23 +283,32 @@ function AddSkillRow({
 function UpdateAllButton({
   adapter,
   adapterMissingReason,
+  lastSuccessfulAt,
   onRequestAction,
 }: {
   adapter: ToolingAdapter | undefined
   adapterMissingReason: string
+  lastSuccessfulAt: string | null
   onRequestAction: (request: ToolingPlanRequest) => void
 }) {
   const gate = gateCapability(adapter, 'canUpdateAll', { adapterMissingReason })
   return (
-    <ActionButton
-      variant="accent"
-      disabled={gate.disabled}
-      title={gate.title}
-      icon={<Download size={13} />}
-      onClick={() => adapter && onRequestAction({ action: 'update_all', provider: adapter.id })}
-    >
-      모두 업데이트
-    </ActionButton>
+    <div className="flex flex-col items-end gap-1">
+      {lastSuccessfulAt && (
+        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-[var(--success)]">
+          <CheckCircle2 size={11} /> 최신 상태 확인됨 · {formatDateTime(lastSuccessfulAt)}
+        </span>
+      )}
+      <ActionButton
+        variant="accent"
+        disabled={gate.disabled}
+        title={gate.title}
+        icon={<Download size={13} />}
+        onClick={() => adapter && onRequestAction({ action: 'update_all', provider: adapter.id })}
+      >
+        {lastSuccessfulAt ? '다시 확인' : '전체 최신 상태 확인'}
+      </ActionButton>
+    </div>
   )
 }
 
@@ -317,7 +339,7 @@ function SkillRow({
         icon={<Download size={12} />}
         onClick={() => adapter && onRequestAction({ action: 'update', provider: adapter.id, target: ext.name })}
       >
-        업데이트
+        최신화
       </ActionButton>
       <ActionButton
         variant="danger"

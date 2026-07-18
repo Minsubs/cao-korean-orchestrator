@@ -596,6 +596,7 @@ def list_terminals_by_session(tmux_session: str) -> List[Dict[str, Any]]:
                 "tmux_window": t.tmux_window,
                 "provider": t.provider,
                 "agent_profile": t.agent_profile,
+                "caller_id": t.caller_id,
                 "last_active": t.last_active,
             }
             for t in terminals
@@ -739,25 +740,34 @@ def get_pending_messages(receiver_id: str, limit: int = 1) -> List[InboxMessage]
 
 
 def get_inbox_messages(
-    receiver_id: str, limit: int = 10, status: Optional[MessageStatus] = None
+    receiver_id: str,
+    limit: int = 10,
+    status: Optional[MessageStatus] = None,
+    after_id: Optional[int] = None,
+    newest_first: bool = False,
 ) -> List[InboxMessage]:
-    """Get inbox messages with optional status filter ordered by created_at ASC (oldest first).
+    """Get inbox messages with optional status/cursor filters ordered by message ID.
 
     Args:
         receiver_id: Terminal ID to get messages for
         limit: Maximum number of messages to return (default: 10)
         status: Optional filter by message status (None = all statuses)
+        after_id: Optional exclusive message-ID cursor
+        newest_first: Return descending IDs when true; ascending otherwise
 
     Returns:
-        List of inbox messages ordered by creation time (oldest first)
+        List of inbox messages in deterministic ID order
     """
     with SessionLocal() as db:
         query = db.query(InboxModel).filter(InboxModel.receiver_id == receiver_id)
 
         if status is not None:
             query = query.filter(InboxModel.status == status.value)
+        if after_id is not None:
+            query = query.filter(InboxModel.id > after_id)
 
-        messages = query.order_by(InboxModel.created_at.asc()).limit(limit).all()
+        order = InboxModel.id.desc() if newest_first else InboxModel.id.asc()
+        messages = query.order_by(order).limit(limit).all()
 
         return [
             InboxMessage(

@@ -44,8 +44,10 @@ def _safe_join(root: Path, *parts: str) -> Path | None:
     return candidate
 
 
-def _extract_profile_fields(text: str) -> Tuple[str, Optional[str], Optional[str]]:
-    """Return ``(description, provider, model)`` from a profile's frontmatter.
+def _extract_profile_fields(
+    text: str,
+) -> Tuple[str, Optional[str], Optional[str]]:
+    """Return list-card fields from a profile's frontmatter.
 
     These are the additive fields the profile *list* surfaces (GET
     /agents/profiles) so the UI can show a profile's intended provider/model
@@ -69,6 +71,21 @@ def _extract_profile_fields(text: str) -> Tuple[str, Optional[str], Optional[str
     model = meta.get("model")
     model = model if isinstance(model, str) and model else None
     return description, provider, model
+
+
+def _extract_profile_presentation_fields(
+    text: str,
+) -> Tuple[Optional[str], Optional[str]]:
+    """Return optional UI role/specialty metadata for profile grouping."""
+    try:
+        meta = frontmatter.loads(text).metadata
+    except Exception:
+        return None, None
+    ui_role = meta.get("uiRole")
+    ui_role = ui_role if isinstance(ui_role, str) and ui_role else None
+    specialty = meta.get("specialty")
+    specialty = specialty if isinstance(specialty, str) and specialty else None
+    return ui_role, specialty
 
 
 def _scan_directory(
@@ -97,11 +114,27 @@ def _scan_directory(
     for item in directory.iterdir():
         if item.is_dir():
             profile_name = item.name
-            desc, provider, model = "", None, None
+            desc, provider, model, ui_role, specialty = "", None, None, None, None
             # Check for agent.md inside directory
             agent_md = item / "agent.md"
-            if agent_md.exists():
-                desc, provider, model = _extract_profile_fields(agent_md.read_text())
+            if item.name.casefold() in {
+                "disabled",
+                ".disabled",
+                "archive",
+                "archived",
+                "backup",
+                "backups",
+            }:
+                # Native agent managers commonly park inactive profiles in a
+                # grouping folder. Do not turn that container into one fake
+                # agent card; its children intentionally remain inactive.
+                continue
+            if agent_md.is_file():
+                text = agent_md.read_text()
+                desc, provider, model = _extract_profile_fields(text)
+                ui_role, specialty = _extract_profile_presentation_fields(text)
+            if provider is None and source_label in PROVIDERS:
+                provider = source_label
             _record(profile_name)
             if profile_name not in profiles:
                 profiles[profile_name] = {
@@ -110,10 +143,16 @@ def _scan_directory(
                     "source": source_label,
                     "provider": provider,
                     "model": model,
+                    "ui_role": ui_role,
+                    "specialty": specialty,
                 }
         elif item.suffix == ".md" and item.is_file():
             profile_name = item.stem
-            desc, provider, model = _extract_profile_fields(item.read_text())
+            text = item.read_text()
+            desc, provider, model = _extract_profile_fields(text)
+            ui_role, specialty = _extract_profile_presentation_fields(text)
+            if provider is None and source_label in PROVIDERS:
+                provider = source_label
             _record(profile_name)
             if profile_name not in profiles:
                 profiles[profile_name] = {
@@ -122,6 +161,8 @@ def _scan_directory(
                     "source": source_label,
                     "provider": provider,
                     "model": model,
+                    "ui_role": ui_role,
+                    "specialty": specialty,
                 }
 
 
@@ -192,17 +233,20 @@ def list_agent_profiles() -> List[Dict]:
                     text = item.read_text()
                 except Exception:
                     text = ""
-                # _extract_profile_fields("") -> ("", None, None), so an
+                # Empty input yields empty nullable fields, so an
                 # unreadable built-in still lists by name with empty fields.
                 # Distinct names: ``provider`` is already the str loop variable
                 # of the agent-dirs loop above in this function's scope.
                 desc, item_provider, item_model = _extract_profile_fields(text)
+                item_ui_role, item_specialty = _extract_profile_presentation_fields(text)
                 profiles[profile_name] = {
                     "name": profile_name,
                     "description": desc,
                     "source": "built-in",
                     "provider": item_provider,
                     "model": item_model,
+                    "ui_role": item_ui_role,
+                    "specialty": item_specialty,
                 }
     except Exception as e:
         logger.debug(f"Could not scan built-in agent store: {e}")
@@ -348,5 +392,25 @@ def resolve_provider(agent_profile_name: str, fallback_provider: str) -> str:
                 PROVIDERS,
                 fallback_provider,
             )
+            return fallback_provider
+
+    # Native provider profiles commonly omit a CAO-specific `provider` field.
+    # Their configured directory is still authoritative routing information:
+    # e.g. ~/.claude/agents/frontend-developer.md must launch with Claude Code,
+    # not inherit a Codex caller merely because the frontmatter is native.
+    from cli_agent_orchestrator.services.settings_service import (
+        get_agent_dirs,
+        get_disabled_agent_dirs,
+    )
+
+    disabled = {normalized_path(path) for path in get_disabled_agent_dirs()}
+    for provider_name, dir_path in get_agent_dirs().items():
+        if provider_name not in PROVIDERS or normalized_path(dir_path) in disabled:
+            continue
+        directory = Path(dir_path)
+        flat = _safe_join(directory, f"{agent_profile_name}.md")
+        nested = _safe_join(directory, agent_profile_name, "agent.md")
+        if (flat is not None and flat.is_file()) or (nested is not None and nested.is_file()):
+            return provider_name
 
     return fallback_provider

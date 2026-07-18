@@ -66,6 +66,14 @@ export interface TerminalMeta {
   agent_profile: string | null
   created_at: string | null
   last_active: string | null
+  /** Present on session-detail responses, where the backend enriches every terminal with its live status. */
+  status?: string | null
+  /** Terminal that delegated to this terminal; null for an independent root. */
+  caller_id?: string | null
+  /** Monotonic count of prompts/callbacks delivered to this terminal. */
+  input_generation?: number
+  /** Latest input generation observed processing and then reaching a ready state. */
+  ready_generation?: number
 }
 
 /**
@@ -93,7 +101,7 @@ export interface AgentDirsSettings {
 }
 
 export interface InboxMessage {
-  id: string
+  id: number
   sender_id: string
   receiver_id: string
   message: string
@@ -215,8 +223,14 @@ export const api = {
     fetchJSON<Terminal>(`/sessions/${sessionName}/terminals?provider=${encodeURIComponent(provider)}&agent_profile=${encodeURIComponent(agentProfile)}${workingDirectory ? `&working_directory=${encodeURIComponent(workingDirectory)}` : ''}`, { method: 'POST', timeoutMs: 90000 }),
 
   // Inbox
-  getInboxMessages: (terminalId: string, limit?: number, status?: string) =>
-    fetchJSON<InboxMessage[]>(`/terminals/${terminalId}/inbox/messages?limit=${limit || 50}${status ? `&status=${status}` : ''}`),
+  getInboxMessages: (
+    terminalId: string,
+    limit?: number,
+    status?: string,
+    afterId?: number,
+    newestFirst = false,
+  ) =>
+    fetchJSON<InboxMessage[]>(`/terminals/${terminalId}/inbox/messages?limit=${limit || 50}${status ? `&status=${status}` : ''}${afterId !== undefined ? `&after_id=${afterId}` : ''}${newestFirst ? '&newest_first=true' : ''}`),
   sendInboxMessage: (receiverId: string, senderId: string, message: string) =>
     fetchJSON<{ success: boolean }>(`/terminals/${receiverId}/inbox/messages?sender_id=${senderId}&message=${encodeURIComponent(message)}`, { method: 'POST' }),
 

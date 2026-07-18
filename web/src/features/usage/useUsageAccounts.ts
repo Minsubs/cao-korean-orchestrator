@@ -30,15 +30,17 @@ export function useUsageAccounts(active: boolean, claudeLimitsOptIn: boolean): U
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const mountedRef = useRef(true)
+  const requestIdRef = useRef(0)
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
       mountedRef.current = false
-    },
-    [],
-  )
+    }
+  }, [])
 
   const fetchOnce = useCallback(async () => {
+    const requestId = ++requestIdRef.current
     // Flips true on *every* cycle, not just the first — lets the popover
     // distinguish "first load, nothing to show yet" (full skeleton) from "a
     // background 60s poll / manual refresh is in flight while we already
@@ -47,13 +49,13 @@ export function useUsageAccounts(active: boolean, claudeLimitsOptIn: boolean): U
     setLoading(true)
     try {
       const res = await apiUsage.getAccounts({ claudeLimits: claudeLimitsOptIn })
-      if (!mountedRef.current) return
+      if (!mountedRef.current || requestId !== requestIdRef.current) return
       setAccounts(res.accounts)
       setScannedAt(res.scanned_at)
       setError(null)
       setLoading(false)
     } catch {
-      if (!mountedRef.current) return
+      if (!mountedRef.current || requestId !== requestIdRef.current) return
       // Keep the last-known accounts in place (honesty-over-flicker, same as
       // useFleetSummaries.ts) — only the error banner appears; the widget
       // never blanks out data that was already successfully shown.

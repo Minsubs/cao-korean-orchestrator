@@ -21,6 +21,7 @@ const PROFILES: AgentProfileInfo[] = [
     source: 'user',
     duplicated_in: ['/opt/other/agent-profiles'],
   },
+  { name: 'my_release_helper', description: 'Custom release helper', source: 'custom' },
 ]
 
 const PROVIDERS: ProviderInfo[] = [
@@ -60,7 +61,9 @@ describe('ProfilesView', () => {
     render(<ProfilesView />)
     expect(await screen.findByText('codex_orchestrator_sol')).toBeInTheDocument()
     expect(screen.getByText('claude_developer_sonnet')).toBeInTheDocument()
-    expect(screen.getByText(/Sol orchestrator for multi-agent routing/)).toBeInTheDocument()
+    expect(screen.getByText(/작업을 나누고 Codex·Claude 팀의 결과를 종합/)).toBeInTheDocument()
+    expect(screen.getByText('기본 AI 팀')).toBeInTheDocument()
+    expect(screen.getByText('추가 에이전트')).toBeInTheDocument()
     // duplicated_in surfaces as a warning chip
     const dupChip = screen.getByText(/중복 1건/)
     expect(dupChip).toBeInTheDocument()
@@ -70,6 +73,38 @@ describe('ProfilesView', () => {
     // the card grid (the Add Agent modal isn't open, so 'Supervisor' — a
     // role-card label — must not appear anywhere yet).
     expect(screen.queryByText('Supervisor')).not.toBeInTheDocument()
+  })
+
+  it('does not flag packaged execution mirrors as duplicate user profiles', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url === '/agents/profiles') {
+          return jsonResponse([
+            {
+              name: 'codex_orchestrator_sol',
+              description: 'Sol orchestrator',
+              source: 'local',
+              duplicated_in: ['installed', 'built-in'],
+            },
+            {
+              name: 'developer',
+              description: 'Developer example',
+              source: 'installed',
+              duplicated_in: ['built-in'],
+            },
+          ])
+        }
+        if (url === '/agents/providers') return jsonResponse(PROVIDERS)
+        if (url === '/tooling/models') return jsonResponse(MODEL_CATALOG)
+        return jsonResponse({ detail: 'unhandled' }, 404)
+      }),
+    )
+
+    render(<ProfilesView />)
+    expect(await screen.findByText('codex_orchestrator_sol')).toBeInTheDocument()
+    expect(screen.getByText('developer')).toBeInTheDocument()
+    expect(screen.queryByText(/중복/)).not.toBeInTheDocument()
   })
 
   it('feedback #6: renders the nullable model/provider fields distinctly from the source/scope chip, and "—" when absent', async () => {
@@ -94,11 +129,12 @@ describe('ProfilesView', () => {
     // (separate) model catalog section below from the shared MODEL_CATALOG fixture.
     const hasModelCard = screen.getByTestId('profile-card-has_model')
     expect(within(hasModelCard).getByText('sonnet')).toBeInTheDocument()
-    expect(within(hasModelCard).getByText('claude_code')).toBeInTheDocument()
+    expect(within(hasModelCard).getByText('Claude Code')).toBeInTheDocument()
 
-    // The other profile has neither field — both render '—', never guessed.
+    // The other profile has no model and explains that its execution AI is profile-resolved.
     const noModelCard = screen.getByTestId('profile-card-no_model')
-    expect(within(noModelCard).getAllByText('—')).toHaveLength(2)
+    expect(within(noModelCard).getByText('—')).toBeInTheDocument()
+    expect(within(noModelCard).getByText('프로필에서 자동 결정')).toBeInTheDocument()
   })
 
   it('shows an empty state when there are no installed profiles', async () => {
@@ -131,7 +167,7 @@ describe('ProfilesView', () => {
 
   it('auto-generates the description from role + specialty and updates it as either changes', async () => {
     render(<ProfilesView />)
-    fireEvent.click(await screen.findByRole('button', { name: '에이전트 추가' }))
+    fireEvent.click(await screen.findByRole('button', { name: '에이전트 만들기' }))
     const dialog = await screen.findByRole('dialog', { name: '에이전트 추가' })
 
     // Default role (Supervisor) -> first specialty auto-fills the description.
@@ -153,7 +189,7 @@ describe('ProfilesView', () => {
   it('degrades the model field to free text inside the Add Agent modal when the catalog is unavailable', async () => {
     modelsFail = true
     render(<ProfilesView />)
-    fireEvent.click(await screen.findByRole('button', { name: '에이전트 추가' }))
+    fireEvent.click(await screen.findByRole('button', { name: '에이전트 만들기' }))
     const dialog = await screen.findByRole('dialog', { name: '에이전트 추가' })
     await waitFor(() => expect(within(dialog).getByText('모델 목록을 조회할 수 없어요 — 직접 입력하세요')).toBeInTheDocument())
     // Degraded state means "모델" is a free-text input, not a <select>.
@@ -161,9 +197,43 @@ describe('ProfilesView', () => {
     expect(modelField.tagName).toBe('INPUT')
   })
 
-  it('never calls the install API for a freshly generated profile — it degrades to a download + copyable CLI command', async () => {
+  it('installs a freshly generated profile and refreshes the list in one action', async () => {
+    let installed = false
+    const installBodies: Record<string, unknown>[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, opts?: RequestInit) => {
+        if (url === '/agents/profiles' && opts?.method === 'POST') {
+          installed = true
+          installBodies.push(JSON.parse(String(opts.body)))
+          return jsonResponse({ success: true, message: 'installed' })
+        }
+        if (url === '/agents/profiles') {
+          return jsonResponse(
+            installed
+              ? [
+                  ...PROFILES,
+                  {
+                    name: 'nova',
+                    description: 'new supervisor',
+                    source: 'local',
+                    provider: 'claude_code',
+                    model: 'sonnet',
+                    ui_role: 'Supervisor',
+                    specialty: '범용 오케스트레이션',
+                  },
+                ]
+              : PROFILES,
+          )
+        }
+        if (url === '/agents/providers') return jsonResponse(PROVIDERS)
+        if (url === '/tooling/models') return jsonResponse(MODEL_CATALOG)
+        return jsonResponse({ detail: `unhandled in test: ${url}` }, 404)
+      }),
+    )
+
     render(<ProfilesView />)
-    fireEvent.click(await screen.findByRole('button', { name: '에이전트 추가' }))
+    fireEvent.click(await screen.findByRole('button', { name: '에이전트 만들기' }))
     const dialog = await screen.findByRole('dialog', { name: '에이전트 추가' })
 
     fireEvent.change(within(dialog).getByLabelText('이름'), { target: { value: 'nova' } })
@@ -172,11 +242,64 @@ describe('ProfilesView', () => {
 
     fireEvent.click(createButton)
 
-    expect(await within(dialog).findByText(/nova\.md 다운로드/)).toBeInTheDocument()
-    expect(within(dialog).getByText(/cao install \.\/nova\.md --provider/)).toBeInTheDocument()
-    // Confirmed by reading install_service.py: the real endpoint can't accept
-    // inline content, so the modal must never call it for this flow.
-    expect(mockFetch).not.toHaveBeenCalledWith('/agents/profiles/install', expect.anything())
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '에이전트 추가' })).not.toBeInTheDocument())
+    expect(await screen.findByTestId('profile-card-nova')).toBeInTheDocument()
+    expect(installBodies[0]).toMatchObject({ name: 'nova', provider: 'claude_code' })
+    expect(String(installBodies[0]?.content)).toContain('uiRole: "Supervisor"')
+    expect(String(installBodies[0]?.content)).toContain('specialty:')
+  })
+
+  it('splits the default team into orchestrator and worker responsibility groups', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url === '/agents/profiles') {
+          return jsonResponse([
+            { name: 'codex_orchestrator_sol', description: 'orchestrator', source: 'built-in' },
+            { name: 'claude_scout_haiku', description: 'scout', source: 'built-in' },
+            { name: 'claude_developer_sonnet', description: 'developer', source: 'built-in' },
+            { name: 'codex_qa_terra', description: 'qa', source: 'built-in' },
+          ])
+        }
+        if (url === '/agents/providers') return jsonResponse(PROVIDERS)
+        if (url === '/tooling/models') return jsonResponse(MODEL_CATALOG)
+        return jsonResponse({ detail: `unhandled in test: ${url}` }, 404)
+      }),
+    )
+
+    render(<ProfilesView />)
+
+    expect(await screen.findByText('고정 오케스트레이터')).toBeInTheDocument()
+    expect(screen.getByText('탐색·설계')).toBeInTheDocument()
+    expect(screen.getByText('구현')).toBeInTheDocument()
+    expect(screen.getByText('검증·문서')).toBeInTheDocument()
+  })
+
+  it('keeps native Claude specialist agents separate and groups them by their detailed role', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url === '/agents/profiles') {
+          return jsonResponse([
+            { name: 'frontend-developer', description: 'Frontend specialist', source: 'claude_code', provider: 'claude_code' },
+            { name: 'backend-developer', description: 'Backend specialist', source: 'claude_code', provider: 'claude_code' },
+            { name: 'observability-engineer', description: 'Observability specialist', source: 'claude_code', provider: 'claude_code' },
+          ])
+        }
+        if (url === '/agents/providers') return jsonResponse(PROVIDERS)
+        if (url === '/tooling/models') return jsonResponse(MODEL_CATALOG)
+        return jsonResponse({ detail: `unhandled in test: ${url}` }, 404)
+      }),
+    )
+
+    render(<ProfilesView />)
+
+    expect(await screen.findByTestId('profile-card-frontend-developer')).toBeInTheDocument()
+    expect(screen.getByTestId('profile-card-backend-developer')).toBeInTheDocument()
+    expect(screen.getByTestId('profile-card-observability-engineer')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '개발·구현' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '운영·관측' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '기타' })).not.toBeInTheDocument()
   })
 
   it('feedback #8: the Provider 표시 설정 popover hides an unchecked provider from the model catalog and persists the choice', async () => {
@@ -184,8 +307,8 @@ describe('ProfilesView', () => {
     expect(await screen.findByText('모델 카탈로그')).toBeInTheDocument()
     expect(screen.getByText('Claude Code')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Provider 표시 설정' }))
-    const popover = await screen.findByRole('dialog', { name: 'Provider 표시 설정' })
+    fireEvent.click(screen.getByRole('button', { name: '실행 AI 표시 설정' }))
+    const popover = await screen.findByRole('dialog', { name: '실행 AI 표시 설정' })
     fireEvent.click(within(popover).getByRole('checkbox', { name: 'Claude Code' }))
     fireEvent.click(screen.getByRole('button', { name: '닫기' }))
 

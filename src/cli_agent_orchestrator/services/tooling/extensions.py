@@ -1,8 +1,9 @@
-"""Unified listing of CAO-owned extensions (skills, plugins, agent profiles).
+"""Unified listing of CAO and provider-managed extensions.
 
-Phase 3a lists only assets CAO itself owns; provider-native extensions are
-Phase 5 and are simply not emitted here (the list omits them rather than
-inventing empty entries). Each item carries a stable ``kind:name`` id.
+CAO-owned skills/plugins/profiles and live adapter inventories share the same
+wire shape. Each item carries a provider-qualified stable id so a skill seen by
+the generic Skills CLI does not collide with a CAO-managed skill of the same
+name.
 
 Reuse:
     * skills   -- validated via :func:`utils.skills.validate_skill_folder` over
@@ -24,6 +25,7 @@ from typing import Any, Dict, List
 from cli_agent_orchestrator import constants
 from cli_agent_orchestrator.plugins.registry import ENTRY_POINT_GROUP
 from cli_agent_orchestrator.services import settings_service
+from cli_agent_orchestrator.services.tooling.adapters import registry
 from cli_agent_orchestrator.utils.agent_profiles import list_agent_profiles
 from cli_agent_orchestrator.utils.skills import validate_skill_folder
 
@@ -114,8 +116,49 @@ def _collect_profiles() -> List[Dict[str, Any]]:
     return items
 
 
+def _collect_provider_extensions() -> List[Dict[str, Any]]:
+    """Collect skills/MCP servers reported by installed provider adapters."""
+    items: List[Dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for provider, adapter in registry.get_adapters().items():
+        if not adapter.detect().installed:
+            continue
+        kind = "skill" if provider == "generic_skills" else "mcp"
+        for installed in adapter.list_installed():
+            name = installed.get("name")
+            if not isinstance(name, str) or not name:
+                continue
+            key = (provider, kind, name)
+            if key in seen:
+                continue
+            seen.add(key)
+            description = (
+                "Skills CLI에서 감지된 공용 Agent Skill"
+                if kind == "skill"
+                else f"{adapter.display_name}에 등록된 MCP 서버"
+            )
+            items.append(
+                {
+                    "id": f"{kind}:{provider}:{name}",
+                    "kind": kind,
+                    "name": name,
+                    "description": description,
+                    "scope": "user",
+                    "source_path": None,
+                    "provider": provider,
+                    "enabled": True,
+                }
+            )
+    return items
+
+
 def list_extensions() -> List[Dict[str, Any]]:
     """Return the combined, deterministically sorted CAO extension inventory."""
-    extensions = _collect_skills() + _collect_plugins() + _collect_profiles()
-    extensions.sort(key=lambda item: (item["kind"], item["name"]))
+    extensions = (
+        _collect_skills()
+        + _collect_plugins()
+        + _collect_profiles()
+        + _collect_provider_extensions()
+    )
+    extensions.sort(key=lambda item: (item["kind"], item.get("provider") or "", item["name"]))
     return extensions

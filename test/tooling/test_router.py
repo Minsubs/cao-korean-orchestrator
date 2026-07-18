@@ -95,8 +95,8 @@ def test_diagnostics_endpoint(client):
     assert resp.status_code == 200
     body = resp.json()
     assert isinstance(body, list)
-    # Nothing is installed in this fixture -> at least one provider_missing info.
-    assert any(d["code"] == "provider_missing" for d in body)
+    # Optional tools that are simply unused/uninstalled are not warnings.
+    assert not any(d["code"] == "provider_missing" for d in body)
     for diagnostic in body:
         assert set(diagnostic) == _DIAGNOSTIC_KEYS
 
