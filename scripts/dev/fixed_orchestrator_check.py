@@ -130,14 +130,20 @@ def run_case(case: Case) -> None:
         actual_session = created["session_name"]
         print(f"  supervisor={supervisor_id} session={actual_session}", flush=True)
 
+        # Launch readiness is status-based only. Requiring input==ready here is
+        # wrong for supervisors that do not run an observable processing->ready
+        # turn at launch: claude_code gets only an --append-system-prompt (no
+        # initial turn, so ready_generation legitimately stays 0), and codex
+        # only reaches input==ready via a launch-banner artifact. The real
+        # semantic-cycle proof (input==ready after a completed turn) is retained
+        # in worker-settled and supervisor-final below, where an actual turn runs.
         wait_until(
             "supervisor-ready",
             180,
             lambda: (
                 (term := terminal_in_session(actual_session, supervisor_id)) is not None
                 and term.get("status") in {"idle", "completed"}
-                and (term.get("input_generation") or 0) > 0
-                and term.get("input_generation") == term.get("ready_generation"),
+                and (term.get("input_generation") or 0) > 0,
                 (
                     "missing"
                     if term is None

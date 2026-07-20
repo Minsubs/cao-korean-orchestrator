@@ -82,9 +82,29 @@ IDLE_FOOTER_PATTERN = r"\?\s*for shortcuts"
 # Same hint for log-file pre-checks (no ANSI involved).
 IDLE_FOOTER_PATTERN_LOG = r"\?\s*for shortcuts"
 
+# Newer agy (1.1.x) dropped the "? for shortcuts" hint and instead shows the
+# agent state in a status bar between full-width bars, e.g.
+#   "Gemini 3.5 Flash (High) │ Idle │ Context 100% left │ …".
+# The literal "│ Idle │" segment is the ready signal on these builds; a busy
+# turn shows a processing word/spinner there instead (caught by the PROCESSING
+# patterns above), so this matches only a genuinely idle input box. Checked as
+# an alternative to IDLE_FOOTER_PATTERN so both old and new agy read as ready.
+IDLE_STATUSBAR_PATTERN = r"│\s*Idle\s*│"
+
 # Braille spinner + status word (e.g. "⣯ Generating...", "⣽ Working...").
 # Secondary processing signal; the word varies so we match the glyph + ellipsis.
 PROCESSING_SPINNER_PATTERN = r"[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏⣾⣽⣻⢿⡿⣟⣯⣷][^\n]*(?:\.\.\.|…)"
+
+# Busy indicator in the same agy 1.1.x status bar that shows "│ Idle │" when
+# ready: while a turn runs the state slot instead shows a working word, e.g.
+# "Gemini 3.5 Flash (High) │ Working │ Context …". Confirmed live on agy 1.1.3.
+# Without matching this, the ack/first turn's PROCESSING phase is invisible, so
+# the PROCESSING→IDLE edge that advances ready_generation never fires and the
+# InboxService busy-guard can't tell the agent is mid-response. Must be checked
+# BEFORE the IDLE_STATUSBAR_PATTERN so a busy bar never reads as idle.
+PROCESSING_STATUSBAR_PATTERN = (
+    r"│\s*(?:Working|Generating|Thinking|Responding|Running|Executing|Processing)\s*│"
+)
 
 # Echoed user query line: "> <text>" (non-empty after the prompt char).
 # Start-of-line anchored so it does not match the empty idle prompt ("> ").
@@ -479,7 +499,9 @@ class AntigravityCliProvider(BaseProvider):
                     time.sleep(1.0)
                     continue
                 # At the ready footer with no dialog pending → done.
-                if re.search(IDLE_FOOTER_PATTERN, clean):
+                if re.search(IDLE_FOOTER_PATTERN, clean) or re.search(
+                    IDLE_STATUSBAR_PATTERN, clean
+                ):
                     return
             time.sleep(1.0)
 
@@ -569,8 +591,10 @@ class AntigravityCliProvider(BaseProvider):
         # PROCESSING: the "esc to cancel" footer is the render-stable signal.
         # The spinner line is a secondary cue. We still let the WAITING check
         # run first below for the rare approval prompt under skip-permissions.
-        processing = re.search(PROCESSING_FOOTER_PATTERN, tail) is not None or any(
-            re.search(PROCESSING_SPINNER_PATTERN, line) for line in tail.splitlines()
+        processing = (
+            re.search(PROCESSING_FOOTER_PATTERN, tail) is not None
+            or re.search(PROCESSING_STATUSBAR_PATTERN, tail) is not None
+            or any(re.search(PROCESSING_SPINNER_PATTERN, line) for line in tail.splitlines())
         )
 
         # Interactive prompt blocking on user input takes precedence over a
@@ -583,7 +607,7 @@ class AntigravityCliProvider(BaseProvider):
 
         # IDLE / COMPLETED: ready footer present. Fresh spawn (no delivered
         # turn) is IDLE; a finished turn is COMPLETED.
-        if re.search(IDLE_FOOTER_PATTERN, tail):
+        if re.search(IDLE_FOOTER_PATTERN, tail) or re.search(IDLE_STATUSBAR_PATTERN, tail):
             return TerminalStatus.COMPLETED if self._turns > 0 else TerminalStatus.IDLE
 
         if re.search(ERROR_PATTERN, clean, re.MULTILINE):
@@ -637,12 +661,14 @@ class AntigravityCliProvider(BaseProvider):
         if re.search(WAITING_USER_ANSWER_PATTERN, bottom):
             return TerminalStatus.WAITING_USER_ANSWER
 
-        if re.search(PROCESSING_FOOTER_PATTERN, bottom) or any(
-            re.search(PROCESSING_SPINNER_PATTERN, line) for line in bottom_rows
+        if (
+            re.search(PROCESSING_FOOTER_PATTERN, bottom)
+            or re.search(PROCESSING_STATUSBAR_PATTERN, bottom)
+            or any(re.search(PROCESSING_SPINNER_PATTERN, line) for line in bottom_rows)
         ):
             return TerminalStatus.PROCESSING
 
-        if re.search(IDLE_FOOTER_PATTERN, bottom):
+        if re.search(IDLE_FOOTER_PATTERN, bottom) or re.search(IDLE_STATUSBAR_PATTERN, bottom):
             return TerminalStatus.COMPLETED if self._turns > 0 else TerminalStatus.IDLE
 
         if re.search(ERROR_PATTERN, joined, re.MULTILINE):
