@@ -92,7 +92,10 @@
 - 실측 툴체인: Python `3.14.4`(linuxbrew), uv `0.11.18`, node `v24.15.0`/npm `11.12.1`, tmux 설치됨. `.venv`는 이 박스에 **아직 없어** `uv sync` 부트스트랩이 선행이며, 9889 서버도 미기동이다.
 - macOS 전용 함정(editable `.pth` hidden flag·`chflags`·`--no-sync` 강제)은 Linux에 해당 없다. §3을 Linux WSL 기준으로 재작성하고 macOS 원문은 §3.1에 참고 보존했다.
 - 신규 함정: 워크트리가 CRLF, git index는 LF(`.gitattributes` 없음·`core.autocrlf` 미설정)라 `git status`가 973개 파일을 phantom 수정으로 표시한다(내용 동일, EOL만 차이; `211814 ins == 211814 del`). 실변경 아님. 정리는 사용자 승인 후 `.gitattributes` + `git add --renormalize .`. 이 문서 편집은 fresh 워크트리(LF)에서 수행했다.
-- 아직 실행 검증(`uv sync`/pytest/서버 기동/웹 빌드)은 하지 않았다. `.venv` 부트스트랩 후 §3 명령으로 게이트 재확인이 다음 단계다.
+- 게이트 검증 완료(Linux WSL, Python 3.12.13): backend pytest `4739 passed / 14 skipped`(§0.10 baseline 일치), web `tsc --noEmit` 0 error·vitest `381/381`·`vite build` ✓. 최초 `uv sync`는 Python 3.14 wheel 부재로 실패해 `uv sync -p 3.12`로 고정 후 통과했다(§3).
+- 검증 중 backend 1건 회귀(`test_settings_service.py::test_ignores_unknown_keys` `assert 120==60`)를 잡았다. 제품 버그가 아니라 `get_server_settings()` 캐시의 mtime_ns 충돌에 취약한 테스트 격리 결함으로, `settings_file` fixture가 모듈 캐시를 리셋하도록 수정(제품 코드 무변경). 재실행 4739 전부 통과.
+- 서버 기동(9889)·e2e·mypy/black/isort는 이번에 실행하지 않았다. 서버는 §3-1 명령, e2e는 §3-4 전제 프로필 필요.
+- 이 세션 작업은 워크트리 브랜치 `worktree-handoff-linux-wsl`에 커밋만 했다(HANDOFF 갱신 + 테스트 격리 fix). GitHub 인증(`gh` 미설치/HTTPS credential 없음)으로 push/PR은 사용자 조치 대기다.
 
 ## 1. 프로젝트가 무엇인가
 CAO fork를 "채팅 중심 멀티 에이전트 오케스트레이션 작업대 + AI CLI/확장 컨트롤센터"(**MS Orchestrator**)로 개편.
@@ -110,7 +113,7 @@ CAO fork를 "채팅 중심 멀티 에이전트 오케스트레이션 작업대 +
 
 - 프로젝트 루트: `/home/minsub57/hunesion_workspace/cao-korean-orchestrator`
 - 실측 툴체인: Python `3.14.4`(linuxbrew `/home/linuxbrew/.linuxbrew/bin`), uv `0.11.18`, node `v24.15.0` / npm `11.12.1`, tmux `/usr/bin/tmux`(설치됨, 세션 미기동)
-- `.venv` **아직 없음** — 이 박스에서 처음 부트스트랩 필요: 루트에서 `uv sync`. Linux는 hidden-flag 재적용이 없어 `--no-sync` 불필요(macOS 레거시). 부트스트랩 뒤 plain `uv run`으로 실행한다.
+- **Python은 3.12로 고정한다.** 시스템 기본은 linuxbrew `3.14.4`인데, `httptools`·`uvloop` 등이 cp314 wheel이 없어 소스 컴파일을 강제하고 `gcc-12` 부재로 즉사한다. uv 관리형 3.12로 부트스트랩: `uv python install 3.12` → `uv sync -p 3.12`(전부 prebuilt wheel, 컴파일 0). Linux는 hidden-flag 재적용이 없어 `--no-sync` 불필요(macOS 레거시). 부트스트랩 뒤 plain `uv run`으로 실행한다. **검증 완료(2026-07-20): `.venv`는 `3.12.13`.**
 - agent-store 등 홈 상대 경로(`~/.aws/cli-agent-orchestrator/...`)는 Linux에서 `/home/minsub57/.aws/...`로 해석된다(형태 동일).
 
 1. **서버**: `uv sync` 뒤 `PYTHONPATH=src uv run cao-server --host 127.0.0.1 --port 9889`. host/port 기본값은 config 해석(`--host/--port` default None)이므로 명시 권장. tmux 백그라운드 유지 시 세션명 자유. 옛 uv tool 설치본과 동시 기동 금지(pipe-pane 이중 연결).
