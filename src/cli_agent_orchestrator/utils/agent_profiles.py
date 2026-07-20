@@ -375,9 +375,21 @@ def resolve_provider(agent_profile_name: str, fallback_provider: str) -> str:
     """
     try:
         profile = load_agent_profile(agent_profile_name)
-    except (FileNotFoundError, RuntimeError):
-        # Profile not found or failed to load — provider.initialize()
-        # will surface a clear error later.  Fall back for now.
+    except (FileNotFoundError, RuntimeError) as exc:
+        # Profile not found or failed to load. We fall back to the caller's
+        # provider, but log it: an assign/handoff target whose profile the
+        # cao-mcp-server process cannot resolve (e.g. a profile installed only
+        # under a CAO_HOME the MCP child did not inherit) would otherwise
+        # silently launch under the CALLER's provider instead of its own.
+        logger.warning(
+            "Agent profile '%s' could not be loaded (%s); falling back to caller "
+            "provider '%s'. If this profile declares its own provider, ensure it is "
+            "discoverable by the cao-mcp-server process (bundled store or an agent dir "
+            "on this CAO_HOME).",
+            agent_profile_name,
+            exc,
+            fallback_provider,
+        )
         return fallback_provider
 
     if profile.provider:
