@@ -8,7 +8,7 @@ from cli_agent_orchestrator.services.tooling import probe, providers
 
 def test_list_covers_every_provider_type(monkeypatch):
     """The list is derived from ProviderType (not hardcoded)."""
-    monkeypatch.setattr(providers.shutil, "which", lambda binary: None)
+    monkeypatch.setattr(providers.cache, "cached_which", lambda binary: None)
     result = providers.list_providers(use_cache=False)
 
     assert {p["name"] for p in result} == {p.value for p in ProviderType}
@@ -22,7 +22,7 @@ def test_list_covers_every_provider_type(monkeypatch):
 def test_not_installed_skips_probe(monkeypatch):
     """No version probe runs for a missing binary."""
     run_spy = MagicMock()
-    monkeypatch.setattr(providers.shutil, "which", lambda binary: None)
+    monkeypatch.setattr(providers.cache, "cached_which", lambda binary: None)
     monkeypatch.setattr(providers.probe, "run", run_spy)
 
     providers.list_providers(use_cache=False)
@@ -32,7 +32,7 @@ def test_not_installed_skips_probe(monkeypatch):
 
 def test_installed_parses_version(monkeypatch):
     """A normal ``<tool> <semver>`` banner parses cleanly."""
-    monkeypatch.setattr(providers.shutil, "which", lambda binary: f"/usr/bin/{binary}")
+    monkeypatch.setattr(providers.cache, "cached_which", lambda binary: f"/usr/bin/{binary}")
     monkeypatch.setattr(
         providers.probe,
         "run",
@@ -51,7 +51,7 @@ def test_installed_parses_version(monkeypatch):
 
 def test_installed_unparseable_output_sets_error(monkeypatch):
     """Output with no numeric token -> version None, raw preserved, error set."""
-    monkeypatch.setattr(providers.shutil, "which", lambda binary: f"/usr/bin/{binary}")
+    monkeypatch.setattr(providers.cache, "cached_which", lambda binary: f"/usr/bin/{binary}")
     monkeypatch.setattr(
         providers.probe,
         "run",
@@ -67,7 +67,7 @@ def test_installed_unparseable_output_sets_error(monkeypatch):
 
 def test_installed_timeout_sets_error(monkeypatch):
     """A probe timeout surfaces as a version_error, not a crash."""
-    monkeypatch.setattr(providers.shutil, "which", lambda binary: f"/usr/bin/{binary}")
+    monkeypatch.setattr(providers.cache, "cached_which", lambda binary: f"/usr/bin/{binary}")
     monkeypatch.setattr(
         providers.probe,
         "run",
@@ -83,7 +83,7 @@ def test_installed_timeout_sets_error(monkeypatch):
 def test_cache_avoids_reprobe_until_forced(monkeypatch):
     """A cached read does not re-probe; use_cache=False forces a refresh."""
     run_spy = MagicMock(return_value=probe.ProbeResult(0, "tool 1.0\n", "", False))
-    monkeypatch.setattr(providers.shutil, "which", lambda binary: f"/usr/bin/{binary}")
+    monkeypatch.setattr(providers.cache, "cached_which", lambda binary: f"/usr/bin/{binary}")
     monkeypatch.setattr(providers.probe, "run", run_spy)
 
     first = providers.list_providers()  # populates the cache

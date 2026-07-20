@@ -307,9 +307,12 @@ function postJSON<T>(url: string, body: unknown, timeoutMs?: number): Promise<T>
 
 export const toolingApi = {
   getEnvironment: () => fetchJSON<ToolingEnvironment>('/tooling/environment'),
-  listProviders: () => fetchJSON<ToolingProvider[]>('/tooling/providers'),
-  listExtensions: () => fetchJSON<ToolingExtension[]>('/tooling/extensions'),
-  listDiagnostics: () => fetchJSON<ToolingDiagnostic[]>('/tooling/diagnostics'),
+  // providers/extensions/diagnostics shell out to CLI binaries for version and
+  // inventory probing; on WSL (large /mnt/c PATH over 9p) that can exceed the
+  // 10s fetchJSON default and abort the whole Tooling view. Give them headroom.
+  listProviders: () => fetchJSON<ToolingProvider[]>('/tooling/providers', { timeoutMs: 30000 }),
+  listExtensions: () => fetchJSON<ToolingExtension[]>('/tooling/extensions', { timeoutMs: 30000 }),
+  listDiagnostics: () => fetchJSON<ToolingDiagnostic[]>('/tooling/diagnostics', { timeoutMs: 30000 }),
   scan: () => fetchJSON<ToolingScanResult>('/tooling/scan', { method: 'POST', timeoutMs: 30000 }),
 
   listAdapters: () => fetchJSON<ToolingAdapter[]>('/tooling/adapters'),
@@ -321,5 +324,5 @@ export const toolingApi = {
 
   listCatalog: () => fetchJSON<CatalogItem[]>('/tooling/catalog'),
 
-  getSources: () => fetchJSON<ToolingSources>('/tooling/sources'),
+  getSources: () => fetchJSON<ToolingSources>('/tooling/sources', { timeoutMs: 30000 }),
 }

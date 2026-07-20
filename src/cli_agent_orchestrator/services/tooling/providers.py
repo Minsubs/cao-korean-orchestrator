@@ -16,7 +16,7 @@ Nothing here installs or downloads anything. Results are TTL-cached.
 from __future__ import annotations
 
 import re
-import shutil
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any, Dict, List, cast
 
@@ -84,14 +84,16 @@ def _extract_version(result: probe.ProbeResult) -> tuple[str | None, str | None,
 
 
 def _probe_provider(name: str, display_name: str, binary: str) -> Dict[str, Any]:
-    path = shutil.which(binary)
+    path = cache.cached_which(binary)
     installed = path is not None
 
     version_value: str | None = None
     version_raw: str | None = None
     version_error: str | None = None
     if installed:
-        result = probe.run([binary, "--version"], timeout=PROBE_TIMEOUT_SECONDS)
+        # Probe the already-resolved absolute path, not the bare binary name, so
+        # the subprocess's own execvp does not re-walk the (WSL-bloated) PATH.
+        result = probe.run([path, "--version"], timeout=PROBE_TIMEOUT_SECONDS)
         version_value, version_raw, version_error = _extract_version(result)
 
     return {
@@ -108,11 +110,17 @@ def _probe_provider(name: str, display_name: str, binary: str) -> Dict[str, Any]
 
 
 def _collect() -> List[Dict[str, Any]]:
-    providers: List[Dict[str, Any]] = []
+    # Probe every provider concurrently: each probe is independent I/O (PATH walk
+    # + a bounded --version subprocess), so a serial loop's latency is the SUM of
+    # per-probe times (worst case ~= providers x PROBE_TIMEOUT). A thread pool
+    # bounds it to ~max() instead, which matters on WSL where missing binaries
+    # make each PATH walk slow. Order is preserved by pool.map.
+    specs: List[tuple[str, str, str]] = []
     for provider in ProviderType:
         meta = _PROVIDER_METADATA.get(provider.value) or _fallback_metadata(provider.value)
-        providers.append(_probe_provider(provider.value, meta["display_name"], meta["binary"]))
-    return providers
+        specs.append((provider.value, meta["display_name"], meta["binary"]))
+    with ThreadPoolExecutor(max_workers=max(len(specs), 1)) as pool:
+        return list(pool.map(lambda spec: _probe_provider(*spec), specs))
 
 
 def list_providers(*, use_cache: bool = True) -> List[Dict[str, Any]]:

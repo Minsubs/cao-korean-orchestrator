@@ -8,8 +8,9 @@ polling UI from re-probing every CLI binary on every request. ``POST
 
 from __future__ import annotations
 
+import shutil
 import time
-from typing import Any
+from typing import Any, Optional
 
 # Providers/environment results are cached this long. Short enough that a newly
 # installed CLI shows up on the next poll cycle without an explicit rescan.
@@ -51,6 +52,25 @@ def get_cache() -> TTLCache:
     return _CACHE
 
 
+def cached_which(binary: str) -> Optional[str]:
+    """``shutil.which`` with a TTL cache for both hits AND misses.
+
+    A miss forces the OS to walk the entire PATH; on WSL that PATH often carries
+    dozens of ``/mnt/c`` (9p) entries, so repeated lookups of uninstalled
+    binaries dominate tooling-probe latency. Caching the resolved path (or the
+    fact that it is absent) collapses the repeated walks each provider/adapter
+    probe would otherwise trigger. The cached entry is a dict so a cached miss
+    (``{"path": None}``) is distinguishable from an uncached key (``get`` → None).
+    """
+    key = f"which:{binary}"
+    entry = _CACHE.get(key)
+    if entry is not None:
+        return entry.get("path")
+    path = shutil.which(binary)
+    _CACHE.set(key, {"path": path})
+    return path
+
+
 def invalidate() -> None:
     """Drop all cached tooling results."""
     _CACHE.clear()
@@ -67,9 +87,10 @@ def rescan() -> str:
     """
     from datetime import datetime, timezone
 
-    from cli_agent_orchestrator.services.tooling import environment, providers
+    from cli_agent_orchestrator.services.tooling import environment, extensions, providers
 
     invalidate()
     providers.list_providers(use_cache=False)
+    extensions.list_extensions(use_cache=False)
     environment.detect_environment(use_cache=False)
     return datetime.now(timezone.utc).isoformat()

@@ -219,28 +219,33 @@ def _derive_warnings(
     return warnings
 
 
+# These collectors are synchronous and, on a cold cache, block on subprocess
+# probes (CLI --version, `claude mcp list`, ...). The server runs a single-worker
+# uvicorn loop, so calling them inline would freeze every other request/WebSocket
+# for the probe's duration. Offload to a worker thread (matching main.py's
+# asyncio.to_thread idiom) so the loop stays responsive.
 @router.get("/environment")
 async def get_environment() -> Dict[str, Any]:
     """Return host environment facts (TTL-cached)."""
-    return environment.detect_environment()
+    return await asyncio.to_thread(environment.detect_environment)
 
 
 @router.get("/providers")
 async def get_providers() -> List[Dict[str, Any]]:
     """Return per-provider install status and version (TTL-cached)."""
-    return providers.list_providers()
+    return await asyncio.to_thread(providers.list_providers)
 
 
 @router.get("/extensions")
 async def get_extensions() -> List[Dict[str, Any]]:
-    """Return the combined CAO-owned extension inventory."""
-    return extensions.list_extensions()
+    """Return the combined CAO-owned extension inventory (TTL-cached)."""
+    return await asyncio.to_thread(extensions.list_extensions)
 
 
 @router.get("/diagnostics")
 async def get_diagnostics() -> List[Dict[str, Any]]:
     """Return derived diagnostics (empty list when nothing to report)."""
-    return diagnostics.collect_diagnostics()
+    return await asyncio.to_thread(diagnostics.collect_diagnostics)
 
 
 @router.post("/scan")

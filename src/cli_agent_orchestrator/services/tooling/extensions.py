@@ -19,12 +19,14 @@ Reuse:
 from __future__ import annotations
 
 import importlib.metadata
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, cast
 
 from cli_agent_orchestrator import constants
 from cli_agent_orchestrator.plugins.registry import ENTRY_POINT_GROUP
 from cli_agent_orchestrator.services import settings_service
+from cli_agent_orchestrator.services.tooling import cache
 from cli_agent_orchestrator.services.tooling.adapters import registry
 from cli_agent_orchestrator.utils.agent_profiles import list_agent_profiles
 from cli_agent_orchestrator.utils.skills import validate_skill_folder
@@ -116,44 +118,74 @@ def _collect_profiles() -> List[Dict[str, Any]]:
     return items
 
 
+def _probe_adapter(provider: str, adapter: Any) -> List[Dict[str, Any]]:
+    """Collect one adapter's reported extensions. Each adapter shells out to its
+    CLI (detect + list), so callers run these concurrently."""
+    if not adapter.detect().installed:
+        return []
+    kind = "skill" if provider == "generic_skills" else "mcp"
+    out: List[Dict[str, Any]] = []
+    for installed in adapter.list_installed():
+        name = installed.get("name")
+        if not isinstance(name, str) or not name:
+            continue
+        description = (
+            "Skills CLI에서 감지된 공용 Agent Skill"
+            if kind == "skill"
+            else f"{adapter.display_name}에 등록된 MCP 서버"
+        )
+        out.append(
+            {
+                "id": f"{kind}:{provider}:{name}",
+                "kind": kind,
+                "name": name,
+                "description": description,
+                "scope": "user",
+                "source_path": None,
+                "provider": provider,
+                "enabled": True,
+            }
+        )
+    return out
+
+
 def _collect_provider_extensions() -> List[Dict[str, Any]]:
-    """Collect skills/MCP servers reported by installed provider adapters."""
+    """Collect skills/MCP servers reported by installed provider adapters.
+
+    Adapters are probed concurrently (each does independent CLI I/O), then the
+    per-adapter results are merged in registry order with cross-adapter dedup —
+    preserving the previous serial-loop semantics.
+    """
+    adapters = list(registry.get_adapters().items())
+    with ThreadPoolExecutor(max_workers=max(len(adapters), 1)) as pool:
+        per_adapter = list(pool.map(lambda pa: _probe_adapter(pa[0], pa[1]), adapters))
+
     items: List[Dict[str, Any]] = []
     seen: set[tuple[str, str, str]] = set()
-    for provider, adapter in registry.get_adapters().items():
-        if not adapter.detect().installed:
-            continue
-        kind = "skill" if provider == "generic_skills" else "mcp"
-        for installed in adapter.list_installed():
-            name = installed.get("name")
-            if not isinstance(name, str) or not name:
-                continue
-            key = (provider, kind, name)
+    for chunk in per_adapter:
+        for item in chunk:
+            key = (item["provider"], item["kind"], item["name"])
             if key in seen:
                 continue
             seen.add(key)
-            description = (
-                "Skills CLI에서 감지된 공용 Agent Skill"
-                if kind == "skill"
-                else f"{adapter.display_name}에 등록된 MCP 서버"
-            )
-            items.append(
-                {
-                    "id": f"{kind}:{provider}:{name}",
-                    "kind": kind,
-                    "name": name,
-                    "description": description,
-                    "scope": "user",
-                    "source_path": None,
-                    "provider": provider,
-                    "enabled": True,
-                }
-            )
+            items.append(item)
     return items
 
 
-def list_extensions() -> List[Dict[str, Any]]:
-    """Return the combined, deterministically sorted CAO extension inventory."""
+_EXTENSIONS_CACHE_KEY = "extensions"
+
+
+def list_extensions(*, use_cache: bool = True) -> List[Dict[str, Any]]:
+    """Return the combined, deterministically sorted CAO extension inventory.
+
+    TTL-cached (mirroring ``providers.list_providers``) so a polling UI does not
+    re-probe every adapter on each tab load; ``POST /tooling/scan`` refreshes it.
+    """
+    store = cache.get_cache()
+    if use_cache:
+        cached = store.get(_EXTENSIONS_CACHE_KEY)
+        if cached is not None:
+            return cast(List[Dict[str, Any]], cached)
     extensions = (
         _collect_skills()
         + _collect_plugins()
@@ -161,4 +193,5 @@ def list_extensions() -> List[Dict[str, Any]]:
         + _collect_provider_extensions()
     )
     extensions.sort(key=lambda item: (item["kind"], item.get("provider") or "", item["name"]))
+    store.set(_EXTENSIONS_CACHE_KEY, extensions)
     return extensions
