@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
+from cli_agent_orchestrator.services import settings_service
 from cli_agent_orchestrator.services.settings_service import (
     _DEFAULTS,
     _load,
@@ -23,6 +24,10 @@ from cli_agent_orchestrator.services.settings_service import (
 def settings_file(tmp_path):
     """Patch SETTINGS_FILE and CAO_HOME_DIR to use a temp directory."""
     fake_settings = tmp_path / "settings.json"
+    # Reset the module-level server-settings cache so a stale mtime_ns
+    # collision with a previous test's temp file can't leak cached values.
+    settings_service._server_settings_cache = None
+    settings_service._server_settings_mtime_ns = -1
     with (
         patch(
             "cli_agent_orchestrator.services.settings_service.SETTINGS_FILE",
@@ -34,6 +39,8 @@ def settings_file(tmp_path):
         ),
     ):
         yield fake_settings
+    settings_service._server_settings_cache = None
+    settings_service._server_settings_mtime_ns = -1
 
 
 class TestLoad:

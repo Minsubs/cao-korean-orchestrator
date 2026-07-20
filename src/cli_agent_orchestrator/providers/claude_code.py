@@ -108,6 +108,11 @@ WAITING_USER_ANSWER_PATTERN = (
 )
 TRUST_PROMPT_PATTERN = r"Yes, I trust this folder"  # Workspace trust dialog
 BYPASS_PROMPT_PATTERN = r"Yes, I accept"  # Bypass permissions confirmation dialog
+# External CLAUDE.md import dialog (Claude Code 2.1.x): shown when the project's
+# CLAUDE.md chain @imports files outside the cwd (common when the repo lives
+# under a workspace whose parent CLAUDE.md imports shared rules). The default
+# cursor is already on "1. Yes, allow external imports", so Enter accepts it.
+EXTERNAL_IMPORT_PROMPT_PATTERN = r"Allow external CLAUDE\.md file imports\?"
 IDLE_PROMPT_PATTERN_LOG = r"[>❯][\s\xa0]"  # Same pattern for log files
 # New Claude Code TUI completion summary, e.g. "✻ Sautéed for 1s" /
 # "✶ Cultivated for 12s". Unlike the active spinner (PROCESSING_PATTERN, which
@@ -417,12 +422,15 @@ class ClaudeCodeProvider(BaseProvider):
     ) -> None:
         """Auto-accept startup prompts that may appear before the REPL is ready.
 
-        Claude Code may show up to two prompts during startup:
+        Claude Code may show up to three prompts during startup:
 
         1. **Bypass permissions confirmation** (``--dangerously-skip-permissions``)
            – shows "Yes, I accept" as option 2; requires ``Down`` + ``Enter``.
            The settings-based fix (``_ensure_skip_bypass_prompt_setting``) prevents
            this in most cases; this handler is a defensive fallback.
+        1.5. **External CLAUDE.md import dialog** (Claude Code 2.1.x) – shown when
+           the CLAUDE.md chain @imports files outside the cwd; the cursor defaults
+           to "Yes, allow external imports", so ``Enter`` accepts.
         2. **Workspace trust dialog** – shows "Yes, I trust this folder";
            requires ``Enter``.
 
@@ -460,6 +468,7 @@ class ClaudeCodeProvider(BaseProvider):
         last_prompt_time = time.monotonic()
         any_prompt_handled = False
         bypass_accepted = False
+        external_import_accepted = False
         while True:
             now = time.monotonic()
             if now >= outer_deadline:
@@ -492,6 +501,24 @@ class ClaudeCodeProvider(BaseProvider):
                 bypass_accepted = True
                 any_prompt_handled = True
                 last_prompt_time = time.monotonic()  # reset idle timer — trust prompt may follow
+                time.sleep(1.0)
+                continue
+
+            # 1.5) Handle external CLAUDE.md import prompt. The cursor already
+            #      defaults to "1. Yes, allow external imports", so Enter accepts.
+            #      Act once (text lingers in the buffer) and keep looping — the
+            #      trust/bypass dialogs may still follow.
+            if not external_import_accepted and re.search(
+                EXTERNAL_IMPORT_PROMPT_PATTERN, clean_output
+            ):
+                from cli_agent_orchestrator.services.status_monitor import status_monitor
+
+                logger.info("External CLAUDE.md imports prompt detected, auto-accepting")
+                status_monitor.notify_input_sent(self.terminal_id)
+                get_backend().send_special_key(self.session_name, self.window_name, "Enter")
+                external_import_accepted = True
+                any_prompt_handled = True
+                last_prompt_time = time.monotonic()  # reset idle timer — more prompts may follow
                 time.sleep(1.0)
                 continue
 

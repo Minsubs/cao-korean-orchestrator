@@ -71,8 +71,14 @@ TMUX_HISTORY_LINES = 200
 # =============================================================================
 # Application Directory Structure
 # =============================================================================
-# Base directory for all CAO data (~/.aws/cli-agent-orchestrator)
-CAO_HOME_DIR = Path.home() / ".aws" / "cli-agent-orchestrator"
+# Base directory for all CAO data. Defaults to ~/.aws/cli-agent-orchestrator.
+# Override with the CAO_HOME_DIR env var when the default lands on a filesystem
+# that cannot host FIFOs/Unix sockets — e.g. on WSL where ~/.aws is often a
+# symlink to a Windows-mounted 9p path (os.mkfifo there fails with ENOTSUP,
+# which kills tmux pipe-pane terminal creation and thus all orchestration).
+CAO_HOME_DIR = Path(
+    os.environ.get("CAO_HOME_DIR", str(Path.home() / ".aws" / "cli-agent-orchestrator"))
+)
 
 # Managed environment variable file
 CAO_ENV_FILE = CAO_HOME_DIR / ".env"

@@ -8,7 +8,9 @@ import pytest
 from cli_agent_orchestrator.models.terminal import TerminalStatus
 from cli_agent_orchestrator.providers.antigravity_cli import (
     IDLE_FOOTER_PATTERN,
+    IDLE_STATUSBAR_PATTERN,
     PROCESSING_FOOTER_PATTERN,
+    PROCESSING_STATUSBAR_PATTERN,
     AntigravityCliProvider,
     ProviderError,
 )
@@ -86,6 +88,51 @@ def test_status_processing_takes_priority_over_idle_footer():
         + "\n⣽  Working...\nesc to cancel   Gemini 3.1 Pro (High)"
     )
     assert make_provider().get_status(buf) == TerminalStatus.PROCESSING
+
+
+# Real status-bar lines captured live from agy 1.1.3 (verbatim; the bar
+# separator is the full-width U+2502 "│").
+_STATUSBAR_IDLE = (
+    "Gemini 3.5 Flash (High) │ Idle │ Context 100% left │ ~/proj [sandbox] │ "
+    "⬡ Quota: sync /usage (plan) │ ↑554 ↓236  790 tok"
+)
+_STATUSBAR_WORKING = (
+    "Gemini 3.5 Flash (High) │ Working │ Context 100% left │ ~/proj [sandbox] │ "
+    "⬡ Quota: sync /usage (plan) │ ↑554 ↓236  790 tok"
+)
+
+
+def test_status_idle_statusbar_agy_1_1_x():
+    # agy 1.1.x replaced the "? for shortcuts" footer with a "│ Idle │" status
+    # bar segment; get_status must recognize it as IDLE pre-first-turn.
+    p = make_provider()
+    assert p._turns == 0
+    assert p.get_status(_STATUSBAR_IDLE) == TerminalStatus.IDLE
+    assert p.get_status_from_screen([_STATUSBAR_IDLE]) == TerminalStatus.IDLE
+
+
+def test_status_working_statusbar_agy_1_1_x():
+    # The "│ Working │" status bar segment must be detected as PROCESSING, and
+    # PROCESSING must win over the idle statusbar check (evaluated first).
+    p = make_provider()
+    assert p.get_status(_STATUSBAR_WORKING) == TerminalStatus.PROCESSING
+    assert p.get_status_from_screen([_STATUSBAR_WORKING]) == TerminalStatus.PROCESSING
+
+
+def test_status_working_statusbar_beats_stray_idle_word():
+    # A stray "Idle"-looking word elsewhere in the buffer must not steal the
+    # win from a genuine "│ Working │" status bar segment.
+    buf = "Idle time yesterday was low │ Working │ Context 100% left"
+    p = make_provider()
+    assert p.get_status(buf) == TerminalStatus.PROCESSING
+    assert p.get_status_from_screen([buf]) == TerminalStatus.PROCESSING
+
+
+def test_statusbar_patterns_smoke():
+    import re
+
+    assert re.search(PROCESSING_STATUSBAR_PATTERN, _STATUSBAR_WORKING)
+    assert not re.search(IDLE_STATUSBAR_PATTERN, _STATUSBAR_WORKING)
 
 
 def test_status_waiting_user_answer():

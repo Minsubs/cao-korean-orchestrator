@@ -1567,6 +1567,36 @@ class TestClaudeCodeProviderStartupPrompts:
         mock_tmux.send_special_key.assert_called_once_with("test-session", "window-0", "Enter")
 
     @patch("cli_agent_orchestrator.backends.registry._backend")
+    def test_handle_external_import_prompt_detected_and_accepted(self, mock_tmux):
+        """Test that the external CLAUDE.md import prompt is auto-accepted (Enter)."""
+        external_import_prompt = (
+            " Allow external CLAUDE.md file imports?\n"
+            " This project's CLAUDE.md imports files outside the current working directory.\n"
+            " External imports:\n"
+            "   /home/user/workspace/AI_Rule/CLAUDE.md\n"
+            "   ❯ 1. Yes, allow external imports\n"
+            "     2. No, disable external imports\n"
+            " Enter to confirm · Esc to cancel"
+        )
+        import re
+
+        from cli_agent_orchestrator.providers.claude_code import EXTERNAL_IMPORT_PROMPT_PATTERN
+
+        assert re.search(EXTERNAL_IMPORT_PROMPT_PATTERN, external_import_prompt)
+
+        # First poll: external import prompt; second poll: welcome banner
+        # (after dismissal) so the loop settles instead of looping forever.
+        mock_tmux.get_history.side_effect = [
+            external_import_prompt,
+            "Welcome to Claude Code v2.1.74",
+        ]
+
+        provider = ClaudeCodeProvider("test123", "test-session", "window-0")
+        provider._handle_startup_prompts(idle_gap=5.0)
+
+        mock_tmux.send_special_key.assert_called_once_with("test-session", "window-0", "Enter")
+
+    @patch("cli_agent_orchestrator.backends.registry._backend")
     def test_handle_bypass_then_trust_prompt(self, mock_tmux):
         """Test that bypass prompt is handled, then trust prompt follows."""
         # Poll 1: bypass prompt; Poll 2: trust prompt (after bypass dismissed)
