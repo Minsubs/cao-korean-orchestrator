@@ -108,6 +108,14 @@
 - **미해결 2건**: (a) `codex→agy`는 assign이 대상 프로필의 `provider: antigravity_cli` 대신 caller provider(codex)로 폴백 — 별도 assign provider-resolution 이슈(agy 자체 아님, agy 워커 창은 올바른 프로필로 생성됨). (b) `claude→codex`(claude가 orchestrator)는 게이트 완화 후 재검증하지 않음(완화로 통과 예상). 둘 다 다음 세션 후속.
 - agy 프로필(`antigravity_orchestrator_agy`, `antigravity_qa_agy`)은 `examples/cross-provider/`에 커밋, 런타임은 `~/.local/share/cao-home/agent-store/`에 설치해 서버가 서빙. 3-way 체크는 `scripts/dev/tri_provider_check.py`. 커밋 `7419954`·`fb84de9`(브랜치 `worktree-handoff-linux-wsl` / PR #2). 임시 세션은 정리했다.
 
+### 0.13. 2026-07-20 3-AI(codex·claude·antigravity) 전 조합 크로스 오케스트레이션 검증
+- codex/claude_code/antigravity_cli 3개를 supervisor×worker 3×3 = 9개 조합으로 실 CLI 에이전트 검증했다(`scripts/dev/matrix_check.py`, 부분 실행 인자 지원). 각 케이스는 assign→worker(provider 정확)→callback delivered→supervisor final marker까지 엄격 판정한다.
+- **assign provider-resolution 수정**: `codex→agy`에서 worker가 codex provider로 잘못 생성되던 근본 원인은 (1) 스폰된 `cao-mcp-server` 자식 프로세스가 `CAO_HOME_DIR` override를 상속받지 못해 런타임 agent-store(ext4)에만 설치된 agy 프로필을 못 찾고, (2) `resolve_provider`가 profile-load 실패 시 무로그로 caller provider를 반환한 것이다. `claude_scout_haiku`가 정상이던 이유는 packaged built-in이라 CAO_HOME 무관하게 발견되기 때문. **수정**: antigravity 프로필 2종을 `src/cli_agent_orchestrator/agent_store/`에 built-in 번들(codex/claude와 동일 취급, curated 8종 parity 테스트는 고정 목록이라 무영향) + `resolve_provider` 폴백에 경고 로그.
+- **결과: 9/9 전 조합 통과**. 첫 실행 7/9(CX→CX, CL→CX, CL→CL, CL→AG, AG→CX, AG→CL, AG→AG), 재시도로 나머지 2(CX→CL, CX→AG) 통과. 모든 provider가 orchestrator·worker 양쪽으로 검증됐고, worker provider도 프로필대로 정확(예: codex→agy worker = `antigravity_cli`).
+- **관찰된 flake(코드 버그 아님)**: 첫 실행의 CX→CL·CX→AG는 non-codex worker가 태스크는 완료(gen 2/2)했으나 callback(send_message)을 제한 시간 내 안 보냄 → 재시도 즉시 통과. 같은 worker 프로필이 다른 orchestrator 밑(CL→CL·AG→CL·CL→AG·AG→AG)에선 첫판에 callback 전송했으므로 provider 문제가 아니라 real-agent LLM 비결정성이다. 재시도 가치 있음.
+- **부수 확인**: `claude→codex`(§0.12의 미해결 (b))는 매트릭스 `CL→CX` PASS로 해소됐다(게이트 완화 효과). `agy` 는 orchestrator·worker 양쪽 모두 완주.
+- **회귀**: backend 전체(`-m 'not e2e'`) 통과 — `test_constants`에 CAO_HOME_DIR override 테스트 추가로 갱신. provider 단위 `190 passed`. 커밋 `985abef`(agy built-in+로그+matrix) 및 test_constants fix. 임시 세션 정리, 서버는 `127.0.0.1:9889`(ext4 CAO_HOME) 유지.
+
 ## 1. 프로젝트가 무엇인가
 CAO fork를 "채팅 중심 멀티 에이전트 오케스트레이션 작업대 + AI CLI/확장 컨트롤센터"(**MS Orchestrator**)로 개편.
 핵심 문서: `docs/ui-refactor-plan.md`(전체 계획·실행 방법·함정), `docs/electron-plan.md`(Phase 7 확정 설계 — **머지 후 착수하기로 사용자와 합의된 다음 큰 단계**), `docs/ux-benchmark.md`, `docs/specs/`(작업별 상세 스펙).
