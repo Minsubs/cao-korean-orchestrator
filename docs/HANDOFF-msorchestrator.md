@@ -97,6 +97,17 @@
 - 서버 기동(9889)·e2e·mypy/black/isort는 이번에 실행하지 않았다. 서버는 §3-1 명령, e2e는 §3-4 전제 프로필 필요.
 - 이 세션 작업은 워크트리 브랜치 `worktree-handoff-linux-wsl`에 커밋만 했다(HANDOFF 갱신 + 테스트 격리 fix). GitHub 인증(`gh` 미설치/HTTPS credential 없음)으로 push/PR은 사용자 조치 대기다.
 
+### 0.12. 2026-07-20 Linux WSL 오케스트레이션 재검증 + antigravity 크로스체크
+- Linux WSL에서 실 CLI 에이전트 오케스트레이션을 재검증하며 환경/버전 blocker 4건을 발견하고 코드 3건을 고쳤다. 서버는 `CAO_HOME_DIR=/home/minsub57/.local/share/cao-home PYTHONPATH=src uv run --no-sync cao-server --host 127.0.0.1 --port 9889`로 기동한다(CAO_HOME은 ext4 경로 필수).
+- **blocker 1 (fix, `constants.py`)**: `~/.aws`가 Windows 9p 마운트 symlink이라 `CAO_HOME_DIR`의 FIFO가 `os.mkfifo` ENOTSUP로 실패 → terminal 생성·모든 오케스트레이션 사망. `CAO_HOME_DIR` env override 추가로 ext4 경로 지정해 회피.
+- **blocker 2 (환경)**: codex CLI 첫 실행이 자동 업데이트 프롬프트(`npm install -g @openai/codex`)로 에이전트 모드 진입 실패. codex가 `0.144.4→0.144.6`으로 자가 업데이트 완료 후 해소(코드 변경 없음).
+- **blocker 3 (fix, `providers/claude_code.py`)**: Claude Code 2.1.x의 신규 대화 "Allow external CLAUDE.md file imports?"(CLAUDE.md 체인이 cwd 밖을 @import하면 표시)를 startup-prompt 핸들러가 몰라 worker init timeout. `EXTERNAL_IMPORT_PROMPT_PATTERN` + 기본 선택 Enter 자동수락 추가.
+- **blocker 4 (fix, `providers/antigravity_cli.py`)**: agy 1.1.x가 `"? for shortcuts"` 힌트 대신 상태바(`│ Idle │` / `│ Working │`)를 쓴다. `IDLE_STATUSBAR_PATTERN`·`PROCESSING_STATUSBAR_PATTERN`을 get_status/get_status_from_screen에 추가(processing이 idle보다 먼저 평가). 이전엔 idle이 unknown, busy 미감지라 PROCESSING→IDLE 엣지 부재로 `ready_generation`이 0에 머물러 InboxService busy-guard까지 무력화됐다. 실캡처 문자열 기반.
+- **체크 게이트 보정(`scripts/dev/fixed_orchestrator_check.py`)**: supervisor-ready를 status 기반으로 완화(launch 시 `input_generation==ready_generation` 요구 제거). claude는 launch 턴이 없어 `ready_generation=0`이 정상이고 codex의 통과는 배너 아티팩트였다. generation 등가 검증은 태스크 이후(worker-settled/supervisor-final)에만 유지.
+- **검증 결과(실 에이전트)**: `codex→claude` PASS(x2), `agy→codex` PASS(antigravity가 orchestrator로 assign→codex worker→callback→final marker 완주, 크로스 콜백 codex→agy delivered). provider 단위 테스트 회귀 `190 passed`.
+- **미해결 2건**: (a) `codex→agy`는 assign이 대상 프로필의 `provider: antigravity_cli` 대신 caller provider(codex)로 폴백 — 별도 assign provider-resolution 이슈(agy 자체 아님, agy 워커 창은 올바른 프로필로 생성됨). (b) `claude→codex`(claude가 orchestrator)는 게이트 완화 후 재검증하지 않음(완화로 통과 예상). 둘 다 다음 세션 후속.
+- agy 프로필(`antigravity_orchestrator_agy`, `antigravity_qa_agy`)은 `examples/cross-provider/`에 커밋, 런타임은 `~/.local/share/cao-home/agent-store/`에 설치해 서버가 서빙. 3-way 체크는 `scripts/dev/tri_provider_check.py`. 커밋 `7419954`·`fb84de9`(브랜치 `worktree-handoff-linux-wsl` / PR #2). 임시 세션은 정리했다.
+
 ## 1. 프로젝트가 무엇인가
 CAO fork를 "채팅 중심 멀티 에이전트 오케스트레이션 작업대 + AI CLI/확장 컨트롤센터"(**MS Orchestrator**)로 개편.
 핵심 문서: `docs/ui-refactor-plan.md`(전체 계획·실행 방법·함정), `docs/electron-plan.md`(Phase 7 확정 설계 — **머지 후 착수하기로 사용자와 합의된 다음 큰 단계**), `docs/ux-benchmark.md`, `docs/specs/`(작업별 상세 스펙).
