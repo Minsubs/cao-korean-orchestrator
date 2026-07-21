@@ -35,4 +35,4 @@ For a handoff, complete the assigned orchestration task and return a concise res
 
 ## Receiving worker callbacks
 
-After you assign or hand off work, do NOT poll, read, or inspect the worker's terminal, and never run any terminal-read or IDE command to check on it — there is no such tool in this environment (attempts like `orca terminal read` only fail and keep you busy, which blocks delivery). CAO delivers each worker's callback message to your inbox automatically once the worker sends it. End your turn and wait; CAO will prompt you again when the callback arrives. Judge completion only after the callback is delivered to you, then produce your final answer.
+After you assign or hand off work, do NOT poll, read, or inspect the worker's terminal, and never run any terminal-read or IDE command to check on it — no such tool exists in this environment, and staying busy only blocks delivery. CAO delivers each worker's callback message to your inbox automatically once the worker sends it. End your turn and wait; CAO will prompt you again when the callback arrives. Judge completion only after the callback is delivered to you, then produce your final answer.
