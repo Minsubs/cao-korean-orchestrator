@@ -27,15 +27,17 @@ function sanitizeResponseBlock(text: string): string {
       if (/^⎿\s*Stop says:/.test(trimmed)) return false
       if (/^(?:high|medium|low|max)\s*·\s*\/effort$/i.test(trimmed)) return false
       if (/^─+\s*Worked for\s+\d+/i.test(trimmed)) return false
-      // 도구 결과 continuation ("  └ {...}") 및 단독 JSON 오브젝트 라인
+      // 도구 결과 continuation ("  └ {...}") 및 단독 도구 metadata JSON 라인
       if (/^└/.test(trimmed)) return false
-      if (/^\{.*\}$/.test(trimmed)) return false
+      if (/^\{.*"(?:terminal_id|sender_id|message_id|thread_id|agent_id|success)"\s*:.*\}$/.test(trimmed)) return false
       // 도구 호출 불릿
       if (/^•\s*Called\b/.test(trimmed)) return false
       // 단독 내부 마커 (대문자+숫자+밑줄로만 이뤄진 토큰 1~수개; 공백 외 다른 문자 없음)
       if (/^[A-Z][A-Z0-9_]*(?:\s+[A-Z][A-Z0-9_]*)*$/.test(trimmed) && /_/.test(trimmed)) return false
-      // 내부 상태 나레이션 (알려진 오케스트레이션 상태 문구)
-      if (/(콜백.*(대기|기다|전달)|assign.*접수|재할당|완료(로| 처리).*(간주|하지 않)|워커.*(생성 여부|콜백)|응답을 회수|메시지 도착)/.test(trimmed)) return false
+      // 내부 상태 나레이션 (오케스트레이션 전용 문구)
+      if (/(콜백.*(대기|기다|전달)|assign.*접수|완료(로| 처리).*(간주|하지 않)|워커.*(생성 여부|콜백)|응답을 회수)/.test(trimmed)) return false
+      // 재할당/메시지 도착은 흔한 단어 — 불릿 나레이션 라인에서만 제거 (과다 제거 방지)
+      if (/^[•\-*]/.test(trimmed) && /(재할당|메시지 도착)/.test(trimmed)) return false
       return true
     })
     .join('\n')

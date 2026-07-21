@@ -59,4 +59,14 @@ MTX_CX_CX_FIN_OK
     const raw = `API 호출을 3회로 줄였어요. OK 응답을 확인했습니다.`
     expect(formatOutput(raw)).toBe('API 호출을 3회로 줄였어요. OK 응답을 확인했습니다.')
   })
+
+  it.each(formatters)('keeps prose with 재할당/메시지 도착 when not a bullet line', (formatOutput) => {
+    const raw = `티켓을 다른 담당자에게 재할당을 완료했습니다. 메시지 도착 알림도 설정했어요.`
+    expect(formatOutput(raw)).toBe('티켓을 다른 담당자에게 재할당을 완료했습니다. 메시지 도착 알림도 설정했어요.')
+  })
+
+  it.each(formatters)('keeps a legitimate bare JSON config answer', (formatOutput) => {
+    const raw = `{"timeout": 30, "retries": 3}`
+    expect(formatOutput(raw)).toBe('{"timeout": 30, "retries": 3}')
+  })
 })
