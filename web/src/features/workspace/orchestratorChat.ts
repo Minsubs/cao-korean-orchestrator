@@ -79,6 +79,7 @@ interface StoredChatMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
   targetId?: string
+  raw?: string
 }
 
 interface StoredChat {
@@ -126,7 +127,7 @@ export function loadStoredChat(sessionName: string): {
         )
       : []
     const cleaned = raw
-      .map(m => (m.role === 'assistant' ? { ...m, content: formatOrchestratorOutput(m.content) } : m))
+      .map(m => (m.role === 'assistant' ? { ...m, raw: (m as StoredChatMessage).raw ?? m.content, content: formatOrchestratorOutput((m as StoredChatMessage).raw ?? m.content) } : m))
       .filter(m => m.content.length > 0)
       .slice(-100)
     const baseTs = Date.now() - cleaned.length * 1000
@@ -169,7 +170,7 @@ export function saveStoredChat(
     const existing = JSON.parse(window.localStorage.getItem(storageKey(sessionName)) || '{}') as Record<string, unknown>
     const workspaceMessages: StoredChatMessage[] = entries
       .slice(-100)
-      .map(({ id, role, content, targetId }) => ({ id, role, content, ...(targetId ? { targetId } : {}) }))
+      .map(({ id, role, content, targetId, raw }) => ({ id, role, content, ...(targetId ? { targetId } : {}), ...(raw ? { raw } : {}) }))
     const messages = workspaceMessages.filter(message => !message.targetId)
     window.localStorage.setItem(storageKey(sessionName), JSON.stringify({
       ...existing,
