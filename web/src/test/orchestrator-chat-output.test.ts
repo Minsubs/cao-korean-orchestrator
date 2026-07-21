@@ -69,4 +69,16 @@ MTX_CX_CX_FIN_OK
     const raw = `{"timeout": 30, "retries": 3}`
     expect(formatOutput(raw)).toBe('{"timeout": 30, "retries": 3}')
   })
+
+  it.each(formatters)('keeps a plain (non-bulleted) final answer after a tool call', (formatOutput) => {
+    const raw = `• Called assign(worker, "fix login")
+
+작업을 완료했고 회귀 테스트도 통과했습니다.`
+    expect(formatOutput(raw)).toBe('작업을 완료했고 회귀 테스트도 통과했습니다.')
+  })
+
+  it.each(formatters)('still returns empty while only a tool call is present (WAITING preserved)', (formatOutput) => {
+    const raw = `• Called assign(worker, "fix login")`
+    expect(formatOutput(raw)).toBe('')
+  })
 })

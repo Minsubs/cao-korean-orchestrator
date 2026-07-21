@@ -68,12 +68,11 @@ export function formatOrchestratorOutput(rawOutput: string): string {
   }
 
   if (lastToolCall >= 0) {
-    // While the turn is still inside a tool trace there is no chat response yet.
-    const finalStart = lines.findIndex((line, index) => (
-      index > lastToolCall && /^•\s+(?!Called\b)/.test(line)
-    ))
-    if (finalStart < 0) return ''
-    return sanitizeResponseBlock(lines.slice(finalStart).join('\n'))
+    const finalStart = lines.findIndex((line, index) => index > lastToolCall && /^•\s+(?!Called\b)/.test(line))
+    if (finalStart >= 0) return sanitizeResponseBlock(lines.slice(finalStart).join('\n'))
+    // 최종 답변이 불릿이 아닌 평범한 산문일 때: 전체를 버리지 않고 마지막 도구호출 이후를 정리해 보존 (과다 제거 방지).
+    // 도구호출만 있고 실제 답변이 아직 없으면 정리 결과가 비어 '' 반환 → WAITING 유지.
+    return sanitizeResponseBlock(lines.slice(lastToolCall + 1).join('\n'))
   }
 
   return sanitizeResponseBlock(clean)
