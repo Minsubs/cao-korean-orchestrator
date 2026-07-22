@@ -22,6 +22,7 @@ type ProfilePresentation = {
 export const ORCHESTRATOR_PROFILES = {
   codex: 'codex_orchestrator_sol',
   claude_code: 'claude_orchestrator_sonnet',
+  antigravity_cli: 'antigravity_orchestrator_agy',
 } as const
 
 export type OrchestratorProvider = keyof typeof ORCHESTRATOR_PROFILES
@@ -43,6 +44,13 @@ const PRESENTATION: Record<string, ProfilePresentation> = {
     detail: 'Claude · Sonnet',
     section: 'team',
     order: 1,
+  },
+  antigravity_orchestrator_agy: {
+    label: '오케스트레이터',
+    description: '작업을 나누고 Codex·Claude·Antigravity 팀의 결과를 종합해요.',
+    detail: 'Antigravity · Gemini 3.1 Pro',
+    section: 'team',
+    order: 2,
   },
   claude_scout_haiku: {
     label: '빠른 탐색가',
@@ -91,6 +99,14 @@ const PRESENTATION: Record<string, ProfilePresentation> = {
     section: 'team',
     workerGroup: 'verification',
     order: 7,
+  },
+  antigravity_qa_agy: {
+    label: 'agy 테스트 담당',
+    description: '테스트를 실행하고 회귀와 실패 원인을 확인해요.',
+    detail: 'Antigravity · Gemini 3.5 Flash',
+    section: 'team',
+    workerGroup: 'verification',
+    order: 8,
   },
   memory_manager: {
     label: '메모리 관리자',
