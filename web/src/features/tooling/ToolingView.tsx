@@ -319,6 +319,7 @@ export function ToolingView() {
             rescanning={rescanning}
             rescanError={rescanError}
             onRescan={handleRescan}
+            onRequestAction={requestAction}
           />
         )}
         {tab === 'installed' && (

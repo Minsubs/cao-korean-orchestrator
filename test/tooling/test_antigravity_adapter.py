@@ -36,8 +36,12 @@ def test_capabilities_read_only(monkeypatch):
     caps = AntigravityAdapter().capabilities()
     assert caps.canList is True
     assert caps.canInstall is False and caps.canRemove is False
-    assert caps.canUpdate is False and caps.canUpdateAll is False and caps.canSearch is False
+    # canUpdateAll=True: `agy update` (CLI self-update, via the target-exempt
+    # update_all action) is the one mutation this otherwise read-only adapter
+    # allows. canUpdate (per-MCP-server update) stays unsupported.
+    assert caps.canUpdate is False and caps.canUpdateAll is True and caps.canSearch is False
     assert "조회만" in caps.reasons["canInstall"]
+    assert "조회만" in caps.reasons["canUpdate"]
 
 
 # --- config listing -------------------------------------------------------
