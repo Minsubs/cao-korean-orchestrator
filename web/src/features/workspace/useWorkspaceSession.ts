@@ -266,8 +266,8 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
     return buildThreadItems({ events: relevantEvents, chat: chatEntries, cards: cardsRecord })
   }, [events, chatEntries, cardsRecord, sessionIdValue, sessionName, terminals])
 
-  const replaceChatEntry = useCallback((id: string, content: string) => {
-    setChatEntries(current => current.map(e => (e.id === id ? { ...e, content } : e)))
+  const replaceChatEntry = useCallback((id: string, content: string, raw?: string) => {
+    setChatEntries(current => current.map(e => (e.id === id ? { ...e, content, ...(raw !== undefined ? { raw } : {}) } : e)))
   }, [])
 
   const sendMessage = useCallback(
@@ -372,7 +372,7 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
 
         const clean = formatOrchestratorOutput(outputResult.output || '')
         if (clean && clean !== pendingReply.baseline) {
-          replaceChatEntry(pendingReply.messageId, clean)
+          replaceChatEntry(pendingReply.messageId, clean, outputResult.output || '')
           lastOutputRef.current[pendingReply.terminalId] = clean
           if (pendingReply.terminalId === supervisorTerminalId) storedSupervisorOutputRef.current = clean
           setPendingReply(null)

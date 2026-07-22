@@ -293,11 +293,35 @@ class TestCaoHomeDir:
     """Tests for CAO home directory constants."""
 
     def test_cao_home_dir_is_under_aws_cli_agent_orchestrator(self):
-        """Test that CAO_HOME_DIR is under ~/.aws/cli-agent-orchestrator."""
-        from cli_agent_orchestrator.constants import CAO_HOME_DIR
+        """CAO_HOME_DIR defaults to ~/.aws/cli-agent-orchestrator when unset."""
+        import importlib
+        import os
 
-        expected = Path.home() / ".aws" / "cli-agent-orchestrator"
-        assert CAO_HOME_DIR == expected
+        import cli_agent_orchestrator.constants as constants_module
+
+        try:
+            with patch.dict(os.environ):
+                os.environ.pop("CAO_HOME_DIR", None)
+                importlib.reload(constants_module)
+                expected = Path.home() / ".aws" / "cli-agent-orchestrator"
+                assert constants_module.CAO_HOME_DIR == expected
+        finally:
+            importlib.reload(constants_module)  # restore module to ambient env
+
+    def test_cao_home_dir_honors_env_override(self):
+        """CAO_HOME_DIR env var overrides the default (e.g. an ext4 path on WSL
+        where ~/.aws is a Windows 9p mount that cannot host FIFOs)."""
+        import importlib
+        import os
+
+        import cli_agent_orchestrator.constants as constants_module
+
+        try:
+            with patch.dict(os.environ, {"CAO_HOME_DIR": "/tmp/cao-home-override-test"}):
+                importlib.reload(constants_module)
+                assert constants_module.CAO_HOME_DIR == Path("/tmp/cao-home-override-test")
+        finally:
+            importlib.reload(constants_module)  # restore module to ambient env
 
     def test_cao_home_dir_is_pathlib_path(self):
         """Test that CAO_HOME_DIR is a Path object."""

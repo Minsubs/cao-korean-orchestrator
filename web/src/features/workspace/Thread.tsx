@@ -29,9 +29,11 @@ function resolveStatus(card: DelegationCard, terminalStatuses: Record<string, st
 
 const INSTRUCTION_TYPE_LABEL: Record<string, string> = { assign: '배정', handoff: '핸드오프' }
 
-function ChatBubble({ entry }: { entry: ChatEntry }) {
+export function ChatBubble({ entry }: { entry: ChatEntry }) {
   const isUser = entry.role === 'user'
   const isSystem = entry.role === 'system'
+  const [showRaw, setShowRaw] = useState(false)
+  const hasRaw = entry.role === 'assistant' && !!entry.raw && entry.raw.trim() !== entry.content.trim()
   return (
     <div className={`flex max-w-[86%] gap-2.5 ${isUser ? 'ml-auto flex-row-reverse' : ''}`}>
       {!isUser && <AgentAvatar name={isSystem ? 'system' : 'supervisor'} size="sm" />}
@@ -45,7 +47,16 @@ function ChatBubble({ entry }: { entry: ChatEntry }) {
         }`}
       >
         {entry.targetId && <div className="mb-1 text-[10px] font-semibold opacity-70">→ {entry.targetId.slice(0, 8)}</div>}
-        {entry.content}
+        {showRaw ? entry.raw : entry.content}
+        {hasRaw && (
+          <button
+            type="button"
+            onClick={() => setShowRaw(v => !v)}
+            className="mt-1.5 block text-[10px] font-semibold text-[var(--text-3)] hover:text-[var(--text)]"
+          >
+            {showRaw ? '정리본 보기' : '원문 보기'}
+          </button>
+        )}
       </div>
     </div>
   )

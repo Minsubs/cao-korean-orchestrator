@@ -27,6 +27,17 @@ function sanitizeResponseBlock(text: string): string {
       if (/^⎿\s*Stop says:/.test(trimmed)) return false
       if (/^(?:high|medium|low|max)\s*·\s*\/effort$/i.test(trimmed)) return false
       if (/^─+\s*Worked for\s+\d+/i.test(trimmed)) return false
+      // 도구 결과 continuation ("  └ {...}") 및 단독 도구 metadata JSON 라인
+      if (/^└/.test(trimmed)) return false
+      if (/^\{.*"(?:terminal_id|sender_id|message_id|thread_id|agent_id|success)"\s*:.*\}$/.test(trimmed)) return false
+      // 도구 호출 불릿
+      if (/^•\s*Called\b/.test(trimmed)) return false
+      // 단독 내부 마커 (대문자+숫자+밑줄로만 이뤄진 토큰 1~수개; 공백 외 다른 문자 없음)
+      if (/^[A-Z][A-Z0-9_]*(?:\s+[A-Z][A-Z0-9_]*)*$/.test(trimmed) && /_/.test(trimmed)) return false
+      // 내부 상태 나레이션 (오케스트레이션 전용 문구)
+      if (/(콜백.*(대기|기다|전달)|assign.*접수|완료(로| 처리).*(간주|하지 않)|워커.*(생성 여부|콜백)|응답을 회수)/.test(trimmed)) return false
+      // 재할당/메시지 도착은 흔한 단어 — 불릿 나레이션 라인에서만 제거 (과다 제거 방지)
+      if (/^[•\-*]/.test(trimmed) && /(재할당|메시지 도착)/.test(trimmed)) return false
       return true
     })
     .join('\n')
@@ -56,8 +67,10 @@ export function formatOrchestratorOutput(rawOutput: string): string {
 
   if (lastToolCall >= 0) {
     const finalStart = lines.findIndex((line, index) => index > lastToolCall && /^•\s+(?!Called\b)/.test(line))
-    if (finalStart < 0) return ''
-    return sanitizeResponseBlock(lines.slice(finalStart).join('\n'))
+    if (finalStart >= 0) return sanitizeResponseBlock(lines.slice(finalStart).join('\n'))
+    // 최종 답변이 불릿이 아닌 평범한 산문일 때: 전체를 버리지 않고 마지막 도구호출 이후를 정리해 보존 (과다 제거 방지).
+    // 도구호출만 있고 실제 답변이 아직 없으면 정리 결과가 비어 '' 반환 → WAITING 유지.
+    return sanitizeResponseBlock(lines.slice(lastToolCall + 1).join('\n'))
   }
 
   return sanitizeResponseBlock(clean)
@@ -68,6 +81,7 @@ interface StoredChatMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
   targetId?: string
+  raw?: string
 }
 
 interface StoredChat {
@@ -115,7 +129,7 @@ export function loadStoredChat(sessionName: string): {
         )
       : []
     const cleaned = raw
-      .map(m => (m.role === 'assistant' ? { ...m, content: formatOrchestratorOutput(m.content) } : m))
+      .map(m => (m.role === 'assistant' ? { ...m, raw: (m as StoredChatMessage).raw ?? m.content, content: formatOrchestratorOutput((m as StoredChatMessage).raw ?? m.content) } : m))
       .filter(m => m.content.length > 0)
       .slice(-100)
     const baseTs = Date.now() - cleaned.length * 1000
@@ -158,7 +172,7 @@ export function saveStoredChat(
     const existing = JSON.parse(window.localStorage.getItem(storageKey(sessionName)) || '{}') as Record<string, unknown>
     const workspaceMessages: StoredChatMessage[] = entries
       .slice(-100)
-      .map(({ id, role, content, targetId }) => ({ id, role, content, ...(targetId ? { targetId } : {}) }))
+      .map(({ id, role, content, targetId, raw }) => ({ id, role, content, ...(targetId ? { targetId } : {}), ...(raw ? { raw } : {}) }))
     const messages = workspaceMessages.filter(message => !message.targetId)
     window.localStorage.setItem(storageKey(sessionName), JSON.stringify({
       ...existing,

@@ -108,6 +108,42 @@
 - **미해결 2건**: (a) `codex→agy`는 assign이 대상 프로필의 `provider: antigravity_cli` 대신 caller provider(codex)로 폴백 — 별도 assign provider-resolution 이슈(agy 자체 아님, agy 워커 창은 올바른 프로필로 생성됨). (b) `claude→codex`(claude가 orchestrator)는 게이트 완화 후 재검증하지 않음(완화로 통과 예상). 둘 다 다음 세션 후속.
 - agy 프로필(`antigravity_orchestrator_agy`, `antigravity_qa_agy`)은 `examples/cross-provider/`에 커밋, 런타임은 `~/.local/share/cao-home/agent-store/`에 설치해 서버가 서빙. 3-way 체크는 `scripts/dev/tri_provider_check.py`. 커밋 `7419954`·`fb84de9`(브랜치 `worktree-handoff-linux-wsl` / PR #2). 임시 세션은 정리했다.
 
+### 0.13. 2026-07-20 3-AI(codex·claude·antigravity) 전 조합 크로스 오케스트레이션 검증
+- codex/claude_code/antigravity_cli 3개를 supervisor×worker 3×3 = 9개 조합으로 실 CLI 에이전트 검증했다(`scripts/dev/matrix_check.py`, 부분 실행 인자 지원). 각 케이스는 assign→worker(provider 정확)→callback delivered→supervisor final marker까지 엄격 판정한다.
+- **assign provider-resolution 수정**: `codex→agy`에서 worker가 codex provider로 잘못 생성되던 근본 원인은 (1) 스폰된 `cao-mcp-server` 자식 프로세스가 `CAO_HOME_DIR` override를 상속받지 못해 런타임 agent-store(ext4)에만 설치된 agy 프로필을 못 찾고, (2) `resolve_provider`가 profile-load 실패 시 무로그로 caller provider를 반환한 것이다. `claude_scout_haiku`가 정상이던 이유는 packaged built-in이라 CAO_HOME 무관하게 발견되기 때문. **수정**: antigravity 프로필 2종을 `src/cli_agent_orchestrator/agent_store/`에 built-in 번들(codex/claude와 동일 취급, curated 8종 parity 테스트는 고정 목록이라 무영향) + `resolve_provider` 폴백에 경고 로그.
+- **결과: 9/9 전 조합 통과**. 첫 실행 7/9(CX→CX, CL→CX, CL→CL, CL→AG, AG→CX, AG→CL, AG→AG), 재시도로 나머지 2(CX→CL, CX→AG) 통과. 모든 provider가 orchestrator·worker 양쪽으로 검증됐고, worker provider도 프로필대로 정확(예: codex→agy worker = `antigravity_cli`).
+- **관찰된 flake(코드 버그 아님)**: 첫 실행의 CX→CL·CX→AG는 non-codex worker가 태스크는 완료(gen 2/2)했으나 callback(send_message)을 제한 시간 내 안 보냄 → 재시도 즉시 통과. 같은 worker 프로필이 다른 orchestrator 밑(CL→CL·AG→CL·CL→AG·AG→AG)에선 첫판에 callback 전송했으므로 provider 문제가 아니라 real-agent LLM 비결정성이다. 재시도 가치 있음.
+- **부수 확인**: `claude→codex`(§0.12의 미해결 (b))는 매트릭스 `CL→CX` PASS로 해소됐다(게이트 완화 효과). `agy` 는 orchestrator·worker 양쪽 모두 완주.
+- **회귀**: backend 전체(`-m 'not e2e'`) 통과 — `test_constants`에 CAO_HOME_DIR override 테스트 추가로 갱신. provider 단위 `190 passed`. 커밋 `985abef`(agy built-in+로그+matrix) 및 test_constants fix. 임시 세션 정리, 서버는 `127.0.0.1:9889`(ext4 CAO_HOME) 유지.
+
+### 0.14. 2026-07-21 UX 개편 Phase 1(채팅 명료화) 구현 + Phase 2~6 로드맵 (EOD 자율 세션, Claude Opus)
+
+브랜치 `wsl-3ai-orchestration`. 이 세션은 UX 개선을 6 Phase 스펙으로 설계(브레인스토밍→스펙 승인)한 뒤,
+subagent-driven-development(구현 sonnet / 리뷰 sonnet / 최종 opus)로 **Phase 1만** 구현·검증했다.
+마지막에 `/end-of-day-handoff-loop`로 전환되어 **커밋/push/merge는 하지 않았고**(전부 사용자 턴) 로드맵·인수인계만 남긴다.
+
+- **스펙(6 Phase 정본):** `docs/superpowers/specs/2026-07-21-ms-orchestrator-ux-design.md` (①채팅 명료화 ②실시간 진행카드 ③에러/비용 ④새작업·프로필·모델카탈로그·에이전트 시각화[A 역할보드+작업중 B 위임계층] ⑤로딩/연결/설정 ⑥마감). 사용자 승인 완료.
+- **Phase 1 플랜:** `docs/superpowers/plans/2026-07-21-chat-clarity.md`. **Phase 2~6 실행 로드맵(신규, 이 세션):** `docs/superpowers/plans/2026-07-21-phases-2-6-roadmap.md` — 모델 매핑표·audit 결과·정확한 수정 위치 포함. SDD 진행 렛저: `.superpowers/sdd/progress.md`(gitignore scratch).
+
+- **Phase 1 구현 내용 (로컬 커밋 5개, `8122a42..d0066b8`, 미push):**
+  - `42c5102` — `sanitizeResponseBlock`에 노이즈 4종 제거(내부 나레이션·도구결과 JSON·단독 마커·`• Called` 도구호출). `web/src/features/workspace/orchestratorChat.ts`와 `web/src/components/SessionChatPanel.tsx` 두 곳 byte-identical 손 동기화(테스트 `web/src/test/orchestrator-chat-output.test.ts`가 `it.each([classic, workspace])`로 양쪽 동시 검증).
+  - `9dd51bf` — 과다제거 방지 강화: JSON 규칙은 도구 metadata 키(`terminal_id/sender_id/message_id/thread_id/agent_id/success`)가 있는 라인만 제거(일반 JSON 답변 보존), 나레이션의 흔한 단어 `재할당/메시지 도착`은 불릿(`•/-/*`) 라인에서만 제거 + 회귀 테스트.
+  - `b66fca8` — `ChatEntry.raw?`(assistant 전용 정리 전 원문) 추가. `saveStoredChat`/`loadStoredChat` 왕복 보존(load 시 assistant는 `raw ?? content`로 content 재정리). 라이브 경로는 `useWorkspaceSession.ts`의 WAITING placeholder를 `replaceChatEntry(id, content, raw?)` 헬퍼로 in-place 패치(3번째 param 추가, `raw !== undefined` 가드로 기존 호출부 무영향).
+  - `d30ba45` — **과다제거 실버그 수정**: `formatOrchestratorOutput`가 `• Called` 뒤 최종답변이 **비불릿 평범한 산문**이면 `finalStart<0`으로 전체를 `''`로 버리던 문제. 이제 마지막 도구호출 이후를 sanitize해 보존(도구호출만 있으면 정리 결과가 비어 `''` → WAITING 유지). 두 파일 동기 + 회귀 2건(보존/WAITING).
+  - `d0066b8` — `Thread.tsx`의 `ChatBubble` export + "원문 보기"/"정리본 보기" 토글. assistant이고 `raw` 존재 & `raw.trim() !== content.trim()`일 때만 노출. raw는 안전한 plain JSX 텍스트(React 이스케이프, dangerouslySetInnerHTML 아님). 토큰 색만 사용.
+  - **검증:** Phase별 리뷰 전부 Approved, 최종 전체브랜치 리뷰(opus) **Ready to merge**(Critical/Important 0). HEAD `d0066b8` 게이트: `tsc --noEmit` 0 error, `npm test` **400/400**(42 파일), `npm run build` 성공. 작업트리 클린.
+  - **잔여 Minor(선택, 후속 Phase에서):** 멀티라인 pretty-print 도구 JSON은 단일라인 앵커 규칙을 통과해 누출 가능(실제 도구출력은 단일라인이라 저위험); `loadStoredChat` 필터가 `raw` 타입 미검증(변조 localStorage → outer try가 잡아 크래시는 없음); 토글-백/라벨전환 테스트 부재. 상세 `.superpowers/sdd/progress.md` Minor 롤업.
+
+- **사용자 직접 질문 답변 — "기타"로 빠진 에이전트 + 크로스 검증 (audit 완료):**
+  - "기타" 에이전트 = **`antigravity_orchestrator_agy`(Gemini 3.1 Pro High) + `antigravity_qa_agy`(Gemini 3.5 Flash High)**. 둘 다 **실동작·사용 가능하며 3-AI 크로스 검증됨**(§0.13 3×3 매트릭스·`tri_provider_check.py`의 AG 당사자가 바로 이 둘).
+  - "기타"로 빠진 원인은 **UI 메타만 누락**: (1) 프런트 하드코딩 `PRESENTATION` 맵(`web/src/features/profiles/profilePresentation.ts:32-125`)에 15개 agent_store 중 이 2개만 미등록, (2) frontmatter가 CAO 권한 프리셋 `role:`만 쓰고 백엔드가 그룹핑에 읽는 `uiRole:`(`src/cli_agent_orchestrator/utils/agent_profiles.py:84`)를 안 씀. fallback은 `additionalProfileRole`(`profilePresentation.ts:184-186`)에서 `'기타'`.
+  - **수정(Phase 4-A, 동작 변경 없음):** 두 `.md`에 `uiRole:` 추가 + `PRESENTATION` 엔트리 추가(둘 다 하면 안전). examples/cross-provider의 사본에도 반영.
+  - **주의:** `examples/cross-provider/*`(cross_provider_supervisor, data_analyst_*×5, report_generator_codex)는 설치 시 기타로 빠지고 **매트릭스 미검증** — 실사용하려면 uiRole 부여 + `tri_provider_check.py`/`matrix_check.py`에 Case 추가로 별도 크로스검증 필요.
+
+- **다음 세션 추천 순서(로드맵 상세):** Phase 4-A(기타 카드 정상화, audit로 위치 확정, 소·즉효) → 4-B(모델 카탈로그: `services/tooling/models.py` `_KNOWN_MODELS` codex STALE=gpt-5-codex/gpt-5/o3 → 실제 gpt-5.6-sol/terra/luna로 수정 + 계약 테스트) → 4-C(에이전트 시각화 A 보드+B 계층, 목업 `.superpowers/brainstorm/4087304-*/content/agent-viz.html`) → Phase 2(진행 카드) → 3 → 5 → 6. 각 Phase writing-plans→SDD→게이트.
+
+- **라이브 서버:** `127.0.0.1:9889`에 `cao-server` 가동 중(pid 3970095, ext4 `CAO_HOME_DIR=/home/minsub57/.local/share/cao-home`). 라우트 prefix는 `/tooling`(not `/api/tooling`). web_ui는 Phase 1까지 반영된 빌드. Windows 브라우저 `http://localhost:9889`.
+
 ## 1. 프로젝트가 무엇인가
 CAO fork를 "채팅 중심 멀티 에이전트 오케스트레이션 작업대 + AI CLI/확장 컨트롤센터"(**MS Orchestrator**)로 개편.
 핵심 문서: `docs/ui-refactor-plan.md`(전체 계획·실행 방법·함정), `docs/electron-plan.md`(Phase 7 확정 설계 — **머지 후 착수하기로 사용자와 합의된 다음 큰 단계**), `docs/ux-benchmark.md`, `docs/specs/`(작업별 상세 스펙).

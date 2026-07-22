@@ -123,6 +123,8 @@ export interface ChatEntry {
   ts: number
   /** Set only when addressed to a non-supervisor terminal (composer target switched); undefined = supervisor conversation. */
   targetId?: string
+  /** Assistant only: pre-cleaned original transcript, revealed by the "원문 보기" toggle. */
+  raw?: string
 }
 
 export type ThreadItem =
