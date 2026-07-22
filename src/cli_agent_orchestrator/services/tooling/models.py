@@ -30,8 +30,8 @@ _AGY_CACHE_KEY = "models:antigravity_cli"
 # Curated, well-known aliases (NOT probed). ``allow_custom`` is the escape hatch
 # for any exact model id not listed here.
 _KNOWN_MODELS: Dict[str, tuple[str, ...]] = {
-    "claude_code": ("opus", "sonnet", "haiku"),
-    "codex": ("gpt-5-codex", "gpt-5", "o3"),
+    "claude_code": ("opus", "sonnet", "haiku", "fable"),
+    "codex": ("gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5"),
 }
 
 _KNOWN_NOTE = (
