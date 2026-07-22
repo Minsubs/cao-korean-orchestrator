@@ -64,9 +64,13 @@ def test_capabilities_managed(monkeypatch):
     _install(monkeypatch)
     caps = CodexAdapter().capabilities()
     assert caps.canList and caps.canInstall and caps.canRemove
-    assert caps.canUpdate is False and caps.canSearch is False
+    # canUpdate=True means "update the codex CLI binary itself" (`codex
+    # update`) — independent of MCP management, which stays unrelated
+    # (canUpdateAll covers bulk MCP-server updates and stays unsupported).
+    assert caps.canUpdate is True and caps.canSearch is False
     assert caps.requiresNewSession is True
     assert "canInstall" not in caps.reasons  # supported → no reason
+    assert "canUpdate" not in caps.reasons  # supported → no reason
 
 
 def test_capabilities_read_only_when_help_unreadable(monkeypatch):
@@ -177,7 +181,14 @@ def test_verify_remove_and_unknown(monkeypatch):
     assert ok is False and "unknown action" in detail
 
 
+def test_plan_update_runs_binary_update(monkeypatch):
+    """`update` now plans a CLI self-update (`codex update`), not an MCP action."""
+    _install(monkeypatch)
+    plan = CodexAdapter().plan("update", None, None)
+    assert plan.argv == ["codex", "update"]
+
+
 def test_plan_unsupported_action(monkeypatch):
     _install(monkeypatch)
     with pytest.raises(ValueError):
-        CodexAdapter().plan("update", "context7", None)
+        CodexAdapter().plan("frobnicate", "context7", None)

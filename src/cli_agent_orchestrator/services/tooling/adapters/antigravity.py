@@ -33,6 +33,7 @@ _CONFIG_RELPATH = (".gemini", "config", "mcp_config.json")
 
 _NOT_INSTALLED_REASON = "agy 실행 파일이 감지되지 않았어요 — 설치 후 다시 검사하세요"
 _READ_ONLY_REASON = "agy는 MCP 조회만 지원해요 — 추가/삭제는 Terminal에서 관리하세요"
+_UPDATE_RESTART_WARNING = "CLI 프로세스가 실행 중이면 업데이트 후 재시작이 필요할 수 있어요"
 
 
 def _config_path() -> Path:
@@ -85,14 +86,16 @@ class AntigravityAdapter(ExtensionAdapter):
 
         reasons = {
             key: _READ_ONLY_REASON
-            for key in ("canSearch", "canInstall", "canRemove", "canUpdate", "canUpdateAll")
+            for key in ("canSearch", "canInstall", "canRemove", "canUpdateAll")
         }
+        # canUpdate here means "update the agy CLI binary itself" (`agy
+        # update`) — the one mutation this otherwise read-only adapter allows.
         return ProviderCapabilities(
             canList=True,
             canSearch=False,
             canInstall=False,
             canRemove=False,
-            canUpdate=False,
+            canUpdate=True,
             canUpdateAll=False,
             requiresNewSession=False,
             requiresRestart=False,
@@ -114,9 +117,20 @@ class AntigravityAdapter(ExtensionAdapter):
     # -- planning / verification (read-only: both refuse) ------------------
 
     def plan(self, action: str, target: Optional[str], scope: Optional[str]) -> ExecutionPlan:
-        """Refuse every action — ``agy`` MCP management is Terminal-only."""
+        """Refuse every action except ``update`` — ``agy`` MCP management is Terminal-only."""
+        if action == "update":
+            return ExecutionPlan(
+                argv=[_BINARY, "update"],
+                cwd=None,
+                description=(
+                    f"{_BINARY} CLI를 최신 버전으로 업데이트해요. {_UPDATE_RESTART_WARNING}"
+                ),
+                verify_description=f"{_BINARY} --version 재확인",
+            )
         raise ValueError(_READ_ONLY_REASON)
 
     def verify(self, action: str, target: Optional[str]) -> Tuple[bool, str]:
-        """Nothing is ever mutated here, so there is nothing to verify."""
+        """Nothing is ever mutated here except ``update``, so only it has a verify result."""
+        if action == "update":
+            return True, f"{_BINARY} update completed"
         return False, _READ_ONLY_REASON

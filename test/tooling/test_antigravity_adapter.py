@@ -36,7 +36,9 @@ def test_capabilities_read_only(monkeypatch):
     caps = AntigravityAdapter().capabilities()
     assert caps.canList is True
     assert caps.canInstall is False and caps.canRemove is False
-    assert caps.canUpdate is False and caps.canUpdateAll is False and caps.canSearch is False
+    # canUpdate=True: `agy update` (CLI self-update) is the one mutation this
+    # otherwise read-only adapter allows.
+    assert caps.canUpdate is True and caps.canUpdateAll is False and caps.canSearch is False
     assert "조회만" in caps.reasons["canInstall"]
 
 

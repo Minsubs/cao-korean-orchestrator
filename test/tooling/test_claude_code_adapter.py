@@ -74,9 +74,13 @@ def test_capabilities_full(monkeypatch):
     _install(monkeypatch)
     caps = ClaudeCodeAdapter().capabilities()
     assert caps.canList and caps.canInstall and caps.canRemove
-    assert caps.canUpdate is False and caps.canUpdateAll is False and caps.canSearch is False
+    # canUpdate=True means "update the claude CLI binary itself" (`claude
+    # update`) — independent of MCP server management, which stays
+    # unsupported (canUpdateAll covers bulk MCP-server updates).
+    assert caps.canUpdate is True and caps.canUpdateAll is False and caps.canSearch is False
     assert caps.requiresNewSession is True
-    assert "개별 업데이트" in caps.reasons["canUpdate"]
+    assert "canUpdate" not in caps.reasons  # supported → no reason needed
+    assert "일괄 업데이트" in caps.reasons["canUpdateAll"]
     # Plugins are manageable here (install + marketplace present).
     assert "plugin" in caps.reasons and "claude plugin" in caps.reasons["plugin"]
 
@@ -196,7 +200,14 @@ def test_verify_remove_still_present_and_unknown(monkeypatch):
     assert ok is False and "unknown action" in detail
 
 
+def test_plan_update_runs_binary_update(monkeypatch):
+    """`update` now plans a CLI self-update (`claude update`), not an MCP action."""
+    _install(monkeypatch)
+    plan = ClaudeCodeAdapter().plan("update", None, None)
+    assert plan.argv == ["claude", "update"]
+
+
 def test_plan_unsupported_action(monkeypatch):
     _install(monkeypatch)
     with pytest.raises(ValueError):
-        ClaudeCodeAdapter().plan("update", "context7", None)
+        ClaudeCodeAdapter().plan("frobnicate", "context7", None)
