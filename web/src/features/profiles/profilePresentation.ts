@@ -103,7 +103,7 @@ const PRESENTATION: Record<string, ProfilePresentation> = {
   antigravity_qa_agy: {
     label: 'agy 테스트 담당',
     description: '테스트를 실행하고 회귀와 실패 원인을 확인해요.',
-    detail: 'Antigravity · Gemini 3.5 Flash',
+    detail: 'Antigravity · Gemini 3.6 Flash',
     section: 'team',
     workerGroup: 'verification',
     order: 8,
