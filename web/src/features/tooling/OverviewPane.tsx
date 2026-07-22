@@ -1,6 +1,6 @@
-import { AlertTriangle, Blocks, Clock, RefreshCw, Sliders, Terminal } from 'lucide-react'
-import type { ToolingEnvironment, ToolingProvider } from '../../api.tooling'
-import { InstallPill, StatCard, UNKNOWN, formatDateTime, initials, pastelFor } from './shared'
+import { AlertTriangle, Blocks, Clock, Download, RefreshCw, Sliders, Terminal } from 'lucide-react'
+import type { ToolingEnvironment, ToolingPlanRequest, ToolingProvider } from '../../api.tooling'
+import { ACTION_LABELS, ActionButton, InstallPill, StatCard, UNKNOWN, formatDateTime, initials, pastelFor } from './shared'
 
 interface OverviewPaneProps {
   environment: ToolingEnvironment
@@ -11,6 +11,8 @@ interface OverviewPaneProps {
   rescanning: boolean
   rescanError: string | null
   onRescan: () => void
+  /** Wires each provider row's "업데이트" button into the shared plan/preview/execute/poll flow (Phase C). */
+  onRequestAction?: (request: ToolingPlanRequest) => void
 }
 
 export function OverviewPane({
@@ -22,7 +24,9 @@ export function OverviewPane({
   rescanning,
   rescanError,
   onRescan,
+  onRequestAction,
 }: OverviewPaneProps) {
+  const handleUpdate = (provider: string) => onRequestAction?.({ action: 'update', provider })
   const installedCount = providers.filter(p => p.installed).length
   const osLabel = environment.os ? `${environment.os}${environment.os_version ? ` ${environment.os_version}` : ''}` : UNKNOWN
   const wslLabel = environment.is_wsl === null ? UNKNOWN : environment.is_wsl ? '예' : '아니오'
@@ -97,7 +101,7 @@ export function OverviewPane({
             className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-sm"
           >
             {providers.map((p, i) => (
-              <ProviderRow key={p.name} provider={p} withBorder={i > 0} />
+              <ProviderRow key={p.name} provider={p} withBorder={i > 0} onUpdate={handleUpdate} />
             ))}
           </div>
         )}
@@ -117,7 +121,14 @@ function EnvRow({ label, value, mono }: { label: string; value: string; mono?: b
   )
 }
 
-function ProviderRow({ provider, withBorder }: { provider: ToolingProvider; withBorder: boolean }) {
+interface ProviderRowProps {
+  provider: ToolingProvider
+  withBorder: boolean
+  /** Called with `provider.name` when the "업데이트" button is clicked (Phase C: AI CLI self-update). */
+  onUpdate?: (provider: string) => void
+}
+
+export function ProviderRow({ provider, withBorder, onUpdate }: ProviderRowProps) {
   const pastel = pastelFor(provider.name)
   const pathText = provider.installed ? provider.path ?? UNKNOWN : `${provider.binary} — PATH에서 찾지 못했어요`
   const versionIsError = !provider.version && !!provider.version_error
@@ -146,6 +157,11 @@ function ProviderRow({ provider, withBorder }: { provider: ToolingProvider; with
       >
         {versionText}
       </span>
+      {provider.installed && (
+        <ActionButton icon={<Download size={12} />} onClick={() => onUpdate?.(provider.name)}>
+          {ACTION_LABELS.update}
+        </ActionButton>
+      )}
       <InstallPill installed={provider.installed} />
     </div>
   )
