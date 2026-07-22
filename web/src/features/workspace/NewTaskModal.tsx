@@ -36,6 +36,7 @@ const ORCHESTRATOR_CHOICES: Array<{
 }> = [
   { provider: 'codex', label: 'Codex', description: '정확한 구현 조율과 최종 판단에 적합해요.' },
   { provider: 'claude_code', label: 'Claude', description: '긴 맥락의 분석과 설계 조율에 적합해요.' },
+  { provider: 'antigravity_cli', label: 'Antigravity', description: '여러 AI를 교차 조율하고 빠르게 처리해요.' },
 ]
 
 /**
@@ -282,7 +283,7 @@ export function NewTaskModal({ projects, defaultTarget, onClose, onCreated }: Ne
                 </p>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="오케스트레이터 실행 AI">
+            <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="오케스트레이터 실행 AI">
               {ORCHESTRATOR_CHOICES.map(choice => {
                 const profileName = ORCHESTRATOR_PROFILES[choice.provider]
                 const available = profiles.some(profile => profile.name === profileName)
