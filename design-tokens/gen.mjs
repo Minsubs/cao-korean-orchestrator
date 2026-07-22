@@ -61,6 +61,10 @@ function lightDark(pair) {
 // untouched `cao-accent` Tailwind color / cao_mcp_apps `--cao-status-accent`.
 const SEMANTIC_ROLES = ["success", "info", "warning", "danger", "neutral"];
 const PASTEL_ORDER = ["mint", "sky", "lilac", "peach", "lemon", "rose"];
+// Agent-viz provider accent chips (Phase 4-C): `--prov-<id>-bg`/`-fg` per CLI
+// provider (codex/claude/agy), consumed by providerAccent.ts. Fallback for
+// unmapped providers is the existing neutral `--surface-3`/`--text-2` pair.
+const PROVIDER_ORDER = ["codex", "claude", "agy"];
 // Alpha for the soft `--<role>-bg` tint derived from the role color.
 const SEMANTIC_BG_ALPHA = 0.14;
 
@@ -112,6 +116,11 @@ function themeColorVars() {
   for (const p of PASTEL_ORDER) {
     pair(`--p-${p}`, pastel[p].bg);
     pair(`--p-${p}-ink`, pastel[p].ink);
+  }
+  // provider accent chips: bg + fg per CLI provider
+  for (const p of PROVIDER_ORDER) {
+    pair(`--prov-${p}-bg`, c.provider[p].bg);
+    pair(`--prov-${p}-fg`, c.provider[p].fg);
   }
   return out;
 }
