@@ -46,13 +46,24 @@ def test_accounts_returns_both_real_local_providers(client: TestClient, monkeypa
         "aggregate",
         lambda home, now: _account("codex"),
     )
+    monkeypatch.setattr(
+        usage_router.antigravity_quota,
+        "aggregate",
+        lambda home, now: _account("antigravity_cli"),
+    )
 
     response = client.get("/usage/accounts")
 
     assert response.status_code == 200
     body = response.json()
-    assert [account["provider"] for account in body["accounts"]] == ["claude_code", "codex"]
+    assert [account["provider"] for account in body["accounts"]] == ["claude_code", "codex", "antigravity_cli"]
     assert body["scanned_at"].startswith("20")
+
+
+def test_accounts_include_antigravity(monkeypatch, tmp_path) -> None:
+    result = usage_router._scan_accounts(include_claude_limits=False)
+    providers = {a["provider"] for a in result["accounts"]}
+    assert "antigravity_cli" in providers
 
 
 def test_accounts_claude_limits_is_opt_in_and_merges_note(client: TestClient, monkeypatch) -> None:

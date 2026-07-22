@@ -9,6 +9,7 @@
 const PROVIDER_LABELS: Record<string, string> = {
   claude_code: 'Claude Code',
   codex: 'Codex',
+  antigravity_cli: 'Antigravity',
 }
 
 export function getProviderLabel(provider: string): string {
