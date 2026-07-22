@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { Clock, FileText, Loader2, Mail, MessageSquare, Plus, Square, Terminal as TermIcon, Trash2 } from 'lucide-react'
 import type { TerminalMeta } from '../../api'
+import type { UsageAccount } from '../../api.usage'
 import { StatusBadge } from '../../components/StatusBadge'
 import { AgentAvatar } from './AgentAvatar'
 import { AddAgentModal } from './AddAgentModal'
@@ -9,6 +10,8 @@ import { displaySessionName } from './displayName'
 import type { DelegationCard } from './types'
 import type { TeamRosterProfile } from './teamRoster'
 import { profileLabel } from '../profiles/profilePresentation'
+import { InlineUsageBar } from '../usage/InlineUsageBar'
+import { useUsageAccounts } from '../usage/useUsageAccounts'
 
 interface AgentSidePanelProps {
   collapsed: boolean
@@ -65,6 +68,12 @@ export function AgentSidePanel({
 }: AgentSidePanelProps) {
   const [tab, setTab] = useState<Tab>('agents')
   const [addAgentOpen, setAddAgentOpen] = useState(false)
+  // Loaded once here (not per AgentCard) so every card in this panel shares
+  // the same fetch — see InlineUsageBar.tsx / useUsageAccounts.ts. No
+  // Claude-limits opt-in from this context (that stays UsageButton's own
+  // per-popover state); a claude_code card simply shows "사용량 데이터 없음"
+  // until the user opts in from the usage popover elsewhere.
+  const { accounts } = useUsageAccounts(!collapsed, false)
 
   if (collapsed) return null
 
@@ -126,6 +135,7 @@ export function AgentSidePanel({
                 provider={supervisor.provider}
                 status={resolveStatus(supervisor.id, null, terminalStatuses)}
                 percentLeft={gauges[supervisor.id] ?? null}
+                accounts={accounts}
                 roleLabel="오케스트레이터"
                 subLine={null}
                 callerAgentName={null}
@@ -146,6 +156,7 @@ export function AgentSidePanel({
                 provider={card.provider}
                 status={card.killed ? (card.status ?? 'completed') : resolveStatus(card.terminalId, card.status, terminalStatuses)}
                 percentLeft={gauges[card.terminalId] ?? null}
+                accounts={accounts}
                 roleLabel={null}
                 subLine={card.instruction}
                 callerAgentName={card.callerAgentName}
@@ -245,6 +256,7 @@ function AgentCard({
   provider,
   status,
   percentLeft,
+  accounts,
   roleLabel,
   subLine,
   callerAgentName,
@@ -262,6 +274,8 @@ function AgentCard({
   provider: string | null
   status: string | null
   percentLeft?: number | null
+  /** Phase D: this AI's inline usage bar — accounts are loaded once by the parent AgentSidePanel, never per-card. */
+  accounts: UsageAccount[]
   roleLabel: string | null
   subLine: string | null
   callerAgentName: string | null
@@ -290,6 +304,11 @@ function AgentCard({
         <ContextGaugeChip percentLeft={percentLeft} />
         {status && <StatusBadge status={status} />}
       </div>
+      {provider && (
+        <div className="mt-1.5">
+          <InlineUsageBar provider={provider} accounts={accounts} />
+        </div>
+      )}
       {(subLine || callerAgentName || location) && (
         <div className="mt-1.5 space-y-0.5 text-[11px] text-[var(--text-2)]">
           {subLine && <div className="truncate">현재: {subLine}</div>}
