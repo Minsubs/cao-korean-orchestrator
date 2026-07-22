@@ -26,7 +26,11 @@ export function OverviewPane({
   onRescan,
   onRequestAction,
 }: OverviewPaneProps) {
-  const handleUpdate = (provider: string) => onRequestAction?.({ action: 'update', provider })
+  // 'update_all' (not 'update'): target-exempt in the router and, unlike
+  // 'update' (which also gates InstalledPane's per-MCP-server update button
+  // for these same adapters), reusing it here for "update the CLI binary
+  // itself" cannot be confused with updating one specific MCP server.
+  const handleUpdate = (provider: string) => onRequestAction?.({ action: 'update_all', provider })
   const installedCount = providers.filter(p => p.installed).length
   const osLabel = environment.os ? `${environment.os}${environment.os_version ? ` ${environment.os_version}` : ''}` : UNKNOWN
   const wslLabel = environment.is_wsl === null ? UNKNOWN : environment.is_wsl ? '예' : '아니오'

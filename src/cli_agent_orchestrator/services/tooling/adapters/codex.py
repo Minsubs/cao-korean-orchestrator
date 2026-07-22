@@ -51,8 +51,8 @@ _NOT_INSTALLED_REASON = "codex 실행 파일이 감지되지 않았어요 — �
 _READ_ONLY_REASON = (
     "codex에 비대화형 MCP 관리 명령이 없어요 — 설정 파일 열기/명령 복사를 이용하세요"
 )
-_NO_UPDATE_ALL_REASON = (
-    "MCP 서버는 codex CLI에서 일괄 업데이트를 지원하지 않아요 (제거 후 다시 추가하세요)"
+_NO_UPDATE_REASON = (
+    "MCP 서버는 codex CLI에서 개별 업데이트를 지원하지 않아요 (제거 후 다시 추가하세요)"
 )
 _NO_SEARCH_REASON = "codex CLI는 MCP 서버 검색을 제공하지 않아요"
 _UPDATE_RESTART_WARNING = "CLI 프로세스가 실행 중이면 업데이트 후 재시작이 필요할 수 있어요"
@@ -113,7 +113,7 @@ class CodexAdapter(ExtensionAdapter):
         subs = self._mcp_subcommands()
         managed = bool(subs and "add" in subs and "remove" in subs)
         reasons: Dict[str, str] = {
-            "canUpdateAll": _NO_UPDATE_ALL_REASON,
+            "canUpdate": _NO_UPDATE_REASON,
             "canSearch": _NO_SEARCH_REASON,
         }
         if managed:
@@ -126,15 +126,17 @@ class CodexAdapter(ExtensionAdapter):
             reasons["canRemove"] = _READ_ONLY_REASON
 
         # Listing always works: `codex mcp list` when managed, else config.toml.
-        # canUpdate here means "update the codex CLI binary itself" (`codex
-        # update`), independent of MCP management mode — always available.
+        # canUpdateAll here means "update the codex CLI binary itself" (`codex
+        # update`) via the target-exempt update_all action, independent of MCP
+        # management mode — always available. canUpdate (per-MCP-server
+        # update) stays unsupported, same as before this feature.
         return ProviderCapabilities(
             canList=True,
             canSearch=False,
             canInstall=can_install,
             canRemove=can_remove,
-            canUpdate=True,
-            canUpdateAll=False,
+            canUpdate=False,
+            canUpdateAll=True,
             requiresNewSession=True,
             requiresRestart=False,
             reasons=reasons,
@@ -207,7 +209,7 @@ class CodexAdapter(ExtensionAdapter):
             raise ValueError(
                 "installing an MCP server requires a launch command; use a catalog item"
             )
-        if action == "update":
+        if action == "update_all":
             return ExecutionPlan(
                 argv=[_BINARY, "update"],
                 cwd=None,
@@ -236,7 +238,7 @@ class CodexAdapter(ExtensionAdapter):
 
     def verify(self, action: str, target: Optional[str]) -> Tuple[bool, str]:
         """Re-list (bypassing the cache) to confirm the add/remove effect."""
-        if action == "update":
+        if action == "update_all":
             return True, f"{_BINARY} update completed"
         if not target:
             return False, f"action {action!r} requires a target to verify"

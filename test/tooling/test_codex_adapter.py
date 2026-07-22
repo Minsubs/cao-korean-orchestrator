@@ -64,13 +64,14 @@ def test_capabilities_managed(monkeypatch):
     _install(monkeypatch)
     caps = CodexAdapter().capabilities()
     assert caps.canList and caps.canInstall and caps.canRemove
-    # canUpdate=True means "update the codex CLI binary itself" (`codex
-    # update`) — independent of MCP management, which stays unrelated
-    # (canUpdateAll covers bulk MCP-server updates and stays unsupported).
-    assert caps.canUpdate is True and caps.canSearch is False
+    # canUpdateAll=True means "update the codex CLI binary itself" (`codex
+    # update`, via the target-exempt update_all action) — independent of MCP
+    # management. canUpdate (per-MCP-server update) stays unsupported.
+    assert caps.canUpdate is False and caps.canUpdateAll is True and caps.canSearch is False
     assert caps.requiresNewSession is True
     assert "canInstall" not in caps.reasons  # supported → no reason
-    assert "canUpdate" not in caps.reasons  # supported → no reason
+    assert "canUpdateAll" not in caps.reasons  # supported → no reason
+    assert "개별 업데이트" in caps.reasons["canUpdate"]
 
 
 def test_capabilities_read_only_when_help_unreadable(monkeypatch):
@@ -181,10 +182,10 @@ def test_verify_remove_and_unknown(monkeypatch):
     assert ok is False and "unknown action" in detail
 
 
-def test_plan_update_runs_binary_update(monkeypatch):
-    """`update` now plans a CLI self-update (`codex update`), not an MCP action."""
+def test_plan_update_all_runs_binary_update(monkeypatch):
+    """`update_all` plans a CLI self-update (`codex update`), not an MCP action."""
     _install(monkeypatch)
-    plan = CodexAdapter().plan("update", None, None)
+    plan = CodexAdapter().plan("update_all", None, None)
     assert plan.argv == ["codex", "update"]
 
 

@@ -59,8 +59,8 @@ _PLUGIN_SUBCOMMANDS = ("install", "uninstall", "marketplace", "list")
 
 _NOT_INSTALLED_REASON = "claude 실행 파일이 감지되지 않았어요 — 설치 후 다시 검사하세요"
 _MCP_HELP_UNREADABLE_REASON = "'claude mcp --help'를 읽지 못해 MCP 기능을 확인할 수 없어요"
-_NO_UPDATE_ALL_REASON = (
-    "MCP 서버는 claude CLI에서 일괄 업데이트를 지원하지 않아요 (제거 후 다시 추가하세요)"
+_NO_UPDATE_REASON = (
+    "MCP 서버는 claude CLI에서 개별 업데이트를 지원하지 않아요 (제거 후 다시 추가하세요)"
 )
 _NO_SEARCH_REASON = "claude CLI는 MCP 서버 검색을 제공하지 않아요"
 _UPDATE_RESTART_WARNING = "CLI 프로세스가 실행 중이면 업데이트 후 재시작이 필요할 수 있어요"
@@ -179,21 +179,24 @@ class ClaudeCodeAdapter(ExtensionAdapter):
         can_list = _mcp_cap("canList", "list")
         can_install = _mcp_cap("canInstall", "add")
         can_remove = _mcp_cap("canRemove", "remove")
-        reasons["canUpdateAll"] = _NO_UPDATE_ALL_REASON
+        reasons["canUpdate"] = _NO_UPDATE_REASON
         reasons["canSearch"] = _NO_SEARCH_REASON
         reasons["plugin"] = (
             _PLUGIN_MANAGEABLE_NOTE if self._plugins_manageable() else _PLUGIN_INTERACTIVE_REASON
         )
 
-        # canUpdate here means "update the claude CLI binary itself" (`claude
-        # update`), independent of MCP management mode — always available.
+        # canUpdateAll here means "update the claude CLI binary itself"
+        # (`claude update`) via the target-exempt update_all action,
+        # independent of MCP management mode — always available. canUpdate
+        # (per-MCP-server update) stays unsupported, same as before this
+        # feature.
         return ProviderCapabilities(
             canList=can_list,
             canSearch=False,
             canInstall=can_install,
             canRemove=can_remove,
-            canUpdate=True,
-            canUpdateAll=False,
+            canUpdate=False,
+            canUpdateAll=True,
             requiresNewSession=True,
             requiresRestart=False,
             reasons=reasons,
@@ -253,7 +256,7 @@ class ClaudeCodeAdapter(ExtensionAdapter):
             raise ValueError(
                 "installing an MCP server requires a launch command; use a catalog item"
             )
-        if action == "update":
+        if action == "update_all":
             return ExecutionPlan(
                 argv=[_BINARY, "update"],
                 cwd=None,
@@ -282,7 +285,7 @@ class ClaudeCodeAdapter(ExtensionAdapter):
 
     def verify(self, action: str, target: Optional[str]) -> Tuple[bool, str]:
         """Re-query ``claude mcp list`` to confirm the add/remove effect."""
-        if action == "update":
+        if action == "update_all":
             return True, f"{_BINARY} update completed"
         if not target:
             return False, f"action {action!r} requires a target to verify"

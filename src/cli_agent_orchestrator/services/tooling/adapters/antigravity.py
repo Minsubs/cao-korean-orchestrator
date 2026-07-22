@@ -86,17 +86,19 @@ class AntigravityAdapter(ExtensionAdapter):
 
         reasons = {
             key: _READ_ONLY_REASON
-            for key in ("canSearch", "canInstall", "canRemove", "canUpdateAll")
+            for key in ("canSearch", "canInstall", "canRemove", "canUpdate")
         }
-        # canUpdate here means "update the agy CLI binary itself" (`agy
-        # update`) — the one mutation this otherwise read-only adapter allows.
+        # canUpdateAll here means "update the agy CLI binary itself" (`agy
+        # update`) via the target-exempt update_all action — the one mutation
+        # this otherwise read-only adapter allows. canUpdate (per-MCP-server
+        # update) stays unsupported, same as before this feature.
         return ProviderCapabilities(
             canList=True,
             canSearch=False,
             canInstall=False,
             canRemove=False,
-            canUpdate=True,
-            canUpdateAll=False,
+            canUpdate=False,
+            canUpdateAll=True,
             requiresNewSession=False,
             requiresRestart=False,
             reasons=reasons,
@@ -117,8 +119,8 @@ class AntigravityAdapter(ExtensionAdapter):
     # -- planning / verification (read-only: both refuse) ------------------
 
     def plan(self, action: str, target: Optional[str], scope: Optional[str]) -> ExecutionPlan:
-        """Refuse every action except ``update`` — ``agy`` MCP management is Terminal-only."""
-        if action == "update":
+        """Refuse every action except ``update_all`` — ``agy`` MCP management is Terminal-only."""
+        if action == "update_all":
             return ExecutionPlan(
                 argv=[_BINARY, "update"],
                 cwd=None,
@@ -130,7 +132,7 @@ class AntigravityAdapter(ExtensionAdapter):
         raise ValueError(_READ_ONLY_REASON)
 
     def verify(self, action: str, target: Optional[str]) -> Tuple[bool, str]:
-        """Nothing is ever mutated here except ``update``, so only it has a verify result."""
-        if action == "update":
+        """Nothing is ever mutated here except ``update_all``, so only it has a verify result."""
+        if action == "update_all":
             return True, f"{_BINARY} update completed"
         return False, _READ_ONLY_REASON
