@@ -138,6 +138,30 @@ const PRESENTATION: Record<string, ProfilePresentation> = {
     detail: '호환용 예제',
     section: 'examples',
   },
+  cross_provider_supervisor: {
+    label: '교차 provider 오케스트레이터 예제',
+    description: '여러 provider 워커에게 분석을 위임하는 예제 오케스트레이터예요.',
+    detail: '호환용 예제',
+    section: 'examples',
+  },
+  data_analyst_claude_code: {
+    label: '데이터 분석가 예제 (Claude)',
+    description: 'Claude에서 실행되는 데이터 분석가 예제예요.',
+    detail: '호환용 예제 · Claude',
+    section: 'examples',
+  },
+  data_analyst_codex: {
+    label: '데이터 분석가 예제 (Codex)',
+    description: 'Codex에서 실행되는 데이터 분석가 예제예요.',
+    detail: '호환용 예제 · Codex',
+    section: 'examples',
+  },
+  report_generator_codex: {
+    label: '리포트 생성기 예제 (Codex)',
+    description: 'Codex에서 실행되는 리포트 생성 예제예요.',
+    detail: '호환용 예제 · Codex',
+    section: 'examples',
+  },
 }
 
 export const PROFILE_SECTIONS: Record<ProfileSectionId, { label: string; description: string; order: number }> = {

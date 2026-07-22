@@ -25,3 +25,17 @@ describe('antigravity is a first-class team member', () => {
     expect(workerGroup(agyQa)).toBe('verification')
   })
 })
+
+describe('installed-provider example profiles are categorized as examples', () => {
+  const ex = (name: string, provider?: string): ProfileLike => ({ name, source: 'built-in', provider: provider ?? null })
+  it('routes cross-provider examples to the examples section (not 기타)', () => {
+    for (const p of [
+      ex('data_analyst_claude_code', 'claude_code'),
+      ex('data_analyst_codex', 'codex'),
+      ex('report_generator_codex', 'codex'),
+      ex('cross_provider_supervisor'),
+    ]) {
+      expect(profileSection(p)).toBe('examples')
+    }
+  })
+})
