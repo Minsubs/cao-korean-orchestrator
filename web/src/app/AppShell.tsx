@@ -24,6 +24,7 @@ import { MemoryPanel } from '../components/MemoryPanel'
 import { SettingsPanel } from '../components/SettingsPanel'
 import { NotificationCenter } from '../components/NotificationCenter'
 import { Workspace } from '../features/workspace/Workspace'
+import { useUiEventStream } from '../features/workspace/useUiEventStream'
 import { PENDING_SELECT_KEY } from '../features/workspace/constants'
 import { UsageButton } from '../features/usage/UsageButton'
 
@@ -112,6 +113,18 @@ export function AppShell() {
   const [theme, setThemeState] = useState<ResolvedTheme>(() => resolveTheme())
   const [paletteOpen, setPaletteOpen] = useState(false)
 
+  // Owned here (not inside Workspace) so navigating the rail never tears down
+  // the connection: Workspace fully unmounts on every non-workspace view (see
+  // renderView below), and a hook's effect cleanup runs on unmount — a
+  // useUiEventStream() call living inside Workspace used to close the
+  // EventSource on every menu switch and open a fresh one on return. One
+  // subscription for the life of the app; passed down as props.
+  const { events, status: streamStatus } = useUiEventStream()
+  // Same reasoning: lives above the view switch so a session stays selected
+  // across a manual rail navigation away and back, instead of resetting when
+  // Workspace remounts.
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
+
   // Palette commands that need Workspace-internal state cross a CustomEvent
   // seam: AppShell owns navigation, Workspace owns its modals/selection.
   const handlePaletteCommand = (id: string, arg?: string) => {
@@ -183,7 +196,14 @@ export function AppShell() {
   const renderView = () => {
     switch (activeView) {
       case 'workspace':
-        return <Workspace />
+        return (
+          <Workspace
+            events={events}
+            status={streamStatus}
+            selectedSessionId={selectedSessionId}
+            setSelectedSessionId={setSelectedSessionId}
+          />
+        )
       case 'automation':
         return <FlowsView />
       case 'tooling':

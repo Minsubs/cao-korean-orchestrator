@@ -1,6 +1,9 @@
+import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { Workspace } from '../features/workspace/Workspace'
+import type { UiConnectionStatus } from '../features/workspace/eventsClient'
+import type { UiEvent } from '../features/workspace/types'
 import { useStore } from '../store'
 
 const SESSION = { id: 'sess-1', name: 'login-retry-fix', status: 'active' }
@@ -42,6 +45,26 @@ function installMockFetch() {
   return mockFetch
 }
 
+/**
+ * Workspace used to own its `/ui/events` stream and selected-session state
+ * directly; both moved up to AppShell (see AppShell.tsx) so navigating the
+ * rail never tears down the stream or forgets the selected session. This
+ * harness stands in for AppShell in these render-level tests: it owns exactly
+ * that state and threads it down as props, so the tests below keep exercising
+ * the real Workspace component unchanged.
+ */
+function TestWorkspace({ events = [], status = 'disconnected' }: { events?: UiEvent[]; status?: UiConnectionStatus } = {}) {
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
+  return (
+    <Workspace
+      events={events}
+      status={status}
+      selectedSessionId={selectedSessionId}
+      setSelectedSessionId={setSelectedSessionId}
+    />
+  )
+}
+
 describe('Workspace (Phase 2b render-level)', () => {
   beforeEach(() => {
     window.localStorage.clear()
@@ -57,23 +80,25 @@ describe('Workspace (Phase 2b render-level)', () => {
     // "select a session" placeholder (that text/behavior moved to Overview.tsx
     // — see workspace-overview.test.tsx for its own dedicated coverage).
     installMockFetch()
-    render(<Workspace />)
+    render(<TestWorkspace />)
     expect(await screen.findByText('아직 실행 중인 세션이 없어요')).toBeInTheDocument()
-    // jsdom has no EventSource — the top-bar chip honestly reports disconnected, never faked as connected.
+    // Workspace renders exactly whatever stream status it's handed (it no
+    // longer owns the connection itself — see TestWorkspace above) and
+    // TestWorkspace's own default is 'disconnected', so it never fakes connected.
     expect(await screen.findByText('이벤트 끊김')).toBeInTheDocument()
   })
 
   it('shows "이벤트 없음" for a selected session with no observed activity yet (never invents a plan/state)', async () => {
     installMockFetch()
     useStore.setState({ sessions: [SESSION], connected: true })
-    render(<Workspace />)
+    render(<TestWorkspace />)
     expect(await screen.findByText(/이벤트 없음/)).toBeInTheDocument()
   })
 
   it('selects the session orchestrator as the Workbench context once its terminals load', async () => {
     installMockFetch()
     useStore.setState({ sessions: [SESSION], connected: true })
-    render(<Workspace />)
+    render(<TestWorkspace />)
 
     await waitFor(() => {
       expect(screen.queryByText('컨텍스트: 선택된 에이전트 없음')).not.toBeInTheDocument()
@@ -93,7 +118,7 @@ describe('Workspace (Phase 2b render-level)', () => {
     ]))
     installMockFetch()
     useStore.setState({ sessions: [SESSION], connected: true })
-    render(<Workspace />)
+    render(<TestWorkspace />)
 
     expect(await screen.findByRole('tab', { name: '에이전트 4' })).toBeInTheDocument()
     expect(screen.getByText('개발자')).toBeInTheDocument()
@@ -104,7 +129,7 @@ describe('Workspace (Phase 2b render-level)', () => {
 
   it('collapses and re-expands the sidebar from the workspace toolbar toggle', async () => {
     installMockFetch()
-    render(<Workspace />)
+    render(<TestWorkspace />)
     expect(await screen.findByLabelText('프로젝트와 세션')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '사이드바 열기/접기' }))
@@ -116,7 +141,7 @@ describe('Workspace (Phase 2b render-level)', () => {
 
   it('keeps the orchestrator role fixed and enables submit once an instruction is filled', async () => {
     installMockFetch()
-    render(<Workspace />)
+    render(<TestWorkspace />)
 
     // Exact match: with no sessions, Overview's own onboarding CTA
     // ("새 작업 시작") also renders and would otherwise ambiguously match a
@@ -135,7 +160,7 @@ describe('Workspace (Phase 2b render-level)', () => {
 
   it('switches Workbench tabs and opens the dock, showing an honest empty Logs list with no terminal selected', async () => {
     installMockFetch()
-    render(<Workspace />)
+    render(<TestWorkspace />)
     // No session selected yet (Overview renders) — wait for it to settle before driving the Workbench.
     await screen.findByText('아직 실행 중인 세션이 없어요')
 
@@ -150,7 +175,7 @@ describe('Workspace (Phase 2b render-level)', () => {
   it('sends a Composer message on Cmd+Enter and posts it to the Supervisor terminal', async () => {
     installMockFetch()
     useStore.setState({ sessions: [SESSION], connected: true })
-    render(<Workspace />)
+    render(<TestWorkspace />)
 
     const textarea = await screen.findByLabelText('메시지 입력')
     fireEvent.change(textarea, { target: { value: '진행 상황 알려줘' } })
@@ -196,7 +221,7 @@ describe('Workspace (Phase 2b render-level)', () => {
     })
     vi.stubGlobal('fetch', mockFetch)
     useStore.setState({ sessions: [SESSION], connected: true })
-    render(<Workspace />)
+    render(<TestWorkspace />)
 
     const textarea = await screen.findByLabelText('메시지 입력')
     fireEvent.change(textarea, { target: { value: '팀 연결 테스트' } })
@@ -230,7 +255,7 @@ describe('Workspace (Phase 2b render-level)', () => {
     vi.stubGlobal('fetch', mockFetch)
     useStore.setState({ sessions: [SESSION], connected: true })
 
-    const first = render(<Workspace />)
+    const first = render(<TestWorkspace />)
     const textarea = await screen.findByLabelText('메시지 입력')
     fireEvent.change(textarea, { target: { value: '팀 연결 테스트' } })
     fireEvent.keyDown(textarea, { key: 'Enter', metaKey: true })
@@ -246,7 +271,7 @@ describe('Workspace (Phase 2b render-level)', () => {
     first.unmount()
     await act(async () => resolveInput?.(jsonResponse({ success: true })))
 
-    render(<Workspace />)
+    render(<TestWorkspace />)
 
     expect(await screen.findByText('팀 연결 테스트')).toBeInTheDocument()
     expect(screen.getByText('오케스트레이터 응답을 기다리는 중…')).toBeInTheDocument()
@@ -271,7 +296,7 @@ describe('Workspace (Phase 2b render-level)', () => {
     })
     vi.stubGlobal('fetch', mockFetch)
     useStore.setState({ sessions: [SESSION], connected: true })
-    render(<Workspace />)
+    render(<TestWorkspace />)
 
     fireEvent.click(await screen.findByRole('tab', { name: /세션 정보/ }))
     fireEvent.click(await screen.findByRole('button', { name: '세션 종료' }))
@@ -299,7 +324,7 @@ describe('Workspace (Phase 2b render-level)', () => {
     })
     vi.stubGlobal('fetch', mockFetch)
     useStore.setState({ sessions: [prefixedSession], connected: true })
-    render(<Workspace />)
+    render(<TestWorkspace />)
 
     expect((await screen.findAllByText('abc12345')).length).toBeGreaterThan(0)
     expect(screen.queryByText('cao-abc12345')).not.toBeInTheDocument()
@@ -326,7 +351,7 @@ describe('Workspace (Phase 2b render-level)', () => {
       return jsonResponse([])
     })
     vi.stubGlobal('fetch', mockFetch)
-    render(<Workspace />)
+    render(<TestWorkspace />)
 
     fireEvent.click(await screen.findByRole('button', { name: '새 작업' }))
     const dialog = await screen.findByRole('dialog', { name: '새 작업' })
@@ -362,7 +387,7 @@ describe('Workspace (Phase 2b render-level)', () => {
 
   it('switches only the fixed orchestrator execution AI when Claude is selected', async () => {
     const mockFetch = installMockFetch()
-    render(<Workspace />)
+    render(<TestWorkspace />)
 
     fireEvent.click(await screen.findByRole('button', { name: '새 작업' }))
     const dialog = await screen.findByRole('dialog', { name: '새 작업' })
@@ -380,7 +405,7 @@ describe('Workspace (Phase 2b render-level)', () => {
 
   it('feedback #12: client-validates the session name against the server pattern and disables submit for invalid characters', async () => {
     installMockFetch()
-    render(<Workspace />)
+    render(<TestWorkspace />)
 
     fireEvent.click(await screen.findByRole('button', { name: '새 작업' }))
     const dialog = await screen.findByRole('dialog', { name: '새 작업' })
@@ -426,7 +451,7 @@ describe('Workspace (Phase 2b render-level)', () => {
     })
     vi.stubGlobal('fetch', mockFetch)
     useStore.setState({ sessions: [doneSession], connected: true })
-    render(<Workspace />)
+    render(<TestWorkspace />)
 
     expect(await screen.findByText('완료')).toBeInTheDocument()
   })
@@ -434,7 +459,7 @@ describe('Workspace (Phase 2b render-level)', () => {
   it('feedback #14: persists the workbench terminal/tab context for the active session when opened from a card', async () => {
     installMockFetch()
     useStore.setState({ sessions: [SESSION], connected: true })
-    render(<Workspace />)
+    render(<TestWorkspace />)
 
     // "Output 열기" (not "터미널 열기") deliberately — mounting the real
     // Terminal tab pulls in xterm.js, which needs window.matchMedia; jsdom

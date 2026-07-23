@@ -10,7 +10,7 @@ import { Composer, type ComposerTarget } from './Composer'
 import { AgentSidePanel } from './AgentSidePanel'
 import { Overview } from './Overview'
 import { Workbench } from './Workbench'
-import { useUiEventStream } from './useUiEventStream'
+import type { UiConnectionStatus } from './eventsClient'
 import { useWorkspaceSession } from './useWorkspaceSession'
 import { useWorkspaceAlerts } from './useWorkspaceAlerts'
 import { useContextGauges } from './useContextGauges'
@@ -19,7 +19,7 @@ import { loadProjectsData } from './projects'
 import { displaySessionName } from './displayName'
 import { loadWorkbenchContext, saveWorkbenchContext } from './workbenchContext'
 import { PENDING_SELECT_KEY } from './constants'
-import type { ProjectsData } from './types'
+import type { ProjectsData, UiEvent } from './types'
 
 const SIDEBAR_KEY = 'cao:workspace:sidebar-collapsed'
 const RPANEL_KEY = 'cao:workspace:rpanel-collapsed'
@@ -48,16 +48,22 @@ interface PendingAction {
   name: string | null
 }
 
-/** Top-level Orchestration Workspace (spec Phase 2b): project/group sidebar + Thread + Composer + Agent panel + Workbench, wired to one shared `/ui/events` stream. */
-export function Workspace() {
+interface WorkspaceProps {
+  /** Shared `/ui/events` ring, owned by AppShell (above the rail's view switch) so it survives menu navigation — see useUiEventStream.ts. */
+  events: UiEvent[]
+  status: UiConnectionStatus
+  /** Also owned by AppShell for the same reason: a plain local state here would reset to null every time this component remounts on rail navigation. */
+  selectedSessionId: string | null
+  setSelectedSessionId: (id: string | null) => void
+}
+
+/** Top-level Orchestration Workspace (spec Phase 2b): project/group sidebar + Thread + Composer + Agent panel + Workbench, receiving the one shared `/ui/events` stream (and the selected session) as props from AppShell. */
+export function Workspace({ events, status: streamStatus, selectedSessionId, setSelectedSessionId }: WorkspaceProps) {
   const sessions = useStore(s => s.sessions)
   const fetchSessions = useStore(s => s.fetchSessions)
   const showSnackbar = useStore(s => s.showSnackbar)
   const fleet = useFleetSummaries(sessions)
 
-  const { events, status: streamStatus } = useUiEventStream()
-
-  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => loadBool(SIDEBAR_KEY, false))
   const [rpanelCollapsed, setRpanelCollapsed] = useState(() => loadBool(RPANEL_KEY, false))
 
