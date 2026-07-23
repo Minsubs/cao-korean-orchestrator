@@ -9,6 +9,7 @@ import {
   type ToolingProvider,
   type ToolingSources,
 } from '../../api.tooling'
+import { envApi, type EnvInventoryAll } from '../../api.env'
 import { OverviewPane } from './OverviewPane'
 import { InstalledPane } from './InstalledPane'
 import { DiagnosticsPane } from './DiagnosticsPane'
@@ -16,11 +17,12 @@ import { UpdatesPane } from './UpdatesPane'
 import { DiscoverPane } from './DiscoverPane'
 import { SourcesPane } from './SourcesPane'
 import { EnvProfilesPane } from './EnvProfilesPane'
+import { EnvToolsPane } from './EnvToolsPane'
 import { PreviewModal } from './PreviewModal'
 import { useToolingOperations } from './useToolingOperations'
 import { SkeletonBlock } from './shared'
 
-type TabKey = 'overview' | 'installed' | 'discover' | 'updates' | 'sources' | 'envprofiles' | 'diagnostics'
+type TabKey = 'overview' | 'installed' | 'discover' | 'updates' | 'sources' | 'envprofiles' | 'diagnostics' | 'envtools'
 
 const DISABLED_TITLE = 'Phase 4~6에서 제공돼요'
 
@@ -36,6 +38,7 @@ const TABS: { key: TabKey; label: string; active: boolean }[] = [
   { key: 'sources', label: '소스', active: true },
   { key: 'envprofiles', label: '환경 프로필', active: true },
   { key: 'diagnostics', label: '진단', active: true },
+  { key: 'envtools', label: '환경·지침', active: true },
 ]
 
 // Placeholder shown until /tooling/environment has ever returned successfully
@@ -150,6 +153,33 @@ export function ToolingView() {
   useEffect(() => {
     loadSources()
   }, [loadSources])
+
+  // Phase 6b Task 2 — 환경·지침 탭의 CLI 인벤토리: same independent-load/
+  // independent-error stance as catalog/sources above. `/env/inventory` lives
+  // in env_router.py, a separate parallel-built backend, and must not join
+  // the core Promise.all — EnvToolsPane alone degrades to an honest
+  // error+retry state on failure.
+  const [envInventory, setEnvInventory] = useState<EnvInventoryAll | null>(null)
+  const [envInventoryLoading, setEnvInventoryLoading] = useState(true)
+  const [envInventoryError, setEnvInventoryError] = useState(false)
+
+  const loadEnvInventory = useCallback(async () => {
+    setEnvInventoryLoading(true)
+    try {
+      const result = await envApi.getInventory('all')
+      setEnvInventory(result as EnvInventoryAll)
+      setEnvInventoryError(false)
+    } catch {
+      setEnvInventory(null)
+      setEnvInventoryError(true)
+    } finally {
+      setEnvInventoryLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadEnvInventory()
+  }, [loadEnvInventory])
 
   // "완료 후 재검증 반영" (Phase 4b, extended in 5b to also cover catalog
   // install_status): re-fetch just extensions/diagnostics/catalog — not
@@ -274,6 +304,7 @@ export function ToolingView() {
     const reloads: Promise<unknown>[] = [load()]
     if (catalogError) reloads.push(loadCatalog())
     if (sourcesError) reloads.push(loadSources())
+    if (envInventoryError) reloads.push(loadEnvInventory())
     Promise.all(reloads).finally(() => setLoading(false))
   }
 
@@ -431,6 +462,14 @@ export function ToolingView() {
               />
             )}
             {tab === 'envprofiles' && <EnvProfilesPane />}
+            {tab === 'envtools' && (
+              <EnvToolsPane
+                inventory={envInventory}
+                inventoryLoading={envInventoryLoading}
+                inventoryError={envInventoryError}
+                onRetry={handleRetry}
+              />
+            )}
             {tab === 'updates' && (
               <UpdatesPane
                 adapters={adapters}
