@@ -23,6 +23,7 @@ import { CommandPalette } from '../features/command-palette/CommandPalette'
 import { MemoryPanel } from '../components/MemoryPanel'
 import { SettingsPanel } from '../components/SettingsPanel'
 import { NotificationCenter } from '../components/NotificationCenter'
+import { LoadingOverlay } from '../components/LoadingOverlay'
 import { Workspace } from '../features/workspace/Workspace'
 import { useUiEventStream } from '../features/workspace/useUiEventStream'
 import { PENDING_SELECT_KEY } from '../features/workspace/constants'
@@ -318,6 +319,7 @@ export function AppShell() {
         onNavigate={view => setActiveView(view as ViewKey)}
         onCommand={handlePaletteCommand}
       />
+      <LoadingOverlay />
     </div>
   )
 }
