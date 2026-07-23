@@ -106,6 +106,12 @@ PROCESSING_STATUSBAR_PATTERN = (
     r"│\s*(?:Working|Generating|Thinking|Responding|Running|Executing|Processing)\s*│"
 )
 
+# Remaining-context footer (DISPLAY ONLY — parsed by get_context_usage,
+# never used for orchestration). agy 1.1.x status bar shows
+#   "… │ Context 100% left │ …"  (see the status-bar note above, line ~87).
+# Captures the 1–3 digit integer percent of context REMAINING.
+CONTEXT_LEFT_PATTERN = re.compile(r"Context\s+(\d{1,3})\s*%\s*left")
+
 # Echoed user query line: "> <text>" (non-empty after the prompt char).
 # Start-of-line anchored so it does not match the empty idle prompt ("> ").
 QUERY_PROMPT_PATTERN = r"^\s*>\s+\S"
@@ -786,3 +792,24 @@ class AntigravityCliProvider(BaseProvider):
         """Record that a turn was delivered (IDLE → COMPLETED on next status)."""
         super().mark_input_received()
         self._turns += 1
+
+    def get_context_usage(self, output: str) -> Optional[int]:
+        """Scrape remaining-context percent from agy's status-bar footer.
+
+        DISPLAY ONLY — see :meth:`BaseProvider.get_context_usage`. Strips
+        terminal escapes, returns the percent from the LAST (freshest) footer
+        match clamped to 0–100, or None when nothing matches.
+        """
+        if not output:
+            return None
+        cleaned = strip_terminal_escapes(output)
+        best_val: Optional[int] = None
+        best_pos = -1
+        for match in CONTEXT_LEFT_PATTERN.finditer(cleaned):
+            if match.start() <= best_pos:
+                continue
+            value = int(match.group(1))
+            if 0 <= value <= 100:
+                best_pos = match.start()
+                best_val = value
+        return best_val
