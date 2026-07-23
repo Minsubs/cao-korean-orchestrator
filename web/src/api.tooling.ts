@@ -120,7 +120,11 @@ export interface ToolingScanResult {
 // degrade the affected control/section honestly — never a full-screen crash
 // for these alone, and never mock/sample data standing in for a real answer.
 
-export type ToolingAction = 'install' | 'remove' | 'update' | 'update_all'
+// 'install_cli' added in Phase 6d: installs the AI CLI binary itself (npm
+// global install, Tasks 1-2 backend) — distinct from 'install', which adds an
+// extension/MCP server for an already-installed CLI. Reuses the same
+// plan/preview/execute/poll flow (see OverviewPane.tsx's ProviderRow).
+export type ToolingAction = 'install' | 'remove' | 'update' | 'update_all' | 'install_cli'
 
 export interface ToolingAdapterDetected {
   installed: boolean

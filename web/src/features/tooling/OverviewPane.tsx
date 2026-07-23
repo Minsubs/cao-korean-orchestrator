@@ -31,6 +31,9 @@ export function OverviewPane({
   // for these same adapters), reusing it here for "update the CLI binary
   // itself" cannot be confused with updating one specific MCP server.
   const handleUpdate = (provider: string) => onRequestAction?.({ action: 'update_all', provider })
+  // 'install_cli' — installs the CLI binary itself (npm global install,
+  // Tasks 1-2 backend), for the not-yet-installed rows below.
+  const handleInstall = (provider: string) => onRequestAction?.({ action: 'install_cli', provider })
   const installedCount = providers.filter(p => p.installed).length
   const osLabel = environment.os ? `${environment.os}${environment.os_version ? ` ${environment.os_version}` : ''}` : UNKNOWN
   const wslLabel = environment.is_wsl === null ? UNKNOWN : environment.is_wsl ? '예' : '아니오'
@@ -105,7 +108,7 @@ export function OverviewPane({
             className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-sm"
           >
             {providers.map((p, i) => (
-              <ProviderRow key={p.name} provider={p} withBorder={i > 0} onUpdate={handleUpdate} />
+              <ProviderRow key={p.name} provider={p} withBorder={i > 0} onUpdate={handleUpdate} onInstall={handleInstall} />
             ))}
           </div>
         )}
@@ -130,9 +133,11 @@ interface ProviderRowProps {
   withBorder: boolean
   /** Called with `provider.name` when the "업데이트" button is clicked (Phase C: AI CLI self-update). */
   onUpdate?: (provider: string) => void
+  /** Called with `provider.name` when the "설치" button is clicked (Phase 6d: install the CLI itself via npm). */
+  onInstall?: (provider: string) => void
 }
 
-export function ProviderRow({ provider, withBorder, onUpdate }: ProviderRowProps) {
+export function ProviderRow({ provider, withBorder, onUpdate, onInstall }: ProviderRowProps) {
   const pastel = pastelFor(provider.name)
   const pathText = provider.installed ? provider.path ?? UNKNOWN : `${provider.binary} — PATH에서 찾지 못했어요`
   const versionIsError = !provider.version && !!provider.version_error
@@ -161,9 +166,13 @@ export function ProviderRow({ provider, withBorder, onUpdate }: ProviderRowProps
       >
         {versionText}
       </span>
-      {provider.installed && (
+      {provider.installed ? (
         <ActionButton icon={<Download size={12} />} onClick={() => onUpdate?.(provider.name)}>
           {ACTION_LABELS.update}
+        </ActionButton>
+      ) : (
+        <ActionButton variant="accent" icon={<Download size={12} />} onClick={() => onInstall?.(provider.name)}>
+          {ACTION_LABELS.install_cli}
         </ActionButton>
       )}
       <InstallPill installed={provider.installed} />
