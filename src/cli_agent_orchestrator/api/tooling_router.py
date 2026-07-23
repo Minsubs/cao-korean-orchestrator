@@ -221,39 +221,67 @@ def _derive_warnings(
 
 @router.get("/environment")
 async def get_environment() -> Dict[str, Any]:
-    """Return host environment facts (TTL-cached)."""
+    """Return host environment facts (TTL-cached).
+
+    No subprocess calls here (platform/env introspection + one small file
+    read) — cheap enough to run inline on the event loop.
+    """
     return environment.detect_environment()
 
 
 @router.get("/providers")
 async def get_providers() -> List[Dict[str, Any]]:
-    """Return per-provider install status and version (TTL-cached)."""
-    return providers.list_providers()
+    """Return per-provider install status and version (TTL-cached).
+
+    ``list_providers`` shells out to each provider's ``--version`` (up to
+    :data:`providers.PROBE_TIMEOUT_SECONDS` per binary, serially, on a cache
+    miss) via the blocking :mod:`probe` runner. Off-loaded to a worker thread
+    so a slow/cold probe (e.g. WSL) blocks only this request, not the whole
+    event loop — concurrent requests (this endpoint and every other one below
+    that also probes) would otherwise fully serialize behind it.
+    """
+    return await asyncio.to_thread(providers.list_providers)
 
 
 @router.get("/extensions")
 async def get_extensions() -> List[Dict[str, Any]]:
-    """Return the combined CAO-owned extension inventory."""
-    return extensions.list_extensions()
+    """Return the combined CAO-owned extension inventory.
+
+    Includes :func:`extensions.list_extensions`'s provider-adapter pass, which
+    calls each adapter's blocking ``detect()``/``list_installed()`` (subprocess
+    probes) — same event-loop-blocking concern as ``/providers`` above.
+    """
+    return await asyncio.to_thread(extensions.list_extensions)
 
 
 @router.get("/diagnostics")
 async def get_diagnostics() -> List[Dict[str, Any]]:
-    """Return derived diagnostics (empty list when nothing to report)."""
-    return diagnostics.collect_diagnostics()
+    """Return derived diagnostics (empty list when nothing to report).
+
+    Reuses the TTL-cached provider probe (no extra subprocess cost on a cache
+    hit) but still walks the filesystem synchronously and can re-probe on a
+    cache miss — off-loaded for the same reason as ``/providers``.
+    """
+    return await asyncio.to_thread(diagnostics.collect_diagnostics)
 
 
 @router.post("/scan")
 async def scan_tooling(
     _scopes: List[str] = Depends(require_any_scope(SCOPE_WRITE, SCOPE_ADMIN)),
 ) -> Dict[str, str]:
-    """Invalidate caches, force a fresh collection, and return the scan time."""
-    return {"scanned_at": cache.rescan()}
+    """Invalidate caches, force a fresh collection, and return the scan time.
+
+    ``cache.rescan()`` forces an uncached ``list_providers()`` call — the same
+    blocking subprocess probe as ``/providers`` above — off-loaded for the
+    same reason.
+    """
+    return {"scanned_at": await asyncio.to_thread(cache.rescan)}
 
 
-@router.get("/adapters")
-async def get_adapters() -> List[Dict[str, Any]]:
-    """Return each provider adapter's detection result and capabilities."""
+def _collect_adapters() -> List[Dict[str, Any]]:
+    """Sync collector for ``GET /tooling/adapters`` — each ``detect()`` call is
+    a blocking subprocess probe; see :func:`get_adapters` for why this runs
+    off the event loop."""
     result: List[Dict[str, Any]] = []
     for adapter in registry.get_adapters().values():
         env = adapter.detect()
@@ -273,10 +301,25 @@ async def get_adapters() -> List[Dict[str, Any]]:
     return result
 
 
+@router.get("/adapters")
+async def get_adapters() -> List[Dict[str, Any]]:
+    """Return each provider adapter's detection result and capabilities.
+
+    ``adapter.detect()`` is a blocking subprocess probe (one per adapter) —
+    off-loaded for the same reason as ``/providers`` above.
+    """
+    return await asyncio.to_thread(_collect_adapters)
+
+
 @router.get("/catalog")
 async def get_catalog() -> List[Dict[str, Any]]:
-    """Return the curated extension catalog with per-provider support/status."""
-    return catalog.list_catalog()
+    """Return the curated extension catalog with per-provider support/status.
+
+    ``list_catalog`` detects + lists installed items for every provider the
+    catalog references (blocking subprocess probes) — off-loaded for the same
+    reason as ``/providers`` above.
+    """
+    return await asyncio.to_thread(catalog.list_catalog)
 
 
 @router.get("/sources")
@@ -289,8 +332,12 @@ async def get_sources(
 
 @router.get("/models")
 async def get_models() -> List[Dict[str, Any]]:
-    """Return the per-provider model catalog (agy probed; claude/codex known)."""
-    return models.list_models()
+    """Return the per-provider model catalog (agy probed; claude/codex known).
+
+    ``agy models`` is a blocking subprocess probe — off-loaded for the same
+    reason as ``/providers`` above (claude/codex are static, not probed).
+    """
+    return await asyncio.to_thread(models.list_models)
 
 
 @router.post("/plan")

@@ -19,9 +19,21 @@ export interface ApiError extends Error {
   detail?: string
 }
 
+// Default abort timeout for calls that don't pass `timeoutMs` explicitly. Most
+// of this file's GETs are read-only probes that shell out to CLI binaries
+// (providers/adapters/catalog) — on WSL those cold-start slowly (catalog can
+// take ~20s+, and the first mount fires 8 of these concurrently, contending
+// for the same subprocess pool). 10s was tight enough that a slow-but-healthy
+// probe would self-abort into `net::ERR_ABORTED`, which ToolingView had no way
+// to distinguish from a truly dead backend. 60s gives real WSL cold starts
+// headroom without masking an actually-hung server (an abort still fires, it
+// just isn't racing the probe itself). Explicit callers below (scan/execute)
+// already carry their own — larger — timeoutMs and are untouched.
+const DEFAULT_TIMEOUT_MS = 60000
+
 async function fetchJSON<T>(url: string, opts?: RequestInit & { timeoutMs?: number }): Promise<T> {
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), opts?.timeoutMs ?? 10000)
+  const timeout = setTimeout(() => controller.abort(), opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS)
   try {
     const res = await fetch(`${BASE}${url}`, { ...opts, signal: controller.signal })
     if (!res.ok) {

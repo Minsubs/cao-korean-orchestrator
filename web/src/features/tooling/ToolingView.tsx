@@ -38,11 +38,18 @@ const TABS: { key: TabKey; label: string; active: boolean }[] = [
   { key: 'diagnostics', label: '진단', active: true },
 ]
 
-interface ToolingData {
-  environment: ToolingEnvironment
-  providers: ToolingProvider[]
-  extensions: ToolingExtension[]
-  diagnostics: ToolingDiagnostic[]
+// Placeholder shown until /tooling/environment has ever returned successfully
+// (and reused if it fails) — every field null renders as "확인할 수 없음"
+// (OverviewPane already handles a fully-null environment; see its tests).
+const EMPTY_ENVIRONMENT: ToolingEnvironment = {
+  os: null,
+  os_version: null,
+  arch: null,
+  shell: null,
+  is_wsl: null,
+  server_version: null,
+  python_version: null,
+  checked_at: null,
 }
 
 /**
@@ -66,9 +73,24 @@ interface ToolingData {
  */
 export function ToolingView() {
   const [tab, setTab] = useState<TabKey>('overview')
-  const [data, setData] = useState<ToolingData | null>(null)
+
+  // The four "core" reads (environment/providers/extensions/diagnostics) are
+  // tracked independently rather than as one `data` blob: each can fail on its
+  // own (WSL cold-probe timeout, one provider CLI missing, …) and previously a
+  // single failure blanked the entire screen via Promise.all — see
+  // handoff/RCA for the Tooling ERR_ABORTED bug. With independent state, a
+  // failing endpoint only degrades the tab(s) that actually depend on it;
+  // everything else keeps rendering real data.
+  const [environment, setEnvironment] = useState<ToolingEnvironment>(EMPTY_ENVIRONMENT)
+  const [environmentError, setEnvironmentError] = useState(false)
+  const [providers, setProviders] = useState<ToolingProvider[]>([])
+  const [providersError, setProvidersError] = useState(false)
+  const [extensions, setExtensions] = useState<ToolingExtension[]>([])
+  const [extensionsError, setExtensionsError] = useState(false)
+  const [diagnostics, setDiagnostics] = useState<ToolingDiagnostic[]>([])
+  const [diagnosticsError, setDiagnosticsError] = useState(false)
+
   const [loading, setLoading] = useState(true)
-  const [loadFailed, setLoadFailed] = useState(false)
   const [rescanning, setRescanning] = useState(false)
   const [rescanError, setRescanError] = useState<string | null>(null)
   const [scannedAt, setScannedAt] = useState<string | null>(null)
@@ -137,11 +159,20 @@ export function ToolingView() {
   // the screen (the Operation Queue's own row still shows the real
   // succeeded/failed outcome regardless).
   const reloadAfterOperation = useCallback(async () => {
-    try {
-      const [extensions, diagnostics] = await Promise.all([toolingApi.listExtensions(), toolingApi.listDiagnostics()])
-      setData(prev => (prev ? { ...prev, extensions, diagnostics } : prev))
-    } catch {
-      /* best-effort revalidation only */
+    // allSettled (not all): extensions/diagnostics fail independently, and a
+    // failure on one must not discard the other's fresh result — best effort,
+    // each keeps its last-known value on its own failure rather than crash.
+    const [extensionsResult, diagnosticsResult] = await Promise.allSettled([
+      toolingApi.listExtensions(),
+      toolingApi.listDiagnostics(),
+    ])
+    if (extensionsResult.status === 'fulfilled') {
+      setExtensions(extensionsResult.value)
+      setExtensionsError(false)
+    }
+    if (diagnosticsResult.status === 'fulfilled') {
+      setDiagnostics(diagnosticsResult.value)
+      setDiagnosticsError(false)
     }
     loadCatalog()
   }, [loadCatalog])
@@ -182,22 +213,49 @@ export function ToolingView() {
   // anywhere in this view (Phase 3b performance principle) — the single
   // manual "다시 검사" action in the Overview pane is the only refresh path,
   // and it re-runs this same load after POSTing /tooling/scan.
+  //
+  // allSettled (not all): these four probes are independent and one being
+  // slow/dead (e.g. a WSL cold CLI probe exceeding its own timeout) must not
+  // abort the other three's already-successful results. Each endpoint's
+  // error state is tracked on its own; the full-screen error below only fires
+  // when EVERY ONE of the four has failed — a partial failure instead
+  // degrades just the tab(s) that depend on the missing piece (see the
+  // `environmentError`/`providersError`/`extensionsError`/`diagnosticsError`
+  // checks in the render below).
   const load = useCallback(async () => {
-    try {
-      const [environment, providers, extensions, diagnostics] = await Promise.all([
-        toolingApi.getEnvironment(),
-        toolingApi.listProviders(),
-        toolingApi.listExtensions(),
-        toolingApi.listDiagnostics(),
-      ])
-      setData({ environment, providers, extensions, diagnostics })
-      setLoadFailed(false)
-    } catch {
-      // Availability defense: a 404 (router not mounted yet) or any network
-      // failure degrades the whole screen to an honest error state — never
-      // a mock-data fallback.
-      setData(null)
-      setLoadFailed(true)
+    const [environmentResult, providersResult, extensionsResult, diagnosticsResult] = await Promise.allSettled([
+      toolingApi.getEnvironment(),
+      toolingApi.listProviders(),
+      toolingApi.listExtensions(),
+      toolingApi.listDiagnostics(),
+    ])
+
+    if (environmentResult.status === 'fulfilled') {
+      setEnvironment(environmentResult.value)
+      setEnvironmentError(false)
+    } else {
+      setEnvironmentError(true)
+    }
+
+    if (providersResult.status === 'fulfilled') {
+      setProviders(providersResult.value)
+      setProvidersError(false)
+    } else {
+      setProvidersError(true)
+    }
+
+    if (extensionsResult.status === 'fulfilled') {
+      setExtensions(extensionsResult.value)
+      setExtensionsError(false)
+    } else {
+      setExtensionsError(true)
+    }
+
+    if (diagnosticsResult.status === 'fulfilled') {
+      setDiagnostics(diagnosticsResult.value)
+      setDiagnosticsError(false)
+    } else {
+      setDiagnosticsError(true)
     }
   }, [])
 
@@ -206,9 +264,17 @@ export function ToolingView() {
     load().finally(() => setLoading(false))
   }, [load])
 
+  // Re-fires every read this view owns — not just the core four. A full
+  // outage (router not mounted, network down) also takes catalog/sources down
+  // with it, so "다시 시도" (both the full-screen and any per-section retry
+  // below) must recover them too, not just leave them stuck in their own
+  // stale error state until the user separately visits those tabs.
   const handleRetry = () => {
     setLoading(true)
-    load().finally(() => setLoading(false))
+    const reloads: Promise<unknown>[] = [load()]
+    if (catalogError) reloads.push(loadCatalog())
+    if (sourcesError) reloads.push(loadSources())
+    Promise.all(reloads).finally(() => setLoading(false))
   }
 
   const handleRescan = async () => {
@@ -229,11 +295,14 @@ export function ToolingView() {
     return <ToolingSkeleton />
   }
 
-  if (loadFailed || !data) {
+  // Whole-screen error only when every one of the four core reads has failed
+  // — a single dead endpoint degrades just its own tab(s) below instead (see
+  // `environmentError`/`providersError`/`extensionsError`/`diagnosticsError`).
+  if (environmentError && providersError && extensionsError && diagnosticsError) {
     return <ToolingErrorScreen onRetry={handleRetry} />
   }
 
-  const diagnosticsWarnCount = data.diagnostics.filter(d => d.severity !== 'info').length
+  const diagnosticsWarnCount = diagnostics.filter(d => d.severity !== 'info').length
 
   return (
     <div className="flex h-full flex-col">
@@ -278,12 +347,12 @@ export function ToolingView() {
               }`}
             >
               {t.label}
-              {t.key === 'installed' && data.extensions.length > 0 && (
+              {t.key === 'installed' && extensions.length > 0 && (
                 <span
                   className="rounded-full px-1.5 py-[1px] text-[10px] font-bold"
                   style={{ backgroundColor: 'var(--surface-3)', color: 'var(--text-2)' }}
                 >
-                  {data.extensions.length}
+                  {extensions.length}
                 </span>
               )}
               {t.key === 'diagnostics' && diagnosticsWarnCount > 0 && (
@@ -309,31 +378,38 @@ export function ToolingView() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto pt-4">
-        {tab === 'overview' && (
-          <OverviewPane
-            environment={data.environment}
-            providers={data.providers}
-            extensionCount={data.extensions.length}
-            diagnosticsWarnCount={diagnosticsWarnCount}
-            scannedAt={scannedAt ?? data.environment.checked_at}
-            rescanning={rescanning}
-            rescanError={rescanError}
-            onRescan={handleRescan}
-            onRequestAction={requestAction}
-          />
-        )}
-        {tab === 'installed' && (
-          <InstalledPane
-            extensions={data.extensions}
-            selectedId={selectedExtensionId}
-            onSelect={setSelectedExtensionId}
-            adapters={adapters}
-            adaptersLoading={adaptersLoading}
-            adaptersError={adaptersError}
-            onRequestAction={requestAction}
-          />
-        )}
-        {tab === 'diagnostics' && <DiagnosticsPane diagnostics={data.diagnostics} />}
+        {tab === 'overview' &&
+          (environmentError || providersError ? (
+            <ToolingSectionError onRetry={handleRetry} />
+          ) : (
+            <OverviewPane
+              environment={environment}
+              providers={providers}
+              extensionCount={extensions.length}
+              diagnosticsWarnCount={diagnosticsWarnCount}
+              scannedAt={scannedAt ?? environment.checked_at}
+              rescanning={rescanning}
+              rescanError={rescanError}
+              onRescan={handleRescan}
+              onRequestAction={requestAction}
+            />
+          ))}
+        {tab === 'installed' &&
+          (extensionsError ? (
+            <ToolingSectionError onRetry={handleRetry} />
+          ) : (
+            <InstalledPane
+              extensions={extensions}
+              selectedId={selectedExtensionId}
+              onSelect={setSelectedExtensionId}
+              adapters={adapters}
+              adaptersLoading={adaptersLoading}
+              adaptersError={adaptersError}
+              onRequestAction={requestAction}
+            />
+          ))}
+        {tab === 'diagnostics' &&
+          (diagnosticsError ? <ToolingSectionError onRetry={handleRetry} /> : <DiagnosticsPane diagnostics={diagnostics} />)}
         {tab === 'discover' && (
           <DiscoverPane
             catalog={catalog}
@@ -360,7 +436,7 @@ export function ToolingView() {
             adapters={adapters}
             adaptersLoading={adaptersLoading}
             adaptersError={adaptersError}
-            extensions={data.extensions}
+            extensions={extensions}
             operations={operations}
             operationsError={operationsError}
             logs={logs}
@@ -396,13 +472,13 @@ function ToolingSkeleton() {
   )
 }
 
-function ToolingErrorScreen({ onRetry }: { onRetry: () => void }) {
+/** Shared innards of the "can't reach Tooling API" state — the full-screen
+ * version (`ToolingErrorScreen`) and the per-section version
+ * (`ToolingSectionError`) differ only in their outer wrapper (full height vs.
+ * scoped to one tab's content area). */
+function ToolingErrorContent({ onRetry }: { onRetry: () => void }) {
   return (
-    <div
-      role="region"
-      aria-label="Tooling API에 연결할 수 없어요"
-      className="flex h-full flex-col items-center justify-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-8 py-16 text-center"
-    >
+    <>
       <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--danger-bg)] text-[var(--danger)]">
         <AlertTriangle size={22} />
       </div>
@@ -415,6 +491,34 @@ function ToolingErrorScreen({ onRetry }: { onRetry: () => void }) {
       >
         다시 시도
       </button>
+    </>
+  )
+}
+
+function ToolingErrorScreen({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div
+      role="region"
+      aria-label="Tooling API에 연결할 수 없어요"
+      className="flex h-full flex-col items-center justify-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-8 py-16 text-center"
+    >
+      <ToolingErrorContent onRetry={onRetry} />
+    </div>
+  )
+}
+
+// Scoped version rendered INSIDE a single tab's content area when only that
+// tab's data failed to load (e.g. just /tooling/diagnostics), so the rest of
+// the screen — tab bar, other tabs' real data — stays intact instead of
+// blanking to the full-screen error above.
+function ToolingSectionError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div
+      role="region"
+      aria-label="Tooling API에 연결할 수 없어요"
+      className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-8 py-16 text-center"
+    >
+      <ToolingErrorContent onRetry={onRetry} />
     </div>
   )
 }
