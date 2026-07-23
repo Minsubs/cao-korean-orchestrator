@@ -37,6 +37,12 @@ from cli_agent_orchestrator.services.tooling.adapters.base import (
 
 _BINARY = "codex"
 
+# Fixed npm package for the target-exempt ``install_cli`` action. This is a
+# server-side constant, never derived from the request — the client sends only
+# ``{action: "install_cli", provider: "codex"}`` and the ``target`` field (if
+# any) is ignored by :meth:`CodexAdapter.plan`.
+_CLI_PACKAGE = "@openai/codex"
+
 _LIST_TIMEOUT_SECONDS = 10.0
 
 _MCP_HELP_CACHE_KEY = "adapter:codex:mcp_help"
@@ -55,6 +61,7 @@ _NO_UPDATE_REASON = (
     "MCP 서버는 codex CLI에서 개별 업데이트를 지원하지 않아요 (제거 후 다시 추가하세요)"
 )
 _NO_SEARCH_REASON = "codex CLI는 MCP 서버 검색을 제공하지 않아요"
+_UPDATE_RESTART_WARNING = "CLI 프로세스가 실행 중이면 업데이트 후 재시작이 필요할 수 있어요"
 
 
 def _config_path() -> Path:
@@ -105,15 +112,20 @@ class CodexAdapter(ExtensionAdapter):
     # -- capabilities ------------------------------------------------------
 
     def capabilities(self) -> ProviderCapabilities:
-        """Full MCP management when confirmed; otherwise list-only (read-only)."""
+        """Full MCP management when confirmed; otherwise list-only (read-only).
+
+        ``canInstallCli`` is always ``True`` here, even in the "not installed"
+        branch below — bootstrapping the CLI via npm is exactly what that
+        branch is for, so it must not be swept into the blanket ``False`` the
+        rest of that reply carries.
+        """
         if not self.detect().installed:
-            return unsupported_capabilities(_NOT_INSTALLED_REASON)
+            return unsupported_capabilities(_NOT_INSTALLED_REASON, canInstallCli=True)
 
         subs = self._mcp_subcommands()
         managed = bool(subs and "add" in subs and "remove" in subs)
         reasons: Dict[str, str] = {
             "canUpdate": _NO_UPDATE_REASON,
-            "canUpdateAll": _NO_UPDATE_REASON,
             "canSearch": _NO_SEARCH_REASON,
         }
         if managed:
@@ -126,15 +138,20 @@ class CodexAdapter(ExtensionAdapter):
             reasons["canRemove"] = _READ_ONLY_REASON
 
         # Listing always works: `codex mcp list` when managed, else config.toml.
+        # canUpdateAll here means "update the codex CLI binary itself" (`codex
+        # update`) via the target-exempt update_all action, independent of MCP
+        # management mode — always available. canUpdate (per-MCP-server
+        # update) stays unsupported, same as before this feature.
         return ProviderCapabilities(
             canList=True,
             canSearch=False,
             canInstall=can_install,
             canRemove=can_remove,
             canUpdate=False,
-            canUpdateAll=False,
+            canUpdateAll=True,
             requiresNewSession=True,
             requiresRestart=False,
+            canInstallCli=True,
             reasons=reasons,
         )
 
@@ -190,7 +207,11 @@ class CodexAdapter(ExtensionAdapter):
     # -- planning ----------------------------------------------------------
 
     def plan(self, action: str, target: Optional[str], scope: Optional[str]) -> ExecutionPlan:
-        """Plan a ``remove`` (by name). ``install`` needs a catalog command."""
+        """Plan a ``remove`` (by name). ``install`` needs a catalog command.
+
+        ``install_cli`` intentionally ignores ``target`` — the package is the
+        fixed :data:`_CLI_PACKAGE` constant, never client-supplied.
+        """
         if action == "remove":
             if not target:
                 raise ValueError("action 'remove' requires a target")
@@ -204,6 +225,26 @@ class CodexAdapter(ExtensionAdapter):
         if action == "install":
             raise ValueError(
                 "installing an MCP server requires a launch command; use a catalog item"
+            )
+        if action == "update_all":
+            return ExecutionPlan(
+                argv=[_BINARY, "update"],
+                cwd=None,
+                description=(
+                    f"{_BINARY} CLI를 최신 버전으로 업데이트해요. {_UPDATE_RESTART_WARNING}"
+                ),
+                verify_description=f"{_BINARY} --version 재확인",
+            )
+        if action == "install_cli":
+            # `target` is ignored on purpose (security): the package is always
+            # the fixed `_CLI_PACKAGE` constant, never a client-supplied name.
+            return ExecutionPlan(
+                argv=["npm", "install", "-g", _CLI_PACKAGE],
+                cwd=None,
+                description=(
+                    f"{_BINARY} CLI를 npm으로 전역 설치해요 (npm 전역 설치 권한이 필요할 수 있어요)"
+                ),
+                verify_description=f"{_BINARY} --version 확인",
             )
         raise ValueError(f"unsupported action for codex: {action!r}")
 
@@ -225,6 +266,13 @@ class CodexAdapter(ExtensionAdapter):
 
     def verify(self, action: str, target: Optional[str]) -> Tuple[bool, str]:
         """Re-list (bypassing the cache) to confirm the add/remove effect."""
+        if action == "update_all":
+            return True, f"{_BINARY} update completed"
+        if action == "install_cli":
+            found = shutil.which(_BINARY) is not None
+            return found, (
+                f"{_BINARY} is now on PATH" if found else f"{_BINARY} was not found on PATH after install"
+            )
         if not target:
             return False, f"action {action!r} requires a target to verify"
         present = target in self._installed_names(use_cache=False)

@@ -48,7 +48,7 @@ _TERMINAL = frozenset(
 )
 
 # Valid actions an operation may carry.
-VALID_ACTIONS = frozenset({"install", "remove", "update", "update_all"})
+VALID_ACTIONS = frozenset({"install", "remove", "update", "update_all", "install_cli"})
 
 # Global cap on concurrently running operations.
 MAX_CONCURRENCY = 2

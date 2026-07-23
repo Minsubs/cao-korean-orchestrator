@@ -4,6 +4,10 @@ This deliberately does NOT import api/main.py — the router is self-contained a
 integration mounts it separately.
 """
 
+import asyncio
+import time
+
+import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -123,3 +127,58 @@ def test_scan_forces_cache_refresh(client, monkeypatch):
     refreshed = client.get("/tooling/providers").json()
     assert all(p["installed"] is True for p in refreshed)
     assert any(p["version"] == "1.2.3" for p in refreshed)
+
+
+@pytest.mark.asyncio
+async def test_slow_provider_probe_does_not_block_concurrent_requests(monkeypatch):
+    """Regression test for the Tooling ERR_ABORTED bug (RCA: a blocking
+    ``subprocess.run``-based probe ran directly inside ``async def
+    get_providers()`` with no ``asyncio.to_thread`` -- it monopolized the
+    single event loop for its full duration, so on WSL (where CLI probes are
+    slow) 8 concurrent first-mount Tooling requests fully serialized instead
+    of running in parallel, and the frontend's 10s abort timeout would fire
+    before its turn ever came up).
+
+    Simulates a slow ``list_providers()`` and fires a concurrent, otherwise
+    instant request (``/tooling/operations``, pure in-memory) alongside it.
+    Ordering (not per-call elapsed time) is what actually discriminates
+    blocking vs. off-loaded here: a plain synchronous call with no internal
+    ``await`` cannot yield the event loop to another task mid-flight, so
+    *nothing* else can complete first -- both requests only resolve back to
+    back once the 0.3s sleep is over. Off-loaded via ``asyncio.to_thread``,
+    the slow call's wait happens on a worker thread, freeing the loop to
+    finish the fast request almost immediately.
+    """
+
+    def slow_list_providers(*, use_cache: bool = True):
+        time.sleep(0.3)
+        return []
+
+    monkeypatch.setattr(providers, "list_providers", slow_list_providers)
+
+    app = FastAPI()
+    app.include_router(tooling_router.router)
+    transport = httpx.ASGITransport(app=app)
+
+    finished_at: dict[str, float] = {}
+
+    async def timed_get(client: httpx.AsyncClient, path: str, key: str) -> httpx.Response:
+        resp = await client.get(path)
+        finished_at[key] = time.monotonic()
+        return resp
+
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as async_client:
+        start = time.monotonic()
+        slow_task = asyncio.create_task(timed_get(async_client, "/tooling/providers", "slow"))
+        await asyncio.sleep(0.05)  # let the slow request enter its handler first
+        fast_task = asyncio.create_task(timed_get(async_client, "/tooling/operations", "fast"))
+        slow_resp, fast_resp = await asyncio.gather(slow_task, fast_task)
+
+    assert fast_resp.status_code == 200
+    assert slow_resp.status_code == 200
+    # The fast request must both finish comfortably before the slow probe's
+    # 0.3s sleep is up, AND finish strictly before the slow one -- if the
+    # probe were still blocking the event loop, the fast request could not
+    # even start being served until the slow one had already finished.
+    assert finished_at["fast"] - start < 0.2
+    assert finished_at["fast"] < finished_at["slow"]

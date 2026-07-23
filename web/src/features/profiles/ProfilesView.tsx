@@ -274,7 +274,7 @@ function DefaultTeamGroups({ profiles, onEdit }: { profiles: AgentProfileInfoWit
   return (
     <div className="space-y-3">
       {orchestrators.length > 0 && (
-        <ProfileSubgroup label="고정 오케스트레이터" description="역할은 같고 작업을 지휘할 실행 AI만 Codex 또는 Claude로 선택해요.">
+        <ProfileSubgroup label="고정 오케스트레이터" description="역할은 같고 작업을 지휘할 실행 AI만 Codex·Claude·Antigravity 중에 골라요.">
           <ProfileGrid profiles={orchestrators} onEdit={onEdit} />
         </ProfileSubgroup>
       )}

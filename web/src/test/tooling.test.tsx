@@ -123,16 +123,25 @@ const DIAGNOSTICS: ToolingDiagnostic[] = [
   },
 ]
 
+// The four "core" reads ToolingView.load() fires together via
+// Promise.allSettled — see the CORE_ENDPOINT_FAILURE tests below for the
+// partial- vs. total-outage distinction that matters here.
+const CORE_ENDPOINTS = ['/tooling/environment', '/tooling/providers', '/tooling/extensions', '/tooling/diagnostics']
+
 describe('ToolingView', () => {
   let environment: ToolingEnvironment
   let providers: ToolingProvider[]
   let extensions: ToolingExtension[]
   let diagnostics: ToolingDiagnostic[]
   let failEndpoint: string | null
+  // Simulates a total backend outage (all four core reads 404) rather than
+  // one endpoint being down — see "shows a full-screen error state" below.
+  let failAllCore: boolean
   let scanCalls: number
   let scannedAtResponse: string
 
   const mockFetch = vi.fn(async (url: string, init?: RequestInit) => {
+    if (failAllCore && CORE_ENDPOINTS.includes(url)) return jsonResponse({ detail: 'not found' }, 404)
     if (failEndpoint && url === failEndpoint) return jsonResponse({ detail: 'not found' }, 404)
     if (url === '/tooling/environment') return jsonResponse(environment)
     if (url === '/tooling/providers') return jsonResponse(providers)
@@ -151,6 +160,7 @@ describe('ToolingView', () => {
     extensions = EXTENSIONS.map(e => ({ ...e }))
     diagnostics = DIAGNOSTICS.map(d => ({ ...d }))
     failEndpoint = null
+    failAllCore = false
     scanCalls = 0
     scannedAtResponse = '2026-07-17T12:30:00Z'
     mockFetch.mockClear()
@@ -291,8 +301,8 @@ describe('ToolingView', () => {
   })
 
   // ── Availability defense ────────────────────────────────────────────────
-  it('shows a full-screen error state when a Tooling endpoint 404s, with no mock fallback', async () => {
-    failEndpoint = '/tooling/diagnostics'
+  it('shows a full-screen error state when EVERY core Tooling endpoint 404s, with no mock fallback', async () => {
+    failAllCore = true
     render(<ToolingView />)
     expect(await screen.findByText('Tooling API에 연결할 수 없어요')).toBeInTheDocument()
     expect(screen.getByText('서버 버전을 확인하세요')).toBeInTheDocument()
@@ -301,13 +311,47 @@ describe('ToolingView', () => {
     expect(screen.queryByText('frontend-design')).not.toBeInTheDocument()
   })
 
-  it('recovers from the error state when "다시 시도" succeeds', async () => {
-    failEndpoint = '/tooling/diagnostics'
+  it('recovers from the full-outage error state when "다시 시도" succeeds', async () => {
+    failAllCore = true
     render(<ToolingView />)
     const retry = await screen.findByRole('button', { name: '다시 시도' })
-    failEndpoint = null
+    failAllCore = false
     fireEvent.click(retry)
     expect(await screen.findByRole('heading', { name: /도구 및 확장/ })).toBeInTheDocument()
+  })
+
+  // ── Partial-failure resilience (Tooling ERR_ABORTED fix) ───────────────
+  // Previously ToolingView.load() used Promise.all over the four core reads,
+  // so ANY ONE of them failing (e.g. a slow WSL CLI probe self-aborting)
+  // blanked the entire screen — see the RCA this fix is based on. It now
+  // uses Promise.allSettled and tracks each endpoint's error independently:
+  // only a TOTAL outage (all four fail, covered above) shows the full-screen
+  // error; a single failing endpoint degrades just its own tab(s).
+  it('keeps the rest of the screen working when only one core endpoint fails', async () => {
+    failEndpoint = '/tooling/diagnostics'
+    render(<ToolingView />)
+
+    // No full-screen error — the tab bar and Overview render with real data
+    // from the three endpoints that succeeded.
+    expect(await screen.findByRole('heading', { name: /도구 및 확장/ })).toBeInTheDocument()
+    expect(screen.queryByText('Tooling API에 연결할 수 없어요')).not.toBeInTheDocument()
+    const cliList = screen.getByRole('list', { name: '감지된 AI CLI 목록' })
+    expect(within(cliList).getByText('Claude Code')).toBeInTheDocument()
+
+    // Installed tab also renders its real data untouched.
+    fireEvent.click(screen.getByRole('tab', { name: /설치됨/ }))
+    expect(await screen.findByRole('option', { name: /frontend-design/ })).toBeInTheDocument()
+
+    // Only 진단 (the one that actually failed) shows an inline error+retry,
+    // scoped to that tab's content rather than the whole screen.
+    fireEvent.click(screen.getByRole('tab', { name: /^진단/ }))
+    expect(await screen.findByText('Tooling API에 연결할 수 없어요')).toBeInTheDocument()
+    const sectionRetry = screen.getByRole('button', { name: '다시 시도' })
+
+    // Recovering that one endpoint and retrying brings the tab back too.
+    failEndpoint = null
+    fireEvent.click(sectionRetry)
+    expect(await screen.findByText('MCP Server 실행 실패 — context7')).toBeInTheDocument()
   })
 
   // ── Manual rescan ───────────────────────────────────────────────────────

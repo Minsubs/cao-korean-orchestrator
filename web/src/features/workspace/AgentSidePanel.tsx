@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { Clock, FileText, Loader2, Mail, MessageSquare, Plus, Square, Terminal as TermIcon, Trash2 } from 'lucide-react'
 import type { TerminalMeta } from '../../api'
+import type { UsageAccount } from '../../api.usage'
 import { StatusBadge } from '../../components/StatusBadge'
 import { AgentAvatar } from './AgentAvatar'
 import { AddAgentModal } from './AddAgentModal'
@@ -8,7 +9,12 @@ import { ContextGaugeChip } from './ContextGaugeChip'
 import { displaySessionName } from './displayName'
 import type { DelegationCard } from './types'
 import type { TeamRosterProfile } from './teamRoster'
-import { profileLabel } from '../profiles/profilePresentation'
+import { profileLabel, profileDetail } from '../profiles/profilePresentation'
+import { InlineUsageBar } from '../usage/InlineUsageBar'
+import { useUsageAccounts } from '../usage/useUsageAccounts'
+import { isTeamWorking } from './agentGrouping'
+import { RoleBoard, type AgentVizItem } from './RoleBoard'
+import { DelegationHierarchy } from './DelegationHierarchy'
 
 interface AgentSidePanelProps {
   collapsed: boolean
@@ -45,6 +51,20 @@ function fmtAbs(dateStr: string | null | undefined): string | null {
   return d.toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
+/** Maps a terminal/card identity to the summary-viz shape (RoleBoard/DelegationHierarchy).
+ * Neither TerminalMeta nor DelegationCard carry a live `model` field, so the
+ * model badge falls back to the profile's known detail string (e.g. "Codex · Sol"). */
+function toVizItem(name: string | null, provider: string | null, terminalId: string): AgentVizItem {
+  return {
+    name: name ?? terminalId.slice(0, 8),
+    provider,
+    model: name ? profileDetail({ name, source: 'built-in', provider }) : null,
+    terminalId,
+  }
+}
+
+type VizMode = 'auto' | 'board' | 'hier'
+
 export function AgentSidePanel({
   collapsed,
   sessionName,
@@ -65,6 +85,16 @@ export function AgentSidePanel({
 }: AgentSidePanelProps) {
   const [tab, setTab] = useState<Tab>('agents')
   const [addAgentOpen, setAddAgentOpen] = useState(false)
+  // Phase 4-C Task 4: agents 탭 summary viz — RoleBoard (idle) auto-switches to
+  // DelegationHierarchy while any worker is PROCESSING/WAITING_USER_ANSWER
+  // (isTeamWorking), overridable via the 보드/계층 toggle below.
+  const [vizMode, setVizMode] = useState<VizMode>('auto')
+  // Loaded once here (not per AgentCard) so every card in this panel shares
+  // the same fetch — see InlineUsageBar.tsx / useUsageAccounts.ts. No
+  // Claude-limits opt-in from this context (that stays UsageButton's own
+  // per-popover state); a claude_code card simply shows "사용량 데이터 없음"
+  // until the user opts in from the usage popover elsewhere.
+  const { accounts } = useUsageAccounts(!collapsed, false)
 
   if (collapsed) return null
 
@@ -82,6 +112,11 @@ export function AgentSidePanel({
     return new Date(t.created_at) < new Date(earliest) ? t.created_at : earliest
   }, null)
   const providers = [...new Set(terminals.map(t => t.provider).filter(Boolean))]
+
+  const vizOrchestrator = supervisor ? toVizItem(supervisor.agent_profile, supervisor.provider, supervisor.id) : null
+  const vizWorkers = cards.map(card => toVizItem(card.agentName, card.provider, card.terminalId))
+  const vizAll = vizOrchestrator ? [vizOrchestrator, ...vizWorkers] : vizWorkers
+  const vizView = vizMode === 'auto' ? (isTeamWorking(terminalStatuses) ? 'hier' : 'board') : vizMode
 
   return (
     <aside className="flex w-[296px] shrink-0 flex-col border-l border-[var(--border)] bg-[var(--surface)]" aria-label="에이전트와 작업">
@@ -119,6 +154,39 @@ export function AgentSidePanel({
           <p className="px-1 py-3 text-[11px] text-[var(--text-3)]">세션을 선택하면 에이전트 목록이 표시돼요.</p>
         ) : tab === 'agents' ? (
           <div className="space-y-2">
+            {vizAll.length > 0 && (
+              <div className="mb-1">
+                <div className="mb-1.5 flex items-center justify-end gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setVizMode('board')}
+                    aria-pressed={vizView === 'board'}
+                    className={`h-6 rounded-full px-2.5 text-[10.5px] font-bold ${
+                      vizView === 'board' ? 'bg-[var(--accent-soft)] text-[var(--accent-text)]' : 'bg-[var(--surface-2)] text-[var(--text-3)]'
+                    }`}
+                  >
+                    보드
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setVizMode('hier')}
+                    aria-pressed={vizView === 'hier'}
+                    className={`h-6 rounded-full px-2.5 text-[10.5px] font-bold ${
+                      vizView === 'hier' ? 'bg-[var(--accent-soft)] text-[var(--accent-text)]' : 'bg-[var(--surface-2)] text-[var(--text-3)]'
+                    }`}
+                  >
+                    계층
+                  </button>
+                </div>
+                <div data-testid="agent-viz" data-view={vizView}>
+                  {vizView === 'hier' && vizOrchestrator ? (
+                    <DelegationHierarchy orchestrator={vizOrchestrator} agents={vizWorkers} statuses={terminalStatuses} />
+                  ) : (
+                    <RoleBoard agents={vizAll} statuses={terminalStatuses} />
+                  )}
+                </div>
+              </div>
+            )}
             {supervisor && (
               <AgentCard
                 terminalId={supervisor.id}
@@ -126,6 +194,7 @@ export function AgentSidePanel({
                 provider={supervisor.provider}
                 status={resolveStatus(supervisor.id, null, terminalStatuses)}
                 percentLeft={gauges[supervisor.id] ?? null}
+                accounts={accounts}
                 roleLabel="오케스트레이터"
                 subLine={null}
                 callerAgentName={null}
@@ -146,6 +215,7 @@ export function AgentSidePanel({
                 provider={card.provider}
                 status={card.killed ? (card.status ?? 'completed') : resolveStatus(card.terminalId, card.status, terminalStatuses)}
                 percentLeft={gauges[card.terminalId] ?? null}
+                accounts={accounts}
                 roleLabel={null}
                 subLine={card.instruction}
                 callerAgentName={card.callerAgentName}
@@ -245,6 +315,7 @@ function AgentCard({
   provider,
   status,
   percentLeft,
+  accounts,
   roleLabel,
   subLine,
   callerAgentName,
@@ -262,6 +333,8 @@ function AgentCard({
   provider: string | null
   status: string | null
   percentLeft?: number | null
+  /** Phase D: this AI's inline usage bar — accounts are loaded once by the parent AgentSidePanel, never per-card. */
+  accounts: UsageAccount[]
   roleLabel: string | null
   subLine: string | null
   callerAgentName: string | null
@@ -290,6 +363,11 @@ function AgentCard({
         <ContextGaugeChip percentLeft={percentLeft} />
         {status && <StatusBadge status={status} />}
       </div>
+      {provider && (
+        <div className="mt-1.5">
+          <InlineUsageBar provider={provider} accounts={accounts} />
+        </div>
+      )}
       {(subLine || callerAgentName || location) && (
         <div className="mt-1.5 space-y-0.5 text-[11px] text-[var(--text-2)]">
           {subLine && <div className="truncate">현재: {subLine}</div>}

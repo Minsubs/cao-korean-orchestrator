@@ -53,6 +53,12 @@ module.exports = {
           "p-lemon-ink": "var(--p-lemon-ink)",
           "p-rose": "var(--p-rose)",
           "p-rose-ink": "var(--p-rose-ink)",
+          "prov-codex-bg": "var(--prov-codex-bg)",
+          "prov-codex-fg": "var(--prov-codex-fg)",
+          "prov-claude-bg": "var(--prov-claude-bg)",
+          "prov-claude-fg": "var(--prov-claude-fg)",
+          "prov-agy-bg": "var(--prov-agy-bg)",
+          "prov-agy-fg": "var(--prov-agy-fg)",
         },
       },
       fontFamily: {

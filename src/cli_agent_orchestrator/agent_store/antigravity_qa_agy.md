@@ -2,8 +2,9 @@
 name: antigravity_qa_agy
 description: Antigravity (agy) QA agent for verification and bounded analysis
 provider: antigravity_cli
-model: "Gemini 3.5 Flash (High)"
+model: "Gemini 3.6 Flash (High)"
 role: developer
+uiRole: qa
 allowedTools:
   - fs_read
   - fs_list

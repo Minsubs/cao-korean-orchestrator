@@ -56,6 +56,17 @@ CASES = (
         callback_marker="TRI_CODEX_AGY_CALLBACK_OK",
         final_marker="TRI_CODEX_AGY_FINAL_OK",
     ),
+    # Cross-provider example profiles (examples/cross-provider/): the
+    # provider-agnostic supervisor example delegating to a codex worker example.
+    Case(
+        name="crossprov-supervisor-to-codex-analyst",
+        supervisor_provider="codex",
+        supervisor_profile="cross_provider_supervisor",
+        worker_provider="codex",
+        worker_profile="data_analyst_codex",
+        callback_marker="XPROV_EXAMPLE_CB_OK",
+        final_marker="XPROV_EXAMPLE_FIN_OK",
+    ),
 )
 
 

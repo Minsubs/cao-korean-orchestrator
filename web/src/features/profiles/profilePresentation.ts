@@ -22,6 +22,7 @@ type ProfilePresentation = {
 export const ORCHESTRATOR_PROFILES = {
   codex: 'codex_orchestrator_sol',
   claude_code: 'claude_orchestrator_sonnet',
+  antigravity_cli: 'antigravity_orchestrator_agy',
 } as const
 
 export type OrchestratorProvider = keyof typeof ORCHESTRATOR_PROFILES
@@ -43,6 +44,13 @@ const PRESENTATION: Record<string, ProfilePresentation> = {
     detail: 'Claude · Sonnet',
     section: 'team',
     order: 1,
+  },
+  antigravity_orchestrator_agy: {
+    label: '오케스트레이터',
+    description: '작업을 나누고 Codex·Claude·Antigravity 팀의 결과를 종합해요.',
+    detail: 'Antigravity · Gemini 3.1 Pro',
+    section: 'team',
+    order: 2,
   },
   claude_scout_haiku: {
     label: '빠른 탐색가',
@@ -92,6 +100,14 @@ const PRESENTATION: Record<string, ProfilePresentation> = {
     workerGroup: 'verification',
     order: 7,
   },
+  antigravity_qa_agy: {
+    label: 'agy 테스트 담당',
+    description: '테스트를 실행하고 회귀와 실패 원인을 확인해요.',
+    detail: 'Antigravity · Gemini 3.6 Flash',
+    section: 'team',
+    workerGroup: 'verification',
+    order: 8,
+  },
   memory_manager: {
     label: '메모리 관리자',
     description: '에이전트에게 필요한 기억과 컨텍스트를 선별해요.',
@@ -120,6 +136,30 @@ const PRESENTATION: Record<string, ProfilePresentation> = {
     label: '검토자 예제',
     description: 'CAO에 포함된 범용 검토자 예제예요.',
     detail: '호환용 예제',
+    section: 'examples',
+  },
+  cross_provider_supervisor: {
+    label: '교차 provider 오케스트레이터 예제',
+    description: '여러 provider 워커에게 분석을 위임하는 예제 오케스트레이터예요.',
+    detail: '호환용 예제',
+    section: 'examples',
+  },
+  data_analyst_claude_code: {
+    label: '데이터 분석가 예제 (Claude)',
+    description: 'Claude에서 실행되는 데이터 분석가 예제예요.',
+    detail: '호환용 예제 · Claude',
+    section: 'examples',
+  },
+  data_analyst_codex: {
+    label: '데이터 분석가 예제 (Codex)',
+    description: 'Codex에서 실행되는 데이터 분석가 예제예요.',
+    detail: '호환용 예제 · Codex',
+    section: 'examples',
+  },
+  report_generator_codex: {
+    label: '리포트 생성기 예제 (Codex)',
+    description: 'Codex에서 실행되는 리포트 생성 예제예요.',
+    detail: '호환용 예제 · Codex',
     section: 'examples',
   },
 }

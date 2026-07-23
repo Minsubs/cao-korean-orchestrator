@@ -19,9 +19,21 @@ export interface ApiError extends Error {
   detail?: string
 }
 
+// Default abort timeout for calls that don't pass `timeoutMs` explicitly. Most
+// of this file's GETs are read-only probes that shell out to CLI binaries
+// (providers/adapters/catalog) — on WSL those cold-start slowly (catalog can
+// take ~20s+, and the first mount fires 8 of these concurrently, contending
+// for the same subprocess pool). 10s was tight enough that a slow-but-healthy
+// probe would self-abort into `net::ERR_ABORTED`, which ToolingView had no way
+// to distinguish from a truly dead backend. 60s gives real WSL cold starts
+// headroom without masking an actually-hung server (an abort still fires, it
+// just isn't racing the probe itself). Explicit callers below (scan/execute)
+// already carry their own — larger — timeoutMs and are untouched.
+const DEFAULT_TIMEOUT_MS = 60000
+
 async function fetchJSON<T>(url: string, opts?: RequestInit & { timeoutMs?: number }): Promise<T> {
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), opts?.timeoutMs ?? 10000)
+  const timeout = setTimeout(() => controller.abort(), opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS)
   try {
     const res = await fetch(`${BASE}${url}`, { ...opts, signal: controller.signal })
     if (!res.ok) {
@@ -108,7 +120,11 @@ export interface ToolingScanResult {
 // degrade the affected control/section honestly — never a full-screen crash
 // for these alone, and never mock/sample data standing in for a real answer.
 
-export type ToolingAction = 'install' | 'remove' | 'update' | 'update_all'
+// 'install_cli' added in Phase 6d: installs the AI CLI binary itself (npm
+// global install, Tasks 1-2 backend) — distinct from 'install', which adds an
+// extension/MCP server for an already-installed CLI. Reuses the same
+// plan/preview/execute/poll flow (see OverviewPane.tsx's ProviderRow).
+export type ToolingAction = 'install' | 'remove' | 'update' | 'update_all' | 'install_cli'
 
 export interface ToolingAdapterDetected {
   installed: boolean

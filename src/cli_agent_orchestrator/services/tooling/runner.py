@@ -38,13 +38,19 @@ from cli_agent_orchestrator.services.tooling.secret_mask import mask
 
 # Only these binaries may ever be executed. ``argv[0]`` is matched by basename,
 # so both ``skills`` and ``/usr/local/bin/skills`` are accepted. Phase 5a adds
-# the provider CLIs whose adapters drive non-interactive MCP management.
-ALLOWED_BINARIES = {"skills", "claude", "codex", "agy"}
+# the provider CLIs whose adapters drive non-interactive MCP management. Phase
+# 5b adds ``npm``, used solely by the ``install_cli`` action's fixed
+# ``npm install -g <server-constant package>`` argv — never a client-chosen
+# binary or package.
+ALLOWED_BINARIES = {"skills", "claude", "codex", "agy", "npm"}
 
 # Every argv token must match this. The class is intentionally narrow: letters,
 # digits, and the handful of punctuation characters that legitimately appear in
 # skill names / versions / flags (``@%+=:,./_-``). It excludes spaces and every
-# shell metacharacter (``; | & $ ( ) < > \` " ' * ? ~ ^ { } [ ]``).
+# shell metacharacter (``; | & $ ( ) < > \` " ' * ? ~ ^ { } [ ]``). This already
+# admits scoped npm package tokens (``@openai/codex``, ``@anthropic-ai/claude-
+# code``) without modification, since ``@``, ``/`` and ``-`` were already in the
+# class for skill/MCP tokens — no widening was needed for ``install_cli``.
 _TOKEN_RE = re.compile(r"^[A-Za-z0-9@%+=:,./_-]{1,200}$")
 
 # The ONLY environment keys forwarded to the child. Constructed, never inherited.

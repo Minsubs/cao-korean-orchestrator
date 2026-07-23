@@ -17,13 +17,21 @@ def test_known_models_present_with_allow_custom(monkeypatch):
     claude = entries["claude_code"]
     assert claude["source"] == "known"
     assert claude["allow_custom"] is True
-    assert [m["name"] for m in claude["models"]] == ["opus", "sonnet", "haiku"]
+    assert [m["name"] for m in claude["models"]] == ["opus", "sonnet", "haiku", "fable"]
     assert "직접 입력" in claude["note"]
 
     codex = entries["codex"]
     assert codex["source"] == "known"
     assert codex["allow_custom"] is True
     assert codex["models"]  # non-empty curated list
+
+
+def test_codex_known_models_are_current_not_stale():
+    codex = next(m for m in models.list_models() if m["provider"] == "codex")
+    names = {m["name"] for m in codex["models"]}
+    assert "gpt-5.6-sol" in names
+    assert names.isdisjoint({"gpt-5-codex", "gpt-5", "o3"})  # stale aliases gone
+    assert codex["allow_custom"] is True
 
 
 def test_known_note_flags_alias_and_points_to_cli_docs(monkeypatch):
@@ -106,3 +114,11 @@ def test_parse_agy_models_masks_and_keeps_raw():
     # a secret-shaped token in output is masked before storage
     assert all("SECRET" not in m["raw"] for m in parsed)
     assert any("token=***" in m["raw"] for m in parsed)
+
+
+def test_parses_agy_hyphenated_3_6_model_ids():
+    parsed = models._parse_agy_models(
+        "gemini-3.6-flash-high\ngemini-3.5-flash-high\ngemini-3.1-pro-high\n"
+    )
+    names = [m["name"] for m in parsed]
+    assert "gemini-3.6-flash-high" in names

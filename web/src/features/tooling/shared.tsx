@@ -188,6 +188,7 @@ export const ACTION_LABELS: Record<ToolingAction, string> = {
   remove: '삭제',
   update: '업데이트',
   update_all: '모두 업데이트',
+  install_cli: '설치',
 }
 
 const OPERATION_STATUS_CONFIG: Record<

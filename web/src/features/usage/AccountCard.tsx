@@ -56,8 +56,8 @@ interface RateLimitWindow {
   resets_at: number
 }
 
-/** One 한도 진행바 row — spec: "실측값 그대로 — 반올림 소수1자리", bar width clamped for display but the text never is. */
-function RateLimitRow({ limit }: { limit: RateLimitWindow }) {
+/** One 한도 진행바 row — spec: "실측값 그대로 — 반올림 소수1자리", bar width clamped for display but the text never is. Exported for InlineUsageBar.tsx's reuse (Phase D). */
+export function RateLimitRow({ limit }: { limit: RateLimitWindow }) {
   const warn = isUsageWarning(limit.used_percent)
   return (
     <div>

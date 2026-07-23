@@ -15,6 +15,7 @@ from cli_agent_orchestrator.security.auth import (
     require_any_scope,
 )
 from cli_agent_orchestrator.services.usage import (
+    antigravity_quota,
     claude_limits,
     claude_transcripts,
     codex_rollouts,
@@ -41,12 +42,13 @@ def _scan_accounts(include_claude_limits: bool) -> Dict[str, Any]:
     home = Path.home()
     claude_account = dict(claude_transcripts.aggregate(home, now))
     codex_account = codex_rollouts.aggregate(home, now)
+    antigravity_account = antigravity_quota.aggregate(home, now)
     if include_claude_limits and claude_account.get("present") is True:
         lookup = claude_limits.get_limits(home, now)
         claude_account["rate_limits"] = lookup.rate_limits
         claude_account["note"] = _merge_note(claude_account.get("note"), lookup.note)
     return {
-        "accounts": [claude_account, codex_account],
+        "accounts": [claude_account, codex_account, antigravity_account],
         "scanned_at": now.isoformat(),
     }
 

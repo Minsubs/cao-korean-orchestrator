@@ -14,15 +14,21 @@ from cli_agent_orchestrator.services.tooling.adapters.antigravity import Antigra
 from cli_agent_orchestrator.services.tooling.adapters.base import ExtensionAdapter
 from cli_agent_orchestrator.services.tooling.adapters.claude_code import ClaudeCodeAdapter
 from cli_agent_orchestrator.services.tooling.adapters.codex import CodexAdapter
+from cli_agent_orchestrator.services.tooling.adapters.copilot_cli import CopilotCliAdapter
 from cli_agent_orchestrator.services.tooling.adapters.generic_skills import (
     GenericSkillsAdapter,
 )
+from cli_agent_orchestrator.services.tooling.adapters.kiro_cli import KiroCliAdapter
+from cli_agent_orchestrator.services.tooling.adapters.opencode_cli import OpenCodeCliAdapter
 
 _ADAPTERS: Dict[str, ExtensionAdapter] = {
     "generic_skills": GenericSkillsAdapter(),
     "claude_code": ClaudeCodeAdapter(),
     "codex": CodexAdapter(),
     "antigravity_cli": AntigravityAdapter(),
+    "kiro_cli": KiroCliAdapter(),
+    "copilot_cli": CopilotCliAdapter(),
+    "opencode_cli": OpenCodeCliAdapter(),
 }
 
 

@@ -1,6 +1,20 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { AppShell } from '../app/AppShell'
+import { subscribeUiEvents } from '../features/workspace/eventsClient'
+import { useStore } from '../store'
+
+// The `/ui/events` stream is owned once in AppShell (above the rail's view
+// switch — see AppShell.tsx) so menu navigation never tears it down. Wrapping
+// the real subscribeUiEvents in a spy (rather than mocking it away) lets the
+// tests below assert on real subscribe/close call counts while every other
+// test in this file still exercises the genuine SSE client end to end.
+vi.mock('../features/workspace/eventsClient', async () => {
+  const actual = await vi.importActual<typeof import('../features/workspace/eventsClient')>(
+    '../features/workspace/eventsClient',
+  )
+  return { ...actual, subscribeUiEvents: vi.fn(actual.subscribeUiEvents) }
+})
 
 function jsonResponse(data: unknown) {
   return { ok: true, status: 200, statusText: 'OK', json: () => Promise.resolve(data) }
@@ -22,9 +36,11 @@ describe('AppShell', () => {
   beforeEach(() => {
     memoryEnabled = false
     mockFetch.mockClear()
+    vi.mocked(subscribeUiEvents).mockClear()
     vi.stubGlobal('fetch', mockFetch)
     document.documentElement.dataset.theme = 'dark'
     window.localStorage.clear()
+    useStore.setState({ sessions: [], activeSession: null, activeSessionDetail: null, connected: false, terminalStatuses: {} })
   })
 
   afterEach(() => {
@@ -145,5 +161,67 @@ describe('AppShell', () => {
     fireEvent.click(await screen.findByRole('tab', { name: '메모리' }))
     expect(await screen.findByText('저장된 메모리가 없습니다.')).toBeInTheDocument()
     expect(screen.queryByText('문제가 발생했습니다')).not.toBeInTheDocument()
+  })
+
+  // Regression: useUiEventStream() used to live inside Workspace, so every
+  // rail switch away from 작업공간 unmounted Workspace and closed the
+  // EventSource, and switching back mounted a fresh instance and reopened it.
+  // It now lives in AppShell (above the view switch, see AppShell.tsx), so
+  // the underlying subscribeUiEvents() must only ever be called once no
+  // matter how many times the rail is switched away and back.
+  it('owns the /ui/events stream once in AppShell so switching rail views never re-subscribes it', async () => {
+    render(<AppShell />)
+    await screen.findByRole('tab', { name: '작업공간' })
+    expect(subscribeUiEvents).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole('tab', { name: '도구 및 확장' }))
+    fireEvent.click(screen.getByRole('tab', { name: '작업공간' }))
+    fireEvent.click(screen.getByRole('tab', { name: '자동화' }))
+    fireEvent.click(screen.getByRole('tab', { name: '작업공간' }))
+
+    expect(subscribeUiEvents).toHaveBeenCalledTimes(1)
+  })
+
+  // Regression: selectedSessionId used to be local state inside Workspace, so
+  // it reset to null every time Workspace remounted on a rail switch, and the
+  // "default to the first session" effect would then silently re-select
+  // sessions[0] — quietly overriding whatever the user had actually picked.
+  // It now lives in AppShell (see AppShell.tsx) and survives Workspace's
+  // mount/unmount, so a manually selected session must still be selected
+  // after navigating away and back.
+  it('preserves the manually selected session across a rail navigation away and back', async () => {
+    const sessionOne = { id: 'session-one', name: 'session-one', status: 'active' }
+    const sessionTwo = { id: 'session-two', name: 'session-two', status: 'active' }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        // AppShell's own 10s fetchSessions() poll (and its immediate on-mount
+        // call) hits this too — without it, that poll would overwrite the
+        // preset store state below with an empty list on the very next tick.
+        if (url === '/sessions') return jsonResponse([sessionOne, sessionTwo])
+        if (url === '/sessions/session-one') return jsonResponse({ session: sessionOne, terminals: [] })
+        if (url === '/sessions/session-two') return jsonResponse({ session: sessionTwo, terminals: [] })
+        return mockFetch(url)
+      }),
+    )
+    useStore.setState({ sessions: [sessionOne, sessionTwo], connected: true })
+
+    render(<AppShell />)
+    const sidebar = await screen.findByLabelText('프로젝트와 세션')
+    // No prior selection — Workspace's own "default to the first session"
+    // effect picks session-one.
+    await within(sidebar).findByText('session-one')
+
+    fireEvent.click(within(sidebar).getByText('session-two'))
+    await waitFor(() => {
+      expect(within(sidebar).getByText('session-two').closest('[role="button"]')).toHaveAttribute('aria-selected', 'true')
+    })
+
+    fireEvent.click(screen.getByRole('tab', { name: '자동화' }))
+    fireEvent.click(screen.getByRole('tab', { name: '작업공간' }))
+
+    const sidebarAfter = await screen.findByLabelText('프로젝트와 세션')
+    expect(within(sidebarAfter).getByText('session-two').closest('[role="button"]')).toHaveAttribute('aria-selected', 'true')
+    expect(within(sidebarAfter).getByText('session-one').closest('[role="button"]')).toHaveAttribute('aria-selected', 'false')
   })
 })

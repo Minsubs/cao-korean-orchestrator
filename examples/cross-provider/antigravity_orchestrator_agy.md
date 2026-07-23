@@ -4,6 +4,7 @@ description: Antigravity (agy) orchestrator for cross-provider routing and final
 provider: antigravity_cli
 model: "Gemini 3.1 Pro (High)"
 role: supervisor
+uiRole: supervisor
 allowedTools:
   - fs_read
   - fs_list
