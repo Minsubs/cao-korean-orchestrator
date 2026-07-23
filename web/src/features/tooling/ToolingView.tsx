@@ -291,10 +291,6 @@ export function ToolingView() {
     }
   }
 
-  if (loading) {
-    return <ToolingSkeleton />
-  }
-
   // Whole-screen error only when every one of the four core reads has failed
   // — a single dead endpoint degrades just its own tab(s) below instead (see
   // `environmentError`/`providersError`/`extensionsError`/`diagnosticsError`).
@@ -378,78 +374,84 @@ export function ToolingView() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto pt-4">
-        {tab === 'overview' &&
-          (environmentError || providersError ? (
-            <ToolingSectionError onRetry={handleRetry} />
-          ) : (
-            <OverviewPane
-              environment={environment}
-              providers={providers}
-              extensionCount={extensions.length}
-              diagnosticsWarnCount={diagnosticsWarnCount}
-              scannedAt={scannedAt ?? environment.checked_at}
-              rescanning={rescanning}
-              rescanError={rescanError}
-              onRescan={handleRescan}
-              onRequestAction={requestAction}
-            />
-          ))}
-        {tab === 'installed' &&
-          (extensionsError ? (
-            <ToolingSectionError onRetry={handleRetry} />
-          ) : (
-            <InstalledPane
-              extensions={extensions}
-              selectedId={selectedExtensionId}
-              onSelect={setSelectedExtensionId}
-              adapters={adapters}
-              adaptersLoading={adaptersLoading}
-              adaptersError={adaptersError}
-              onRequestAction={requestAction}
-            />
-          ))}
-        {tab === 'diagnostics' &&
-          (diagnosticsError ? <ToolingSectionError onRetry={handleRetry} /> : <DiagnosticsPane diagnostics={diagnostics} />)}
-        {tab === 'discover' && (
-          <DiscoverPane
-            catalog={catalog}
-            loading={catalogLoading}
-            error={catalogError}
-            onRetry={loadCatalog}
-            adapters={adapters}
-            onRequestAction={requestAction}
-          />
-        )}
-        {tab === 'sources' && (
-          <SourcesPane
-            sources={sources}
-            loading={sourcesLoading}
-            error={sourcesError}
-            onRetry={loadSources}
-            adapters={adapters}
-            onNavigateToDiscover={() => setTab('discover')}
-          />
-        )}
-        {tab === 'envprofiles' && <EnvProfilesPane />}
-        {tab === 'updates' && (
-          <UpdatesPane
-            adapters={adapters}
-            adaptersLoading={adaptersLoading}
-            adaptersError={adaptersError}
-            extensions={extensions}
-            operations={operations}
-            operationsError={operationsError}
-            logs={logs}
-            logLoading={logLoading}
-            logError={logError}
-            onToggleLog={toggleLog}
-            onRequestAction={requestAction}
-            onCancelOperation={cancelOperation}
-            onRetryOperation={retryOperation}
-            onRefresh={refreshAll}
-            autoFocusQueue={pendingQueueFocus}
-            onQueueFocused={() => setPendingQueueFocus(false)}
-          />
+        {loading ? (
+          <ToolingSkeleton />
+        ) : (
+          <>
+            {tab === 'overview' &&
+              (environmentError || providersError ? (
+                <ToolingSectionError onRetry={handleRetry} />
+              ) : (
+                <OverviewPane
+                  environment={environment}
+                  providers={providers}
+                  extensionCount={extensions.length}
+                  diagnosticsWarnCount={diagnosticsWarnCount}
+                  scannedAt={scannedAt ?? environment.checked_at}
+                  rescanning={rescanning}
+                  rescanError={rescanError}
+                  onRescan={handleRescan}
+                  onRequestAction={requestAction}
+                />
+              ))}
+            {tab === 'installed' &&
+              (extensionsError ? (
+                <ToolingSectionError onRetry={handleRetry} />
+              ) : (
+                <InstalledPane
+                  extensions={extensions}
+                  selectedId={selectedExtensionId}
+                  onSelect={setSelectedExtensionId}
+                  adapters={adapters}
+                  adaptersLoading={adaptersLoading}
+                  adaptersError={adaptersError}
+                  onRequestAction={requestAction}
+                />
+              ))}
+            {tab === 'diagnostics' &&
+              (diagnosticsError ? <ToolingSectionError onRetry={handleRetry} /> : <DiagnosticsPane diagnostics={diagnostics} />)}
+            {tab === 'discover' && (
+              <DiscoverPane
+                catalog={catalog}
+                loading={catalogLoading}
+                error={catalogError}
+                onRetry={loadCatalog}
+                adapters={adapters}
+                onRequestAction={requestAction}
+              />
+            )}
+            {tab === 'sources' && (
+              <SourcesPane
+                sources={sources}
+                loading={sourcesLoading}
+                error={sourcesError}
+                onRetry={loadSources}
+                adapters={adapters}
+                onNavigateToDiscover={() => setTab('discover')}
+              />
+            )}
+            {tab === 'envprofiles' && <EnvProfilesPane />}
+            {tab === 'updates' && (
+              <UpdatesPane
+                adapters={adapters}
+                adaptersLoading={adaptersLoading}
+                adaptersError={adaptersError}
+                extensions={extensions}
+                operations={operations}
+                operationsError={operationsError}
+                logs={logs}
+                logLoading={logLoading}
+                logError={logError}
+                onToggleLog={toggleLog}
+                onRequestAction={requestAction}
+                onCancelOperation={cancelOperation}
+                onRetryOperation={retryOperation}
+                onRefresh={refreshAll}
+                autoFocusQueue={pendingQueueFocus}
+                onQueueFocused={() => setPendingQueueFocus(false)}
+              />
+            )}
+          </>
         )}
       </div>
 
