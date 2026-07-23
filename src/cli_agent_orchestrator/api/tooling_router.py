@@ -85,6 +85,7 @@ _ACTION_CAPABILITY = {
     "remove": "canRemove",
     "update": "canUpdate",
     "update_all": "canUpdateAll",
+    "install_cli": "canInstallCli",
 }
 
 
@@ -136,8 +137,15 @@ def _resolve_and_validate(body: PlanRequest) -> _Resolved:
 
 
 def _resolve_generic(adapter: ExtensionAdapter, body: PlanRequest) -> _Resolved:
-    """Resolve a free-form ``(action, target)`` request (the Phase 4a path)."""
-    if body.action != "update_all":
+    """Resolve a free-form ``(action, target)`` request (the Phase 4a path).
+
+    ``update_all`` and ``install_cli`` are target-exempt: both act on the
+    provider's own CLI as a whole (a fixed npm package for ``install_cli``),
+    never on a client-named item, so no target is required — and whatever
+    target IS supplied is passed through to ``adapter.plan`` only to be
+    ignored by the adapter (the argv is built entirely from server constants).
+    """
+    if body.action not in ("update_all", "install_cli"):
         if not body.target:
             raise HTTPException(status_code=400, detail=f"action {body.action!r} requires a target")
         if not _TARGET_RE.match(body.target):

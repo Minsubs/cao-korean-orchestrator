@@ -44,6 +44,12 @@ from cli_agent_orchestrator.services.tooling.adapters.base import (
 
 _BINARY = "claude"
 
+# Fixed npm package for the target-exempt ``install_cli`` action. This is a
+# server-side constant, never derived from the request — the client sends only
+# ``{action: "install_cli", provider: "claude_code"}`` and the ``target`` field
+# (if any) is ignored by :meth:`ClaudeCodeAdapter.plan`.
+_CLI_PACKAGE = "@anthropic-ai/claude-code"
+
 _VERSION_TIMEOUT_SECONDS = 5.0
 _LIST_TIMEOUT_SECONDS = 20.0  # `claude mcp list` health-checks each server.
 _MARKETPLACE_TIMEOUT_SECONDS = 15.0
@@ -158,9 +164,15 @@ class ClaudeCodeAdapter(ExtensionAdapter):
     # -- capabilities ------------------------------------------------------
 
     def capabilities(self) -> ProviderCapabilities:
-        """Report MCP capabilities from ``claude mcp --help``; plugins via reasons."""
+        """Report MCP capabilities from ``claude mcp --help``; plugins via reasons.
+
+        ``canInstallCli`` is always ``True`` here, even in the "not installed"
+        branch below — bootstrapping the CLI via npm is exactly what that
+        branch is for, so it must not be swept into the blanket ``False`` the
+        rest of that reply carries.
+        """
         if not self.detect().installed:
-            return unsupported_capabilities(_NOT_INSTALLED_REASON)
+            return unsupported_capabilities(_NOT_INSTALLED_REASON, canInstallCli=True)
 
         subs = self._mcp_subcommands()
         reasons: Dict[str, str] = {}
@@ -199,6 +211,7 @@ class ClaudeCodeAdapter(ExtensionAdapter):
             canUpdateAll=True,
             requiresNewSession=True,
             requiresRestart=False,
+            canInstallCli=True,
             reasons=reasons,
         )
 
@@ -241,7 +254,11 @@ class ClaudeCodeAdapter(ExtensionAdapter):
     # -- planning ----------------------------------------------------------
 
     def plan(self, action: str, target: Optional[str], scope: Optional[str]) -> ExecutionPlan:
-        """Plan a ``remove`` (by name). ``install`` needs a catalog command."""
+        """Plan a ``remove`` (by name). ``install`` needs a catalog command.
+
+        ``install_cli`` intentionally ignores ``target`` — the package is the
+        fixed :data:`_CLI_PACKAGE` constant, never client-supplied.
+        """
         if action == "remove":
             if not target:
                 raise ValueError("action 'remove' requires a target")
@@ -265,6 +282,17 @@ class ClaudeCodeAdapter(ExtensionAdapter):
                 ),
                 verify_description=f"{_BINARY} --version 재확인",
             )
+        if action == "install_cli":
+            # `target` is ignored on purpose (security): the package is always
+            # the fixed `_CLI_PACKAGE` constant, never a client-supplied name.
+            return ExecutionPlan(
+                argv=["npm", "install", "-g", _CLI_PACKAGE],
+                cwd=None,
+                description=(
+                    f"{_BINARY} CLI를 npm으로 전역 설치해요 (npm 전역 설치 권한이 필요할 수 있어요)"
+                ),
+                verify_description=f"{_BINARY} --version 확인",
+            )
         raise ValueError(f"unsupported action for claude_code: {action!r}")
 
     def plan_mcp_add(self, name: str, command_tokens: List[str]) -> ExecutionPlan:
@@ -287,6 +315,11 @@ class ClaudeCodeAdapter(ExtensionAdapter):
         """Re-query ``claude mcp list`` to confirm the add/remove effect."""
         if action == "update_all":
             return True, f"{_BINARY} update completed"
+        if action == "install_cli":
+            found = shutil.which(_BINARY) is not None
+            return found, (
+                f"{_BINARY} is now on PATH" if found else f"{_BINARY} was not found on PATH after install"
+            )
         if not target:
             return False, f"action {action!r} requires a target to verify"
         # Bypass the list cache: verify runs before the operation manager's

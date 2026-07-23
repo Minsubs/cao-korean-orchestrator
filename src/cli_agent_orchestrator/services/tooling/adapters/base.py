@@ -40,6 +40,12 @@ class ProviderCapabilities:
     canUpdateAll: bool
     requiresNewSession: bool
     requiresRestart: bool
+    #: Whether the adapter can install the provider's own CLI via the
+    #: target-exempt ``install_cli`` action (a fixed, server-constant npm
+    #: package — never a client-supplied name). Defaults to ``False`` so
+    #: existing adapters/constructions are unaffected; only codex/claude_code
+    #: set this ``True`` (Phase 5b).
+    canInstallCli: bool = False
     reasons: Dict[str, str] = field(default_factory=dict)
 
 
@@ -132,13 +138,23 @@ _ACTION_CAPABILITY_KEYS = (
 
 
 def unsupported_capabilities(
-    reason: str, *, requiresNewSession: bool = False, requiresRestart: bool = False
+    reason: str,
+    *,
+    requiresNewSession: bool = False,
+    requiresRestart: bool = False,
+    canInstallCli: bool = False,
 ) -> ProviderCapabilities:
     """Build an all-``False`` :class:`ProviderCapabilities` with ``reason`` for each.
 
     The one-liner adapters reach for when the tool is absent (or wholly
     unmanageable): every action capability is ``False`` and carries the same
     actionable ``reason`` so a disabled action explains itself in the UI.
+
+    ``canInstallCli`` defaults to ``False`` like every other capability here,
+    but a caller whose adapter can bootstrap the CLI itself (codex,
+    claude_code) passes ``True`` — the "not installed" case is exactly when
+    installing the CLI matters most, so it must not be swept into the blanket
+    ``False`` this helper otherwise applies.
     """
     return ProviderCapabilities(
         canList=False,
@@ -149,5 +165,6 @@ def unsupported_capabilities(
         canUpdateAll=False,
         requiresNewSession=requiresNewSession,
         requiresRestart=requiresRestart,
+        canInstallCli=canInstallCli,
         reasons={key: reason for key in _ACTION_CAPABILITY_KEYS},
     )
