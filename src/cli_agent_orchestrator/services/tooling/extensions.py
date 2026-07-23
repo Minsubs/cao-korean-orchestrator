@@ -20,14 +20,17 @@ from __future__ import annotations
 
 import importlib.metadata
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, cast
 
 from cli_agent_orchestrator import constants
 from cli_agent_orchestrator.plugins.registry import ENTRY_POINT_GROUP
 from cli_agent_orchestrator.services import settings_service
+from cli_agent_orchestrator.services.tooling import cache
 from cli_agent_orchestrator.services.tooling.adapters import registry
 from cli_agent_orchestrator.utils.agent_profiles import list_agent_profiles
 from cli_agent_orchestrator.utils.skills import validate_skill_folder
+
+_CACHE_KEY = "extensions"
 
 
 def _skill_store_dirs() -> List[tuple[Path, str]]:
@@ -152,8 +155,7 @@ def _collect_provider_extensions() -> List[Dict[str, Any]]:
     return items
 
 
-def list_extensions() -> List[Dict[str, Any]]:
-    """Return the combined, deterministically sorted CAO extension inventory."""
+def _collect() -> List[Dict[str, Any]]:
     extensions = (
         _collect_skills()
         + _collect_plugins()
@@ -162,3 +164,20 @@ def list_extensions() -> List[Dict[str, Any]]:
     )
     extensions.sort(key=lambda item: (item["kind"], item.get("provider") or "", item["name"]))
     return extensions
+
+
+def list_extensions(*, use_cache: bool = True) -> List[Dict[str, Any]]:
+    """Return the combined, deterministically sorted CAO extension inventory,
+    TTL-cached by default.
+
+    Args:
+        use_cache: When ``False``, bypass and refresh the cached value.
+    """
+    store = cache.get_cache()
+    if use_cache:
+        cached = store.get(_CACHE_KEY)
+        if cached is not None:
+            return cast(List[Dict[str, Any]], cached)
+    result = _collect()
+    store.set(_CACHE_KEY, result)
+    return result

@@ -33,7 +33,7 @@ from __future__ import annotations
 import asyncio
 import re
 from dataclasses import asdict, dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -286,10 +286,10 @@ async def scan_tooling(
     return {"scanned_at": await asyncio.to_thread(cache.rescan)}
 
 
-def _collect_adapters() -> List[Dict[str, Any]]:
-    """Sync collector for ``GET /tooling/adapters`` — each ``detect()`` call is
-    a blocking subprocess probe; see :func:`get_adapters` for why this runs
-    off the event loop."""
+_ADAPTERS_CACHE_KEY = "adapters"
+
+
+def _probe_adapters() -> List[Dict[str, Any]]:
     result: List[Dict[str, Any]] = []
     for adapter in registry.get_adapters().values():
         env = adapter.detect()
@@ -306,6 +306,24 @@ def _collect_adapters() -> List[Dict[str, Any]]:
                 "capabilities": asdict(caps),
             }
         )
+    return result
+
+
+def _collect_adapters(*, use_cache: bool = True) -> List[Dict[str, Any]]:
+    """Sync collector for ``GET /tooling/adapters``, TTL-cached by default —
+    each ``detect()`` call is a blocking subprocess probe; see
+    :func:`get_adapters` for why this runs off the event loop.
+
+    Args:
+        use_cache: When ``False``, bypass and refresh the cached value.
+    """
+    store = cache.get_cache()
+    if use_cache:
+        cached = store.get(_ADAPTERS_CACHE_KEY)
+        if cached is not None:
+            return cast(List[Dict[str, Any]], cached)
+    result = _probe_adapters()
+    store.set(_ADAPTERS_CACHE_KEY, result)
     return result
 
 

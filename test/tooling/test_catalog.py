@@ -1,6 +1,7 @@
 """Unit tests for the popular-extension catalog (registry mocked for listing)."""
 
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -224,3 +225,22 @@ def test_list_catalog_filesystem_requires_params(monkeypatch):
     )
     fs = next(it for it in catalog.list_catalog() if it["id"] == "filesystem")
     assert fs["supported"]["claude_code"]["requires_params"] == ["path"]
+
+
+def test_list_catalog_caches_provider_snapshot(monkeypatch):
+    """A cached list_catalog() does not re-detect providers; use_cache=False does."""
+    adapter = FakeAdapter(names=["context7"])
+    detect_spy = MagicMock(wraps=adapter.detect)
+    monkeypatch.setattr(adapter, "detect", detect_spy)
+    referenced = {provider for item in catalog._ITEMS for provider in item.providers}
+    _patch_registry(monkeypatch, {provider: adapter for provider in referenced})
+
+    catalog.list_catalog()  # populates the cache
+    calls_after_first = detect_spy.call_count
+    assert calls_after_first == len(referenced)
+
+    catalog.list_catalog()  # cache hit -> no new detect() calls
+    assert detect_spy.call_count == calls_after_first
+
+    catalog.list_catalog(use_cache=False)  # forced refresh re-detects
+    assert detect_spy.call_count == calls_after_first * 2
