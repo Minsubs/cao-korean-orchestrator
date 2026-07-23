@@ -171,6 +171,7 @@ export function Workspace({ events, status: streamStatus, selectedSessionId, set
       workspaceSession.terminals.map((t, index) => ({
         id: t.id,
         label: index === 0 ? `${t.agent_profile ?? '오케스트레이터'} · 오케스트레이터` : t.agent_profile ?? t.id.slice(0, 8),
+        provider: t.provider,
       })),
     [workspaceSession.terminals],
   )
@@ -328,7 +329,7 @@ export function Workspace({ events, status: streamStatus, selectedSessionId, set
                 onSend={workspaceSession.sendMessage}
                 sending={workspaceSession.sending}
                 streamDisconnected={streamStatus !== 'connected'}
-                slashProvider={wbContext?.provider ?? null}
+                slashProvider={composerTarget?.provider ?? null}
                 slashCwd={sessionWorkingDirectory}
               />
             </>
