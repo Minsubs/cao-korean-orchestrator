@@ -51,6 +51,8 @@ const SESSION_NAME_RE = /^[A-Za-z0-9_][A-Za-z0-9_-]{0,59}$/
 export function NewTaskModal({ projects, defaultTarget, onClose, onCreated }: NewTaskModalProps) {
   const showSnackbar = useStore(s => s.showSnackbar)
   const fetchSessions = useStore(s => s.fetchSessions)
+  const showOverlay = useStore(s => s.showOverlay)
+  const hideOverlay = useStore(s => s.hideOverlay)
 
   const targets = useMemo(() => listProjectTargets(projects), [projects])
 
@@ -165,6 +167,7 @@ export function NewTaskModal({ projects, defaultTarget, onClose, onCreated }: Ne
   const handleSubmit = async () => {
     if (!canSubmit) return
     setCreating(true)
+    showOverlay('새 작업을 준비하고 있어요', '실행 AI를 시작하는 중이에요')
     try {
       let workingDirectory: string | undefined
       const contextLines: string[] = []
@@ -208,6 +211,7 @@ export function NewTaskModal({ projects, defaultTarget, onClose, onCreated }: Ne
       showSnackbar({ type: 'error', message: err?.detail || err?.message || '작업을 시작하지 못했어요' })
     } finally {
       setCreating(false)
+      hideOverlay()
     }
   }
 
