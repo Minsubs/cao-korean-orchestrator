@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { ToolingView } from '../features/tooling/ToolingView'
 import type { CatalogItem, ToolingAdapter, ToolingDiagnostic, ToolingEnvironment, ToolingExtension, ToolingProvider } from '../api.tooling'
-import type { EnvInventoryAll } from '../api.env'
+import type { EnvInstructionEntry, EnvInventoryAll } from '../api.env'
 
 // Phase 6b Task 2 — 환경·지침 탭의 첫 섹션(CLI 인벤토리). Companion to
 // test/tooling-sources.test.tsx (Phase 6c 소스 탭): mirrors its
@@ -10,6 +10,11 @@ import type { EnvInventoryAll } from '../api.env'
 // The backend (env_router.py) is a separate parallel session's work — a
 // forced 500 here exercises the same honest per-tab error+retry stance
 // already established for sources/catalog.
+//
+// Phase 6b Task 3 adds the second, independent section on the same tab: the
+// AGENTS.md/CLAUDE.md instruction matrix (/env/instructions). Same stance —
+// its own mockFetch branch, its own loading/error isolation from the
+// inventory section above it.
 
 function jsonResponse(data: unknown, status = 200) {
   return {
@@ -56,8 +61,42 @@ const INVENTORY: EnvInventoryAll = {
   ],
 }
 
+// Phase 6b Task 3 fixtures — sample matrix taken verbatim from the task brief:
+// entries[0] is always the global scope; an existing file carries an
+// already-masked `headline`, a missing file carries neither size/mtime/sha256
+// nor headline.
+const GLOBAL_INSTRUCTIONS: EnvInstructionEntry = {
+  scope: 'global',
+  base_path: '$HOME',
+  files: [
+    { name: '.claude/CLAUDE.md', exists: true, size: 20, mtime: null, sha256: 'abc', headline: '# 내 지침' },
+    { name: '.codex/AGENTS.md', exists: false, size: null, mtime: null, sha256: null, headline: null },
+  ],
+}
+
+const PROJECT_PATH = '/home/tester/myproject'
+const PROJECT_INSTRUCTIONS: EnvInstructionEntry = {
+  scope: 'project',
+  base_path: PROJECT_PATH,
+  files: [
+    { name: 'AGENTS.md', exists: true, size: 512, mtime: '2026-07-01T00:00:00Z', sha256: 'def', headline: '프로젝트 지침 헤드라인' },
+    { name: '.claude/commands', exists: true, size: null, mtime: null, sha256: null, headline: null, is_dir: true, command_count: 4 },
+  ],
+}
+
+// A path outside $HOME — the backend returns HTTP 200 with `error` set and no
+// `files` (see the brief's exact contract note).
+const OUTSIDE_PATH = '/etc/passwd'
+const OUTSIDE_INSTRUCTIONS: EnvInstructionEntry = {
+  scope: 'project',
+  base_path: OUTSIDE_PATH,
+  error: '홈 디렉터리 밖 경로는 다룰 수 없어요',
+}
+
 describe('ToolingView — Phase 6b 환경·지침 탭 (CLI 인벤토리)', () => {
   let inventoryShouldFail: boolean
+  let instructionsShouldFail: boolean
+  let instructionsCalls: number
   let inventoryCalls: number
 
   const mockFetch = vi.fn(async (url: string) => {
@@ -72,12 +111,29 @@ describe('ToolingView — Phase 6b 환경·지침 탭 (CLI 인벤토리)', () =>
       if (inventoryShouldFail) return jsonResponse({ detail: 'boom' }, 500)
       return jsonResponse(INVENTORY)
     }
+    if (url.startsWith('/env/instructions')) {
+      instructionsCalls++
+      if (instructionsShouldFail) return jsonResponse({ detail: 'boom' }, 500)
+      const paths = (new URL(url, 'http://localhost').searchParams.get('paths') ?? '')
+        .split(',')
+        .map(p => p.trim())
+        .filter(Boolean)
+      const entries: EnvInstructionEntry[] = [GLOBAL_INSTRUCTIONS]
+      for (const p of paths) {
+        if (p === PROJECT_PATH) entries.push(PROJECT_INSTRUCTIONS)
+        else if (p === OUTSIDE_PATH) entries.push(OUTSIDE_INSTRUCTIONS)
+        else entries.push({ scope: 'project', base_path: p, files: [] })
+      }
+      return jsonResponse({ entries })
+    }
     return jsonResponse({ detail: 'unhandled in test' }, 404)
   })
 
   beforeEach(() => {
     inventoryShouldFail = false
     inventoryCalls = 0
+    instructionsShouldFail = false
+    instructionsCalls = 0
     mockFetch.mockClear()
     vi.stubGlobal('fetch', mockFetch)
   })
@@ -117,5 +173,58 @@ describe('ToolingView — Phase 6b 환경·지침 탭 (CLI 인벤토리)', () =>
     inventoryShouldFail = false
     fireEvent.click(screen.getByRole('button', { name: '다시 시도' }))
     expect(await screen.findByText('CLAUDE.md')).toBeInTheDocument()
+  })
+
+  // Phase 6b Task 3 — 지침 매트릭스 section, added below the CLI inventory
+  // section on the same tab.
+
+  it('renders the global instruction scope with a per-file exists state and the masked headline', async () => {
+    await openEnvToolsTab()
+
+    const existingRow = (await screen.findByText('.claude/CLAUDE.md')).closest('li')
+    expect(existingRow).not.toBeNull()
+    expect(existingRow).toHaveTextContent('있음')
+    expect(existingRow).toHaveTextContent('# 내 지침')
+
+    const missingRow = screen.getByText('.codex/AGENTS.md').closest('li')
+    expect(missingRow).not.toBeNull()
+    expect(missingRow).toHaveTextContent('없음')
+    expect(missingRow).not.toHaveTextContent('# 내 지침')
+  })
+
+  it('shows a per-section error state for the instruction matrix without blanking the CLI inventory section above it, and recovers on retry', async () => {
+    instructionsShouldFail = true
+    render(<ToolingView />)
+    fireEvent.click(await screen.findByRole('tab', { name: /환경·지침/ }))
+
+    // The inventory section (independent load) still renders fine.
+    expect(await screen.findByText('CLAUDE.md')).toBeInTheDocument()
+    // The instruction matrix shows its own error block instead of files.
+    expect(screen.queryByText('.claude/CLAUDE.md')).not.toBeInTheDocument()
+    expect(screen.getByText('Tooling API에 연결할 수 없어요')).toBeInTheDocument()
+
+    instructionsShouldFail = false
+    fireEvent.click(screen.getByRole('button', { name: '다시 시도' }))
+    expect(await screen.findByText('.claude/CLAUDE.md')).toBeInTheDocument()
+  })
+
+  it('lets the user add a project path, renders its returned entry (incl. an is_dir command count), and surfaces an outside-$HOME error row', async () => {
+    await openEnvToolsTab()
+    await screen.findByText('.claude/CLAUDE.md')
+
+    const input = screen.getByPlaceholderText(/절대 경로/)
+    fireEvent.change(input, { target: { value: PROJECT_PATH } })
+    fireEvent.click(screen.getByRole('button', { name: '추가' }))
+
+    expect(await screen.findByText('AGENTS.md')).toBeInTheDocument()
+    const commandsRow = screen.getByText('.claude/commands').closest('li')
+    expect(commandsRow).toHaveTextContent('4개 명령')
+    // The added path shows up both as a removable chip and in the new entry's header.
+    expect(screen.getAllByText(PROJECT_PATH).length).toBeGreaterThanOrEqual(2)
+
+    fireEvent.change(input, { target: { value: OUTSIDE_PATH } })
+    fireEvent.click(screen.getByRole('button', { name: '추가' }))
+
+    expect(await screen.findByText('홈 디렉터리 밖 경로는 다룰 수 없어요')).toBeInTheDocument()
   })
 })

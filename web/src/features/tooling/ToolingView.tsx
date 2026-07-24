@@ -9,7 +9,7 @@ import {
   type ToolingProvider,
   type ToolingSources,
 } from '../../api.tooling'
-import { envApi, type EnvInventoryAll } from '../../api.env'
+import { envApi, type EnvInstructionsMatrix, type EnvInventoryAll } from '../../api.env'
 import { OverviewPane } from './OverviewPane'
 import { InstalledPane } from './InstalledPane'
 import { DiagnosticsPane } from './DiagnosticsPane'
@@ -181,6 +181,35 @@ export function ToolingView() {
     loadEnvInventory()
   }, [loadEnvInventory])
 
+  // Phase 6b Task 3 — 환경·지침 탭의 두 번째 섹션(지침 매트릭스): same
+  // independent-load/independent-error stance as envInventory above, but this
+  // one also takes a `paths` argument — `[]` loads just the global scope
+  // (entries[0]), and EnvToolsPane's "프로젝트 경로 추가" UI calls this again
+  // with the user's added absolute paths appended. Eager-loaded with `[]` on
+  // mount so the global scope shows up without the user having to add
+  // anything first.
+  const [envInstructions, setEnvInstructions] = useState<EnvInstructionsMatrix | null>(null)
+  const [envInstructionsLoading, setEnvInstructionsLoading] = useState(true)
+  const [envInstructionsError, setEnvInstructionsError] = useState(false)
+
+  const loadEnvInstructions = useCallback(async (paths: string[] = []) => {
+    setEnvInstructionsLoading(true)
+    try {
+      const result = await envApi.getInstructions(paths)
+      setEnvInstructions(result)
+      setEnvInstructionsError(false)
+    } catch {
+      setEnvInstructions(null)
+      setEnvInstructionsError(true)
+    } finally {
+      setEnvInstructionsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadEnvInstructions([])
+  }, [loadEnvInstructions])
+
   // "완료 후 재검증 반영" (Phase 4b, extended in 5b to also cover catalog
   // install_status): re-fetch just extensions/diagnostics/catalog — not
   // environment/providers, and not through the full loading-skeleton path —
@@ -305,6 +334,7 @@ export function ToolingView() {
     if (catalogError) reloads.push(loadCatalog())
     if (sourcesError) reloads.push(loadSources())
     if (envInventoryError) reloads.push(loadEnvInventory())
+    if (envInstructionsError) reloads.push(loadEnvInstructions([]))
     Promise.all(reloads).finally(() => setLoading(false))
   }
 
@@ -468,6 +498,10 @@ export function ToolingView() {
                 inventoryLoading={envInventoryLoading}
                 inventoryError={envInventoryError}
                 onRetry={handleRetry}
+                instructions={envInstructions}
+                instructionsLoading={envInstructionsLoading}
+                instructionsError={envInstructionsError}
+                onReloadInstructions={loadEnvInstructions}
               />
             )}
             {tab === 'updates' && (
