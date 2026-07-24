@@ -21,6 +21,12 @@ import { CONVERT_PAIRS } from '../features/tooling/envtools'
 // preview (POST /env/convert). Preview-only — it never writes. It owns its
 // own local state (selected pair/content/result/error), so unlike the two
 // sections above it, there's nothing to eager-load from ToolingView.
+//
+// Phase 6b Task 5 adds the one mutation in the whole feature: a guarded
+// "지침으로 저장…" write action on the convert result, calling
+// POST /env/instructions/write via envApi.writeInstruction. Its own inline
+// confirm state (open/path/overwrite/pending/result/error) lives inside the
+// convert section — nothing writes without an explicit "저장" click.
 
 function jsonResponse(data: unknown, status = 200) {
   return {
@@ -104,6 +110,18 @@ const OUTSIDE_INSTRUCTIONS: EnvInstructionEntry = {
 // (not `path`) to keep it that way.
 const CONVERT_RESULT = { converted: '# 변환됨\n본문', warnings: ['일부 필드 유실'], lossy_fields: ['tools'] }
 
+// Phase 6b Task 5 fixtures — the guarded write endpoint. Default: a new file.
+// A second write to the same path (without overwrite) reflects the backend's
+// 409 InstructionExists; an overwrite=true retry surfaces a backup_path.
+const WRITE_RESULT_NEW = { written: true, path: '/home/u/CLAUDE.md', backup_path: null, bytes: 10, created: true }
+const WRITE_RESULT_OVERWRITE = {
+  written: true,
+  path: '/home/u/CLAUDE.md',
+  backup_path: '/home/u/CLAUDE.md.bak.20260724T000000Z',
+  bytes: 10,
+  created: false,
+}
+
 describe('ToolingView — Phase 6b 환경·지침 탭 (CLI 인벤토리)', () => {
   let inventoryShouldFail: boolean
   let instructionsShouldFail: boolean
@@ -111,6 +129,11 @@ describe('ToolingView — Phase 6b 환경·지침 탭 (CLI 인벤토리)', () =>
   let inventoryCalls: number
   let convertShouldFail: boolean
   let convertCalls: number
+  let writeCalls: number
+  // When set, a write to this exact path without overwrite gets the
+  // backend's 409 InstructionExists; overwrite=true always succeeds
+  // (surfacing the backup_path), matching the real endpoint's contract.
+  let writeConflictPath: string | null
 
   const mockFetch = vi.fn(async (url: string, opts?: RequestInit) => {
     if (url === '/tooling/environment') return jsonResponse(ENVIRONMENT)
@@ -123,6 +146,18 @@ describe('ToolingView — Phase 6b 환경·지침 탭 (CLI 인벤토리)', () =>
       inventoryCalls++
       if (inventoryShouldFail) return jsonResponse({ detail: 'boom' }, 500)
       return jsonResponse(INVENTORY)
+    }
+    // Must be checked before the `/env/instructions` startsWith branch below —
+    // `/env/instructions/write` also starts with `/env/instructions` and would
+    // otherwise be swallowed by the matrix-read branch.
+    if (url === '/env/instructions/write') {
+      writeCalls++
+      const body = JSON.parse(String(opts?.body ?? '{}'))
+      expect(body.content).toBeTruthy()
+      if (writeConflictPath && body.path === writeConflictPath && !body.overwrite) {
+        return jsonResponse({ detail: '이미 있어요' }, 409)
+      }
+      return jsonResponse(body.overwrite ? WRITE_RESULT_OVERWRITE : WRITE_RESULT_NEW)
     }
     if (url.startsWith('/env/instructions')) {
       instructionsCalls++
@@ -156,6 +191,8 @@ describe('ToolingView — Phase 6b 환경·지침 탭 (CLI 인벤토리)', () =>
     instructionsCalls = 0
     convertShouldFail = false
     convertCalls = 0
+    writeCalls = 0
+    writeConflictPath = null
     mockFetch.mockClear()
     vi.stubGlobal('fetch', mockFetch)
   })
@@ -292,5 +329,61 @@ describe('ToolingView — Phase 6b 환경·지침 탭 (CLI 인벤토리)', () =>
     // shared "connection failed" tab-wide error state.
     expect(screen.getByText('CLAUDE.md')).toBeInTheDocument()
     expect(screen.queryByText('Tooling API에 연결할 수 없어요')).not.toBeInTheDocument()
+  })
+
+  // Phase 6b Task 5 — guarded write of the converted result. The only
+  // mutation in the feature: "지침으로 저장…" appears on the convert result,
+  // opens an inline confirm (path input + overwrite checkbox), and never
+  // calls envApi.writeInstruction without an explicit "저장" click.
+
+  async function previewConvert() {
+    const textarea = screen.getByLabelText('변환할 원본 내용')
+    fireEvent.change(textarea, { target: { value: '# 원본' } })
+    fireEvent.click(screen.getByRole('button', { name: '미리보기' }))
+    await screen.findByText(/# 변환됨/)
+  }
+
+  it('opens the guarded save confirm on the convert result and writes a brand-new path', async () => {
+    await openEnvToolsTab()
+    await screen.findByText('.claude/CLAUDE.md')
+    await previewConvert()
+
+    fireEvent.click(screen.getByRole('button', { name: '지침으로 저장…' }))
+
+    const pathInput = screen.getByPlaceholderText('~/CLAUDE.md 또는 절대경로')
+    expect(pathInput).toHaveValue('')
+    const overwriteCheckbox = screen.getByRole('checkbox', { name: '덮어쓰기' })
+    expect(overwriteCheckbox).not.toBeChecked()
+
+    fireEvent.change(pathInput, { target: { value: WRITE_RESULT_NEW.path } })
+    fireEvent.click(screen.getByRole('button', { name: '저장' }))
+
+    expect(await screen.findByText('새로 만들어졌어요')).toBeInTheDocument()
+    expect(screen.getByText(WRITE_RESULT_NEW.path)).toBeInTheDocument()
+    expect(writeCalls).toBe(1)
+  })
+
+  it('shows a 409 conflict pointing at the overwrite checkbox without writing, then succeeds with a surfaced backup_path on retry', async () => {
+    writeConflictPath = WRITE_RESULT_NEW.path
+    await openEnvToolsTab()
+    await screen.findByText('.claude/CLAUDE.md')
+    await previewConvert()
+
+    fireEvent.click(screen.getByRole('button', { name: '지침으로 저장…' }))
+    const pathInput = screen.getByPlaceholderText('~/CLAUDE.md 또는 절대경로')
+    fireEvent.change(pathInput, { target: { value: writeConflictPath } })
+    fireEvent.click(screen.getByRole('button', { name: '저장' }))
+
+    expect(await screen.findByText('이미 있는 파일이에요 — 덮어쓰려면 체크하세요')).toBeInTheDocument()
+    expect(writeCalls).toBe(1)
+
+    const overwriteCheckbox = screen.getByRole('checkbox', { name: '덮어쓰기' })
+    fireEvent.click(overwriteCheckbox)
+    expect(overwriteCheckbox).toBeChecked()
+    fireEvent.click(screen.getByRole('button', { name: '저장' }))
+
+    expect(await screen.findByText('덮어썼어요')).toBeInTheDocument()
+    expect(screen.getByText(`백업: ${WRITE_RESULT_OVERWRITE.backup_path}`)).toBeInTheDocument()
+    expect(writeCalls).toBe(2)
   })
 })

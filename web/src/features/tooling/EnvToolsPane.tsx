@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { AlertTriangle, ArrowLeftRight, CheckCircle2, FileStack, FileText, Loader2, Terminal, X, XCircle } from 'lucide-react'
-import { envApi, type EnvConvertResult, type EnvFileEntry, type EnvInstructionEntry, type EnvInstructionsMatrix, type EnvInventoryAll, type EnvInventoryCli, type EnvInventoryItem } from '../../api.env'
+import { AlertTriangle, ArrowLeftRight, CheckCircle2, FileStack, FileText, Loader2, Save, Terminal, X, XCircle } from 'lucide-react'
+import { envApi, type EnvConvertResult, type EnvFileEntry, type EnvInstructionEntry, type EnvInstructionsMatrix, type EnvInventoryAll, type EnvInventoryCli, type EnvInventoryItem, type EnvWriteResult } from '../../api.env'
 import type { ApiError } from '../../api.tooling'
 import { SkeletonBlock, TypeChip } from './shared'
 import { CONVERT_PAIRS, formatBytes, formatMtime, KIND_LABELS } from './envtools'
@@ -30,6 +30,15 @@ import { CONVERT_PAIRS, formatBytes, formatMtime, KIND_LABELS } from './envtools
  * `content`(텍스트 붙여넣기)만 받아 변환 결과를 보여줄 뿐, 실제 파일 쓰기는
  * 이후 태스크의 몫이다. 위 두 섹션과 달리 ToolingView의 eager-load props가
  * 아니라 이 섹션 자체가 선택한 변환 쌍/입력/결과/에러 상태를 소유한다.
+ *
+ * Phase 6b Task 5는 변환 결과 위에 이 기능 전체의 유일한 mutation을
+ * additive하게 얹는다: `converted` 미리보기가 있을 때만 나타나는 "지침으로
+ * 저장…" 버튼이 인라인 확인 블록(경로 입력 + 덮어쓰기 체크박스 + 저장
+ * 버튼)을 열고, 명시적으로 "저장"을 눌러야만 `envApi.writeInstruction`을
+ * 호출한다(`POST /env/instructions/write`). 백엔드가 이미 강제하는
+ * 안전장치(홈 디렉터리 밖 경로 400, 잘못된 파일명 400, 용량 초과 400, 파일이
+ * 이미 있는데 overwrite가 false면 409 `InstructionExists`)를 그대로 인라인
+ * 메시지로 드러낼 뿐 재구현하지 않는다.
  */
 
 interface EnvToolsPaneProps {
@@ -408,6 +417,13 @@ function ExistsChip({ exists }: { exists: boolean }) {
  * 않는 변환 쌍(백엔드 400 UnsupportedConversion)을 포함한 모든 실패는 이
  * 섹션 안의 인라인 에러로만 보여주고, 위 두 섹션이 쓰는 탭 전체 "연결할 수
  * 없어요" 상태로는 번지지 않는다.
+ *
+ * Phase 6b Task 5는 `result`가 있을 때만 "지침으로 저장…" 저장 확인 블록을
+ * additive하게 얹는다 — 이 기능 전체에서 유일한 mutation이라 자체
+ * open/path/overwrite/pending/result/error 상태로 분리하고, 명시적 "저장"
+ * 클릭 없이는 `envApi.writeInstruction`을 호출하지 않는다. 새 미리보기를
+ * 돌리면(handlePreview) 이전 저장 확인 상태는 초기화해 stale한 저장 결과가
+ * 새 변환 결과 위에 남지 않게 한다.
  */
 function ConvertSection() {
   const [pairIndex, setPairIndex] = useState(0)
@@ -416,11 +432,27 @@ function ConvertSection() {
   const [result, setResult] = useState<EnvConvertResult | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  const [saveOpen, setSaveOpen] = useState(false)
+  const [savePath, setSavePath] = useState('')
+  const [saveOverwrite, setSaveOverwrite] = useState(false)
+  const [savePending, setSavePending] = useState(false)
+  const [saveResult, setSaveResult] = useState<EnvWriteResult | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
+
   const pair = CONVERT_PAIRS[pairIndex]
+
+  function resetSaveState() {
+    setSaveOpen(false)
+    setSavePath('')
+    setSaveOverwrite(false)
+    setSaveResult(null)
+    setSaveError(null)
+  }
 
   async function handlePreview() {
     setPending(true)
     setError(null)
+    resetSaveState()
     try {
       const converted = await envApi.convert({ source_kind: pair.source_kind, target_kind: pair.target_kind, content })
       setResult(converted)
@@ -429,6 +461,26 @@ function ConvertSection() {
       setError((err as ApiError)?.detail || '변환에 실패했어요')
     } finally {
       setPending(false)
+    }
+  }
+
+  async function handleSave() {
+    if (!result) return
+    setSavePending(true)
+    setSaveError(null)
+    try {
+      const written = await envApi.writeInstruction({ path: savePath, content: result.converted, overwrite: saveOverwrite })
+      setSaveResult(written)
+    } catch (err) {
+      setSaveResult(null)
+      const apiErr = err as ApiError
+      setSaveError(
+        apiErr?.status === 409
+          ? '이미 있는 파일이에요 — 덮어쓰려면 체크하세요'
+          : apiErr?.detail || '저장에 실패했어요',
+      )
+    } finally {
+      setSavePending(false)
     }
   }
 
@@ -512,6 +564,72 @@ function ConvertSection() {
                     {field}
                   </span>
                 ))}
+              </div>
+            )}
+
+            {!saveOpen && (
+              <button
+                type="button"
+                onClick={() => setSaveOpen(true)}
+                className="flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--text)] transition hover:bg-[var(--surface-2)]"
+              >
+                <Save size={13} />
+                지침으로 저장…
+              </button>
+            )}
+
+            {saveOpen && (
+              <div className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3">
+                <label htmlFor="save-path-input" className="mb-1 block text-[11px] font-semibold text-[var(--text)]">
+                  저장 경로
+                </label>
+                <input
+                  id="save-path-input"
+                  type="text"
+                  value={savePath}
+                  onChange={e => setSavePath(e.target.value)}
+                  placeholder="~/CLAUDE.md 또는 절대경로"
+                  className="mb-2 w-full rounded-lg border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1.5 font-mono text-[11px] text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                />
+
+                <label className="mb-2 flex items-center gap-1.5 text-[11px] text-[var(--text)]">
+                  <input
+                    type="checkbox"
+                    checked={saveOverwrite}
+                    onChange={e => setSaveOverwrite(e.target.checked)}
+                  />
+                  덮어쓰기
+                </label>
+
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={savePending || !savePath.trim()}
+                  className="flex items-center gap-1.5 rounded-full bg-[var(--accent)] px-4 py-2 text-xs font-semibold text-[var(--on-accent)] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {savePending && <Loader2 size={13} className="animate-spin" />}
+                  {savePending ? '저장하는 중…' : '저장'}
+                </button>
+
+                {saveError && (
+                  <div className="mt-3 flex items-start gap-2 rounded-lg bg-[var(--danger-bg)] px-3 py-2.5 text-xs text-[var(--danger)]">
+                    <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                    {saveError}
+                  </div>
+                )}
+
+                {saveResult && !saveError && (
+                  <div className="mt-3 flex items-start gap-2 rounded-lg bg-[var(--success-bg)] px-3 py-2.5 text-xs text-[var(--success)]">
+                    <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
+                    <div className="space-y-1">
+                      <p>
+                        <span className="font-mono">{saveResult.path}</span>{' — '}
+                        <span>{saveResult.created ? '새로 만들어졌어요' : '덮어썼어요'}</span>
+                      </p>
+                      {saveResult.backup_path && <p>백업: {saveResult.backup_path}</p>}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
