@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { ToolingView } from '../features/tooling/ToolingView'
 import type { CatalogItem, ToolingAdapter, ToolingDiagnostic, ToolingEnvironment, ToolingExtension, ToolingProvider } from '../api.tooling'
 import type { EnvInstructionEntry, EnvInventoryAll } from '../api.env'
+import { CONVERT_PAIRS } from '../features/tooling/envtools'
 
 // Phase 6b Task 2 — 환경·지침 탭의 첫 섹션(CLI 인벤토리). Companion to
 // test/tooling-sources.test.tsx (Phase 6c 소스 탭): mirrors its
@@ -15,6 +16,11 @@ import type { EnvInstructionEntry, EnvInventoryAll } from '../api.env'
 // AGENTS.md/CLAUDE.md instruction matrix (/env/instructions). Same stance —
 // its own mockFetch branch, its own loading/error isolation from the
 // inventory section above it.
+//
+// Phase 6b Task 4 adds a third, independent section: a format-conversion
+// preview (POST /env/convert). Preview-only — it never writes. It owns its
+// own local state (selected pair/content/result/error), so unlike the two
+// sections above it, there's nothing to eager-load from ToolingView.
 
 function jsonResponse(data: unknown, status = 200) {
   return {
@@ -93,13 +99,20 @@ const OUTSIDE_INSTRUCTIONS: EnvInstructionEntry = {
   error: '홈 디렉터리 밖 경로는 다룰 수 없어요',
 }
 
+// Phase 6b Task 4 fixture — the convert endpoint is preview-only (never
+// writes) and, per the brief, this MVP always exercises it via `content`
+// (not `path`) to keep it that way.
+const CONVERT_RESULT = { converted: '# 변환됨\n본문', warnings: ['일부 필드 유실'], lossy_fields: ['tools'] }
+
 describe('ToolingView — Phase 6b 환경·지침 탭 (CLI 인벤토리)', () => {
   let inventoryShouldFail: boolean
   let instructionsShouldFail: boolean
   let instructionsCalls: number
   let inventoryCalls: number
+  let convertShouldFail: boolean
+  let convertCalls: number
 
-  const mockFetch = vi.fn(async (url: string) => {
+  const mockFetch = vi.fn(async (url: string, opts?: RequestInit) => {
     if (url === '/tooling/environment') return jsonResponse(ENVIRONMENT)
     if (url === '/tooling/providers') return jsonResponse(PROVIDERS)
     if (url === '/tooling/extensions') return jsonResponse(EXTENSIONS)
@@ -126,6 +139,13 @@ describe('ToolingView — Phase 6b 환경·지침 탭 (CLI 인벤토리)', () =>
       }
       return jsonResponse({ entries })
     }
+    if (url === '/env/convert') {
+      convertCalls++
+      if (convertShouldFail) return jsonResponse({ detail: '지원하지 않는 변환이에요' }, 400)
+      const body = JSON.parse(String(opts?.body ?? '{}'))
+      expect(body.content).toBeTruthy()
+      return jsonResponse(CONVERT_RESULT)
+    }
     return jsonResponse({ detail: 'unhandled in test' }, 404)
   })
 
@@ -134,6 +154,8 @@ describe('ToolingView — Phase 6b 환경·지침 탭 (CLI 인벤토리)', () =>
     inventoryCalls = 0
     instructionsShouldFail = false
     instructionsCalls = 0
+    convertShouldFail = false
+    convertCalls = 0
     mockFetch.mockClear()
     vi.stubGlobal('fetch', mockFetch)
   })
@@ -226,5 +248,49 @@ describe('ToolingView — Phase 6b 환경·지침 탭 (CLI 인벤토리)', () =>
     fireEvent.click(screen.getByRole('button', { name: '추가' }))
 
     expect(await screen.findByText('홈 디렉터리 밖 경로는 다룰 수 없어요')).toBeInTheDocument()
+  })
+
+  // Phase 6b Task 4 — 변환 미리보기 section, added below the instruction
+  // matrix on the same tab. Preview-only: it consumes envApi.convert and
+  // renders the result, never writes anything.
+
+  it('lets the user pick a conversion pair, paste content, preview it, and see the converted text, warnings, and lossy-field chips', async () => {
+    await openEnvToolsTab()
+    await screen.findByText('.claude/CLAUDE.md')
+
+    const pairIndex = CONVERT_PAIRS.findIndex(p => p.target_kind === 'claude_command')
+    expect(pairIndex).toBeGreaterThanOrEqual(0)
+
+    const select = screen.getByLabelText('변환 종류')
+    fireEvent.change(select, { target: { value: String(pairIndex) } })
+
+    const textarea = screen.getByLabelText('변환할 원본 내용')
+    fireEvent.change(textarea, { target: { value: '# 원본 프롬프트' } })
+
+    fireEvent.click(screen.getByRole('button', { name: '미리보기' }))
+
+    const converted = await screen.findByText(/# 변환됨/)
+    expect(converted.tagName.toLowerCase()).toBe('pre')
+    expect(converted).toHaveTextContent('본문')
+    expect(screen.getByText('일부 필드 유실')).toBeInTheDocument()
+    expect(screen.getByText('tools')).toBeInTheDocument()
+
+    expect(convertCalls).toBe(1)
+  })
+
+  it('shows an inline error for an unsupported conversion (400) without crashing the pane or triggering the global tab error', async () => {
+    convertShouldFail = true
+    await openEnvToolsTab()
+    await screen.findByText('.claude/CLAUDE.md')
+
+    const textarea = screen.getByLabelText('변환할 원본 내용')
+    fireEvent.change(textarea, { target: { value: '# 원본' } })
+    fireEvent.click(screen.getByRole('button', { name: '미리보기' }))
+
+    expect(await screen.findByText('지원하지 않는 변환이에요')).toBeInTheDocument()
+    // The rest of the tab is unaffected — this is an inline error, not the
+    // shared "connection failed" tab-wide error state.
+    expect(screen.getByText('CLAUDE.md')).toBeInTheDocument()
+    expect(screen.queryByText('Tooling API에 연결할 수 없어요')).not.toBeInTheDocument()
   })
 })

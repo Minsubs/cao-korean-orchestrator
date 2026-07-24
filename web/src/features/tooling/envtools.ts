@@ -26,3 +26,23 @@ export const KIND_LABELS: Record<string, string> = {
   skill: '스킬',
   mcp_config: 'MCP 설정',
 }
+
+/**
+ * Phase 6b Task 4 — the exact (source_kind, target_kind) pairs
+ * `POST /env/convert` supports (services/env_migration). Any other
+ * combination is a backend 400 `UnsupportedConversion`, so this is the
+ * client-side menu, not an open-ended guess — do not add pairs the backend
+ * doesn't document.
+ */
+export interface ConvertPair {
+  source_kind: string
+  target_kind: string
+  label: string
+}
+
+export const CONVERT_PAIRS: ConvertPair[] = [
+  { source_kind: 'claude_agent', target_kind: 'cao_profile', label: 'Claude 에이전트 → CAO 프로필' },
+  { source_kind: 'claude_command', target_kind: 'codex_prompt', label: 'Claude 명령 → Codex 프롬프트' },
+  { source_kind: 'codex_prompt', target_kind: 'claude_command', label: 'Codex 프롬프트 → Claude 명령' },
+  { source_kind: 'instruction', target_kind: 'counterpart_instruction', label: 'CLAUDE.md ↔ AGENTS.md' },
+]
