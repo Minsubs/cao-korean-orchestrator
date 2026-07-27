@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { AlertTriangle, ChevronRight, Eye, FileText, MessageSquare, Square, Terminal as TermIcon, WifiOff } from 'lucide-react'
 import { StatusBadge } from '../../components/StatusBadge'
 import { AgentAvatar } from './AgentAvatar'
+import { ProgressCard } from './ProgressCard'
+import { formatElapsed } from './orchestrationProgress'
 import { computeStall, stallMinutes } from './stall'
 import { useNowTick } from './useNowTick'
 import type { UiConnectionStatus } from './eventsClient'
@@ -14,6 +16,13 @@ interface ThreadProps {
   threadItems: ThreadItem[]
   connectionStatus: UiConnectionStatus
   terminalStatuses: Record<string, string>
+  /** Same card list the agent side panel reads — the progress card must not introduce a second state source. */
+  cards: DelegationCard[]
+  supervisorTerminalId: string | null
+  /** ms epoch of the pending turn's send, or null when nothing is pending / the stored turn predates Phase 2. */
+  pendingSince: number | null
+  /** Chat entry id of the pending assistant placeholder the progress card replaces. */
+  pendingMessageId: string | null
   onOpenTerminal: (id: string) => void
   onOpenOutput: (id: string) => void
   onOpenLogs: () => void
@@ -47,6 +56,11 @@ export function ChatBubble({ entry }: { entry: ChatEntry }) {
         }`}
       >
         {entry.targetId && <div className="mb-1 text-[10px] font-semibold opacity-70">→ {entry.targetId.slice(0, 8)}</div>}
+        {entry.progress && (
+          <div className="mb-1 text-[10px] font-semibold text-[var(--success)]">
+            ✓ 완료 · 워커 {entry.progress.workerCount} · 소요 {formatElapsed(entry.progress.durationMs)}
+          </div>
+        )}
         {showRaw ? entry.raw : entry.content}
         {hasRaw && (
           <button
@@ -195,7 +209,17 @@ function DelegationCardBlock({
 }
 
 export function Thread(props: ThreadProps) {
-  const { sessionName, loading, threadItems, connectionStatus, terminalStatuses } = props
+  const {
+    sessionName,
+    loading,
+    threadItems,
+    connectionStatus,
+    terminalStatuses,
+    cards,
+    supervisorTerminalId,
+    pendingSince,
+    pendingMessageId,
+  } = props
   const now = useNowTick()
 
   return (
@@ -217,7 +241,23 @@ export function Thread(props: ThreadProps) {
             <p className="mt-16 text-center text-xs text-[var(--text-3)]">이벤트 없음 — 아직 이 세션에서 관측된 활동이 없어요.</p>
           ) : (
             threadItems.map(item => {
-              if (item.kind === 'chat') return <ChatBubble key={item.id} entry={item.entry} />
+              if (item.kind === 'chat') {
+                // The pending assistant placeholder becomes the live progress
+                // card; without a recorded start time we keep the plain
+                // WAITING text rather than invent an elapsed value.
+                if (pendingSince !== null && pendingMessageId === item.entry.id) {
+                  return (
+                    <ProgressCard
+                      key={item.id}
+                      pendingSince={pendingSince}
+                      supervisorTerminalId={supervisorTerminalId}
+                      cards={cards}
+                      terminalStatuses={terminalStatuses}
+                    />
+                  )
+                }
+                return <ChatBubble key={item.id} entry={item.entry} />
+              }
               if (item.kind === 'system') {
                 return (
                   <div key={item.id} className="self-center text-[11px] text-[var(--text-3)]">
