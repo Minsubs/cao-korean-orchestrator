@@ -21,6 +21,7 @@ const STAGE_LABEL: Record<OrchestrationStage, string> = {
 const STATE_LABEL: Record<WorkerState, string> = {
   waiting: '대기',
   working: '작업 중',
+  blocked: '승인 대기',
   done: '완료',
   error: '오류',
 }
@@ -28,6 +29,7 @@ const STATE_LABEL: Record<WorkerState, string> = {
 const STATE_CLASS: Record<WorkerState, string> = {
   waiting: 'border-[var(--border)] bg-[var(--surface)] text-[var(--text-3)]',
   working: 'border-[var(--info)] bg-[var(--info-bg)] text-[var(--info)]',
+  blocked: 'border-[var(--warning)] bg-[var(--warning-bg)] text-[var(--warning)]',
   done: 'border-[var(--success)] bg-[var(--success-bg)] text-[var(--success)]',
   error: 'border-[var(--danger)] bg-[var(--danger-bg)] text-[var(--danger)]',
 }
