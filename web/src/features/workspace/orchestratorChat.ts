@@ -5,6 +5,7 @@
 // storage key prefix is intentionally identical so history is shared between
 // the classic modal and this inline Thread surface.
 import { STORAGE_KEYS } from './constants'
+import type { OrchestrationSummary } from './orchestrationProgress'
 import type { ChatEntry } from './types'
 
 function stripAnsi(text: string): string {
@@ -82,6 +83,18 @@ interface StoredChatMessage {
   content: string
   targetId?: string
   raw?: string
+  /** Unvalidated on read — always pass through `readSummary` before it becomes a ChatEntry. */
+  progress?: unknown
+}
+
+/** Narrow a localStorage-sourced value to an OrchestrationSummary; anything malformed is dropped, not thrown. */
+function readSummary(value: unknown): OrchestrationSummary | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const candidate = value as Partial<OrchestrationSummary>
+  if (typeof candidate.workerCount !== 'number' || !Number.isFinite(candidate.workerCount)) return undefined
+  if (typeof candidate.durationMs !== 'number' || !Number.isFinite(candidate.durationMs)) return undefined
+  if (!Array.isArray(candidate.workerLabels) || candidate.workerLabels.some(label => typeof label !== 'string')) return undefined
+  return { workerCount: candidate.workerCount, durationMs: candidate.durationMs, workerLabels: candidate.workerLabels }
 }
 
 interface StoredChat {
@@ -97,6 +110,8 @@ export interface WorkspacePendingReply {
   terminalId: string
   baselineGenerations: Record<string, number>
   baselineInboxMessageId: number
+  /** ms epoch when the prompt was sent. Optional — payloads stored before Phase 2 have none. */
+  startedAt?: number
 }
 
 let sequence = 0
@@ -133,8 +148,18 @@ export function loadStoredChat(sessionName: string): {
       .filter(m => m.content.length > 0)
       .slice(-100)
     const baseTs = Date.now() - cleaned.length * 1000
-    const entries: ChatEntry[] = cleaned.map((m, i) => ({ ...m, ts: baseTs + i * 1000 }))
+    const entries: ChatEntry[] = cleaned.map((m, i) => {
+      const { progress, ...rest } = m
+      const summary = readSummary(progress)
+      const ts = baseTs + i * 1000
+      return summary ? { ...rest, ts, progress: summary } : { ...rest, ts }
+    })
     const pending = parsed.workspacePendingReply
+    const startedAt = typeof pending?.startedAt === 'number'
+      && Number.isFinite(pending.startedAt)
+      && pending.startedAt > 0
+      ? pending.startedAt
+      : undefined
     const validGenerations = !!pending?.baselineGenerations
       && typeof pending.baselineGenerations === 'object'
       && !Array.isArray(pending.baselineGenerations)
@@ -150,7 +175,7 @@ export function loadStoredChat(sessionName: string): {
       && Number.isFinite(pending.baselineInboxMessageId)
       && pending.baselineInboxMessageId >= 0
       && entries.some(entry => entry.id === pending.messageId && entry.role === 'assistant')
-      ? pending as WorkspacePendingReply
+      ? { ...(pending as WorkspacePendingReply), startedAt }
       : null
     return {
       entries,
@@ -172,7 +197,14 @@ export function saveStoredChat(
     const existing = JSON.parse(window.localStorage.getItem(storageKey(sessionName)) || '{}') as Record<string, unknown>
     const workspaceMessages: StoredChatMessage[] = entries
       .slice(-100)
-      .map(({ id, role, content, targetId, raw }) => ({ id, role, content, ...(targetId ? { targetId } : {}), ...(raw ? { raw } : {}) }))
+      .map(({ id, role, content, targetId, raw, progress }) => ({
+        id,
+        role,
+        content,
+        ...(targetId ? { targetId } : {}),
+        ...(raw ? { raw } : {}),
+        ...(progress ? { progress } : {}),
+      }))
     const messages = workspaceMessages.filter(message => !message.targetId)
     window.localStorage.setItem(storageKey(sessionName), JSON.stringify({
       ...existing,

@@ -11,6 +11,7 @@ import {
   type WorkspacePendingReply,
 } from './orchestratorChat'
 import { applyUiEvents, buildThreadItems, filterUiEventsForSession, mergeSeededCard, seedCardFromTerminalMeta, withCallerNames } from './threadReducer'
+import { computeOrchestrationProgress, summarizeOrchestration, type OrchestrationSummary } from './orchestrationProgress'
 import type { UiConnectionStatus } from './eventsClient'
 import type { ChatEntry, DelegationCard, ThreadItem, UiEvent } from './types'
 import { orchestrationReplyFingerprint, snapshotInputGenerations } from './sessionCompletion'
@@ -31,6 +32,10 @@ export interface WorkspaceSessionState {
   terminalStatuses: Record<string, string>
   chatEntries: ChatEntry[]
   sending: boolean
+  /** ms epoch the pending turn was sent, or null when nothing is pending (or the stored turn predates Phase 2). */
+  pendingSince: number | null
+  /** Chat entry id of the pending assistant placeholder the progress card replaces. */
+  pendingMessageId: string | null
   composerTargetId: string | null
   setComposerTarget: (id: string) => void
   sendMessage: (text: string, explicitTargetId?: string) => Promise<void>
@@ -65,6 +70,10 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
   const storedSupervisorOutputRef = useRef('')
   const skipPersistForSessionRef = useRef<string | null>(null)
   const rosterBackfillSessionRef = useRef<string | null>(null)
+  // Latest card/status snapshot for the pending-reply effect, which must not
+  // re-subscribe (and restart its poll) every time a status tick arrives.
+  const cardsRef = useRef<DelegationCard[]>([])
+  const terminalStatusesRef = useRef<Record<string, string>>({})
 
   const supervisorTerminalId = terminals[0]?.id ?? null
 
@@ -259,6 +268,14 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
     saveDelegationHistory(sessionName, cards)
   }, [sessionName, cards])
 
+  useEffect(() => {
+    cardsRef.current = cards
+  }, [cards])
+
+  useEffect(() => {
+    terminalStatusesRef.current = terminalStatuses
+  }, [terminalStatuses])
+
   const threadItems = useMemo(() => {
     const sessionIds = new Set([sessionIdValue, sessionName].filter((v): v is string => !!v))
     const knownTerminalIds = new Set(terminals.map(t => t.id))
@@ -266,9 +283,23 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
     return buildThreadItems({ events: relevantEvents, chat: chatEntries, cards: cardsRecord })
   }, [events, chatEntries, cardsRecord, sessionIdValue, sessionName, terminals])
 
-  const replaceChatEntry = useCallback((id: string, content: string, raw?: string) => {
-    setChatEntries(current => current.map(e => (e.id === id ? { ...e, content, ...(raw !== undefined ? { raw } : {}) } : e)))
-  }, [])
+  const replaceChatEntry = useCallback(
+    (id: string, content: string, raw?: string, progress?: OrchestrationSummary) => {
+      setChatEntries(current =>
+        current.map(e =>
+          e.id === id
+            ? {
+                ...e,
+                content,
+                ...(raw !== undefined ? { raw } : {}),
+                ...(progress !== undefined ? { progress } : {}),
+              }
+            : e,
+        ),
+      )
+    },
+    [],
+  )
 
   const sendMessage = useCallback(
     async (text: string, explicitTargetId?: string) => {
@@ -309,6 +340,7 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
           terminalId: targetId,
           baselineGenerations,
           baselineInboxMessageId,
+          startedAt: Date.now(),
         }
         setPendingReply(nextPendingReply)
         await api.sendInput(targetId, prompt)
@@ -372,7 +404,18 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
 
         const clean = formatOrchestratorOutput(outputResult.output || '')
         if (clean && clean !== pendingReply.baseline) {
-          replaceChatEntry(pendingReply.messageId, clean, outputResult.output || '')
+          // Freeze what this turn actually delegated, so the collapsed
+          // "✓ 완료 · 워커 N · 소요 M" summary survives reload.
+          const summary = summarizeOrchestration(
+            computeOrchestrationProgress({
+              pendingSince: pendingReply.startedAt ?? null,
+              supervisorTerminalId,
+              cards: cardsRef.current,
+              terminalStatuses: terminalStatusesRef.current,
+              now: Date.now(),
+            }),
+          )
+          replaceChatEntry(pendingReply.messageId, clean, outputResult.output || '', summary)
           lastOutputRef.current[pendingReply.terminalId] = clean
           if (pendingReply.terminalId === supervisorTerminalId) storedSupervisorOutputRef.current = clean
           setPendingReply(null)
@@ -420,6 +463,8 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
     terminalStatuses,
     chatEntries,
     sending,
+    pendingSince: pendingReply?.startedAt ?? null,
+    pendingMessageId: pendingReply?.messageId ?? null,
     composerTargetId,
     setComposerTarget: setComposerTargetId,
     sendMessage,

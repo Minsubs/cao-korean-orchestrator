@@ -5,6 +5,7 @@ import {
   summarizeOrchestration,
   workerStateFor,
 } from '../features/workspace/orchestrationProgress'
+import { loadStoredChat, saveStoredChat } from '../features/workspace/orchestratorChat'
 import type { DelegationCard } from '../features/workspace/types'
 
 const T0 = 1_700_000_000_000
@@ -187,5 +188,87 @@ describe('summarizeOrchestration', () => {
       durationMs: 125_000,
       workerLabels: [progress!.workers[0].roleLabel],
     })
+  })
+})
+
+describe('stored chat round-trip of the completion summary', () => {
+  it('preserves ChatEntry.progress and pendingReply.startedAt', () => {
+    window.localStorage.clear()
+    saveStoredChat(
+      'sess',
+      [
+        {
+          id: 'a1',
+          role: 'assistant',
+          content: '끝났어요',
+          ts: 1,
+          progress: { workerCount: 2, durationMs: 61_000, workerLabels: ['테스트 담당', '탐색 담당'] },
+        },
+      ],
+      '끝났어요',
+      {
+        messageId: 'a1',
+        baseline: '',
+        terminalId: 'sup',
+        baselineGenerations: {},
+        baselineInboxMessageId: 0,
+        startedAt: 12_345,
+      },
+    )
+    const loaded = loadStoredChat('sess')
+    expect(loaded.entries[0].progress).toEqual({
+      workerCount: 2,
+      durationMs: 61_000,
+      workerLabels: ['테스트 담당', '탐색 담당'],
+    })
+    expect(loaded.pendingReply?.startedAt).toBe(12_345)
+  })
+
+  it('loads a legacy entry that has no progress field', () => {
+    window.localStorage.clear()
+    window.localStorage.setItem(
+      'cao:session-chat:v2:sess',
+      JSON.stringify({ workspaceMessages: [{ id: 'a1', role: 'assistant', content: '옛 답변' }], lastOutput: '옛 답변' }),
+    )
+    const loaded = loadStoredChat('sess')
+    expect(loaded.entries[0].content).toBe('옛 답변')
+    expect(loaded.entries[0].progress).toBeUndefined()
+  })
+
+  it('drops a malformed progress payload instead of surfacing it', () => {
+    window.localStorage.clear()
+    window.localStorage.setItem(
+      'cao:session-chat:v2:sess',
+      JSON.stringify({
+        workspaceMessages: [
+          { id: 'a1', role: 'assistant', content: '답변', progress: { workerCount: 'two', durationMs: null, workerLabels: [1] } },
+        ],
+        lastOutput: '답변',
+      }),
+    )
+    const loaded = loadStoredChat('sess')
+    expect(loaded.entries[0].progress).toBeUndefined()
+  })
+
+  it('drops a non-numeric startedAt from a tampered pending payload', () => {
+    window.localStorage.clear()
+    window.localStorage.setItem(
+      'cao:session-chat:v2:sess',
+      JSON.stringify({
+        workspaceMessages: [{ id: 'a1', role: 'assistant', content: '답변' }],
+        lastOutput: '답변',
+        workspacePendingReply: {
+          messageId: 'a1',
+          baseline: '',
+          terminalId: 'sup',
+          baselineGenerations: {},
+          baselineInboxMessageId: 0,
+          startedAt: 'yesterday',
+        },
+      }),
+    )
+    const loaded = loadStoredChat('sess')
+    expect(loaded.pendingReply).not.toBeNull()
+    expect(loaded.pendingReply?.startedAt).toBeUndefined()
   })
 })
