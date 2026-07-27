@@ -29,6 +29,8 @@ interface ThreadProps {
   onRequestStop: (id: string, agentName: string | null) => void
   onMessageTarget: (id: string) => void
   onRequestStatusCheck: (id: string, agentName: string | null) => Promise<void>
+  /** Re-sends a prompt whose original send failed (Phase 3 다시 보내기). */
+  onRetry: (prompt: string) => void
 }
 
 function resolveStatus(card: DelegationCard, terminalStatuses: Record<string, string>): string | null {
@@ -38,7 +40,8 @@ function resolveStatus(card: DelegationCard, terminalStatuses: Record<string, st
 
 const INSTRUCTION_TYPE_LABEL: Record<string, string> = { assign: '배정', handoff: '핸드오프' }
 
-export function ChatBubble({ entry }: { entry: ChatEntry }) {
+export function ChatBubble({ entry, onRetry }: { entry: ChatEntry; onRetry?: (prompt: string) => void }) {
+  const retryPrompt = entry.retryPrompt
   const isUser = entry.role === 'user'
   const isSystem = entry.role === 'system'
   const [showRaw, setShowRaw] = useState(false)
@@ -69,6 +72,15 @@ export function ChatBubble({ entry }: { entry: ChatEntry }) {
             className="mt-1.5 block text-[10px] font-semibold text-[var(--text-3)] hover:text-[var(--text)]"
           >
             {showRaw ? '정리본 보기' : '원문 보기'}
+          </button>
+        )}
+        {retryPrompt && onRetry && (
+          <button
+            type="button"
+            onClick={() => onRetry(retryPrompt)}
+            className="mt-1.5 block text-[10px] font-semibold text-[var(--danger)] hover:underline"
+          >
+            다시 보내기
           </button>
         )}
       </div>
@@ -219,6 +231,8 @@ export function Thread(props: ThreadProps) {
     supervisorTerminalId,
     pendingSince,
     pendingMessageId,
+    onOpenTerminal,
+    onRetry,
   } = props
   const now = useNowTick()
 
@@ -253,10 +267,11 @@ export function Thread(props: ThreadProps) {
                       supervisorTerminalId={supervisorTerminalId}
                       cards={cards}
                       terminalStatuses={terminalStatuses}
+                      onOpenWorker={onOpenTerminal}
                     />
                   )
                 }
-                return <ChatBubble key={item.id} entry={item.entry} />
+                return <ChatBubble key={item.id} entry={item.entry} onRetry={onRetry} />
               }
               if (item.kind === 'system') {
                 return (

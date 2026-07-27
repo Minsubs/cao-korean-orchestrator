@@ -318,6 +318,7 @@ export function Workspace({ events, status: streamStatus, selectedSessionId, set
                 onRequestStop={(id, name) => setPendingStop({ id, name })}
                 onMessageTarget={id => workspaceSession.setComposerTarget(id)}
                 onRequestStatusCheck={workspaceSession.requestStatusCheck}
+                onRetry={prompt => void workspaceSession.sendMessage(prompt)}
               />
               <Composer
                 sessionName={selectedSessionId}

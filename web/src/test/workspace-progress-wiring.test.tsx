@@ -52,6 +52,7 @@ function threadProps(over: Partial<ComponentProps<typeof Thread>> = {}): Compone
     onRequestStop: () => {},
     onMessageTarget: () => {},
     onRequestStatusCheck: async () => {},
+    onRetry: () => {},
     ...over,
   }
 }

@@ -30,7 +30,7 @@ function card(over: Partial<DelegationCard> & { terminalId: string }): Delegatio
 
 describe('ProgressCard', () => {
   it('shows the dispatching stage before any worker exists', () => {
-    render(<ProgressCard pendingSince={T0} supervisorTerminalId="sup" cards={[]} terminalStatuses={{}} />)
+    render(<ProgressCard pendingSince={T0} supervisorTerminalId="sup" cards={[]} terminalStatuses={{}} onOpenWorker={() => {}} />)
     const root = screen.getByTestId('progress-card')
     expect(root.getAttribute('data-stage')).toBe('dispatching')
     expect(screen.getByText('작업 배정 중')).toBeTruthy()
@@ -43,6 +43,7 @@ describe('ProgressCard', () => {
         pendingSince={T0}
         supervisorTerminalId="sup"
         cards={[card({ terminalId: 'w1', agentName: 'codex_qa_terra', provider: 'codex' })]}
+        onOpenWorker={() => {}}
         terminalStatuses={{ w1: 'PROCESSING' }}
       />,
     )
@@ -52,16 +53,19 @@ describe('ProgressCard', () => {
     expect(screen.getByText(/콜백 대기 중$/)).toBeTruthy()
   })
 
-  it('renders the elapsed time of the turn', () => {
+  // Phase 3 added a second elapsed label per worker, so the turn-level one is
+  // no longer the only match — both are expected to be on screen.
+  it('renders the elapsed time of the turn alongside the worker one', () => {
     render(
       <ProgressCard
         pendingSince={T0}
         supervisorTerminalId="sup"
         cards={[card({ terminalId: 'w1', agentName: 'codex_qa_terra' })]}
+        onOpenWorker={() => {}}
         terminalStatuses={{ w1: 'PROCESSING' }}
       />,
     )
-    expect(screen.getByText(/^1분/)).toBeTruthy()
+    expect(screen.getAllByText(/^1분/)).toHaveLength(2)
   })
 
   it('warns when a worker is stalled', () => {
@@ -77,6 +81,7 @@ describe('ProgressCard', () => {
             firstSeenAt: Date.now() - 7 * 60 * 1000,
           }),
         ]}
+        onOpenWorker={() => {}}
         terminalStatuses={{ w1: 'PROCESSING' }}
       />,
     )
@@ -89,6 +94,7 @@ describe('ProgressCard', () => {
         pendingSince={T0}
         supervisorTerminalId="sup"
         cards={[card({ terminalId: 'w1', agentName: 'codex_qa_terra', killed: true })]}
+        onOpenWorker={() => {}}
         terminalStatuses={{}}
       />,
     )
@@ -102,6 +108,7 @@ describe('ProgressCard', () => {
         pendingSince={T0}
         supervisorTerminalId="sup"
         cards={[card({ terminalId: 'abcdef123456' })]}
+        onOpenWorker={() => {}}
         terminalStatuses={{ abcdef123456: 'PROCESSING' }}
       />,
     )
