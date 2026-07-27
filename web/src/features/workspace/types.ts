@@ -129,6 +129,8 @@ export interface ChatEntry {
   raw?: string
   /** Assistant only: frozen snapshot of the orchestration turn that produced this reply (Phase 2). */
   progress?: OrchestrationSummary
+  /** Assistant only: the prompt whose send failed, enabling a one-click 다시 보내기 (Phase 3). */
+  retryPrompt?: string
 }
 
 export type ThreadItem =

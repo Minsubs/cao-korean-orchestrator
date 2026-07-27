@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { classifyOrchestrationError, pendingTimeoutMessage } from '../features/workspace/orchestrationError'
+import { loadStoredChat, saveStoredChat } from '../features/workspace/orchestratorChat'
 
 function apiError(status: number, detail?: string, message = `${status} err`): Error & { status: number; detail?: string } {
   const err = new Error(message) as Error & { status: number; detail?: string }
@@ -66,6 +67,31 @@ describe('classifyOrchestrationError', () => {
   it('leaves raw undefined when there is nothing beyond the user message to show', () => {
     expect(classifyOrchestrationError(undefined).raw).toBeUndefined()
     expect(classifyOrchestrationError(undefined).kind).toBe('unknown')
+  })
+})
+
+describe('stored chat round-trip of retryPrompt', () => {
+  it('preserves retryPrompt so 다시 보내기 survives a reload', () => {
+    window.localStorage.clear()
+    saveStoredChat(
+      'sess',
+      [{ id: 'a1', role: 'assistant', content: '메시지를 보내지 못했어요.', ts: 1, retryPrompt: '테스트 돌려줘' }],
+      '',
+      null,
+    )
+    expect(loadStoredChat('sess').entries[0].retryPrompt).toBe('테스트 돌려줘')
+  })
+
+  it('drops a non-string retryPrompt from a tampered payload', () => {
+    window.localStorage.clear()
+    window.localStorage.setItem(
+      'cao:session-chat:v2:sess',
+      JSON.stringify({
+        workspaceMessages: [{ id: 'a1', role: 'assistant', content: '실패', retryPrompt: { evil: true } }],
+        lastOutput: '실패',
+      }),
+    )
+    expect(loadStoredChat('sess').entries[0].retryPrompt).toBeUndefined()
   })
 })
 
