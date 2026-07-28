@@ -85,8 +85,7 @@ class AntigravityAdapter(ExtensionAdapter):
             return unsupported_capabilities(_NOT_INSTALLED_REASON)
 
         reasons = {
-            key: _READ_ONLY_REASON
-            for key in ("canSearch", "canInstall", "canRemove", "canUpdate")
+            key: _READ_ONLY_REASON for key in ("canSearch", "canInstall", "canRemove", "canUpdate")
         }
         # canUpdateAll here means "update the agy CLI binary itself" (`agy
         # update`) via the target-exempt update_all action — the one mutation

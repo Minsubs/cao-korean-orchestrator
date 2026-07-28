@@ -8,10 +8,10 @@ otherwise a renderer could smuggle an arbitrary package name into a real
 
 import pytest
 
-from cli_agent_orchestrator.services.tooling.adapters import claude_code, codex
-from cli_agent_orchestrator.services.tooling.adapters.codex import CodexAdapter
-from cli_agent_orchestrator.services.tooling.adapters.claude_code import ClaudeCodeAdapter
 from cli_agent_orchestrator.services.tooling import operations, runner
+from cli_agent_orchestrator.services.tooling.adapters import claude_code, codex
+from cli_agent_orchestrator.services.tooling.adapters.claude_code import ClaudeCodeAdapter
+from cli_agent_orchestrator.services.tooling.adapters.codex import CodexAdapter
 
 
 def test_install_cli_is_a_valid_action():
@@ -22,10 +22,13 @@ def test_npm_is_allowlisted():
     assert "npm" in runner.ALLOWED_BINARIES
 
 
-@pytest.mark.parametrize("adapter,pkg", [
-    (CodexAdapter(), "@openai/codex"),
-    (ClaudeCodeAdapter(), "@anthropic-ai/claude-code"),
-])
+@pytest.mark.parametrize(
+    "adapter,pkg",
+    [
+        (CodexAdapter(), "@openai/codex"),
+        (ClaudeCodeAdapter(), "@anthropic-ai/claude-code"),
+    ],
+)
 def test_install_cli_plan_uses_fixed_package(adapter, pkg):
     assert adapter.capabilities().canInstallCli is True
     plan = adapter.plan("install_cli", None, None)
@@ -39,10 +42,13 @@ def test_install_cli_ignores_client_target(adapter):
     assert "evil-package" not in plan.argv
 
 
-@pytest.mark.parametrize("module,adapter", [
-    (codex, CodexAdapter()),
-    (claude_code, ClaudeCodeAdapter()),
-])
+@pytest.mark.parametrize(
+    "module,adapter",
+    [
+        (codex, CodexAdapter()),
+        (claude_code, ClaudeCodeAdapter()),
+    ],
+)
 def test_install_cli_capability_true_even_when_not_installed(monkeypatch, module, adapter):
     # The whole point of install_cli is bootstrapping when the CLI is absent,
     # so canInstallCli must stay True even on the "not installed" branch.
@@ -62,11 +68,14 @@ def test_new_adapters_registered():
         assert registry.get_adapter(pid) is not None
 
 
-@pytest.mark.parametrize("pid,pkg", [
-    ("kiro_cli", "@anthropic-ai/kiro-cli"),
-    ("copilot_cli", "@github/copilot"),
-    ("opencode_cli", "opencode-ai"),
-])
+@pytest.mark.parametrize(
+    "pid,pkg",
+    [
+        ("kiro_cli", "@anthropic-ai/kiro-cli"),
+        ("copilot_cli", "@github/copilot"),
+        ("opencode_cli", "opencode-ai"),
+    ],
+)
 def test_new_adapter_install_cli(pid, pkg):
     from cli_agent_orchestrator.services.tooling.adapters import registry
 
