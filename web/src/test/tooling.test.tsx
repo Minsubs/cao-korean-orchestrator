@@ -269,8 +269,9 @@ describe('ToolingView', () => {
   // ── All tabs active (Phase 6c) ──────────────────────────────────────────
   // Phase 5b activated 탐색; Phase 6c activates the last two (소스/환경
   // 프로필 — see test/tooling-sources.test.tsx and
-  // test/tooling-envprofiles.test.tsx for their own tab content) — no tab is
-  // disabled anymore.
+  // test/tooling-envprofiles.test.tsx for their own tab content); Phase 6b
+  // Task 2 adds an eighth (환경·지침 — see test/tooling-envtools.test.tsx) —
+  // no tab is disabled anymore.
   it('renders every tab as enabled and switches into 소스/환경 프로필 on click', async () => {
     window.localStorage.removeItem('cao:env-profiles:v1')
     render(<ToolingView />)
@@ -281,7 +282,7 @@ describe('ToolingView', () => {
     // accessible name, so an exact-string match per label is brittle here.
     const tablist = screen.getByRole('tablist', { name: '도구 및 확장 하위 탭' })
     const tabs = within(tablist).getAllByRole('tab')
-    expect(tabs).toHaveLength(7)
+    expect(tabs).toHaveLength(8)
     for (const t of tabs) {
       expect(t).not.toBeDisabled()
       expect(t).not.toHaveAttribute('title', 'Phase 4~6에서 제공돼요')

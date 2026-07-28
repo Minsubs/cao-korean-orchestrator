@@ -11,6 +11,12 @@ interface Snackbar {
   message: string
 }
 
+interface Overlay {
+  count: number
+  message: string
+  sub: string | null
+}
+
 interface Store {
   sessions: Session[]
   activeSession: string | null
@@ -18,6 +24,7 @@ interface Store {
   connected: boolean
   snackbar: Snackbar | null
   terminalStatuses: Record<string, string>
+  overlay: Overlay
 
   fetchSessions: () => Promise<void>
   selectSession: (name: string | null) => Promise<void>
@@ -28,6 +35,8 @@ interface Store {
   setConnected: (connected: boolean) => void
   setTerminalStatus: (id: string, status: string) => void
   clearTerminalStatuses: (ids: string[]) => void
+  showOverlay: (message: string, sub?: string) => void
+  hideOverlay: () => void
 }
 
 export const useStore = create<Store>((set, get) => ({
@@ -37,6 +46,7 @@ export const useStore = create<Store>((set, get) => ({
   connected: false,
   snackbar: null,
   terminalStatuses: {},
+  overlay: { count: 0, message: '', sub: null },
 
   fetchSessions: async () => {
     try {
@@ -97,6 +107,8 @@ export const useStore = create<Store>((set, get) => ({
 
   showSnackbar: (snackbar) => set({ snackbar }),
   hideSnackbar: () => set({ snackbar: null }),
+  showOverlay: (message, sub) => set(s => ({ overlay: { count: s.overlay.count + 1, message, sub: sub ?? null } })),
+  hideOverlay: () => set(s => ({ overlay: { ...s.overlay, count: Math.max(0, s.overlay.count - 1) } })),
   setConnected: (connected) => set({ connected }),
   setTerminalStatus: (id, status) =>
     set(state => {

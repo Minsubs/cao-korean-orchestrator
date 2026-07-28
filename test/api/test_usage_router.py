@@ -56,7 +56,11 @@ def test_accounts_returns_both_real_local_providers(client: TestClient, monkeypa
 
     assert response.status_code == 200
     body = response.json()
-    assert [account["provider"] for account in body["accounts"]] == ["claude_code", "codex", "antigravity_cli"]
+    assert [account["provider"] for account in body["accounts"]] == [
+        "claude_code",
+        "codex",
+        "antigravity_cli",
+    ]
     assert body["scanned_at"].startswith("20")
 
 

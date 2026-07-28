@@ -9,6 +9,7 @@ import {
   type ToolingProvider,
   type ToolingSources,
 } from '../../api.tooling'
+import { envApi, type EnvInstructionsMatrix, type EnvInventoryAll } from '../../api.env'
 import { OverviewPane } from './OverviewPane'
 import { InstalledPane } from './InstalledPane'
 import { DiagnosticsPane } from './DiagnosticsPane'
@@ -16,11 +17,12 @@ import { UpdatesPane } from './UpdatesPane'
 import { DiscoverPane } from './DiscoverPane'
 import { SourcesPane } from './SourcesPane'
 import { EnvProfilesPane } from './EnvProfilesPane'
+import { EnvToolsPane } from './EnvToolsPane'
 import { PreviewModal } from './PreviewModal'
 import { useToolingOperations } from './useToolingOperations'
 import { SkeletonBlock } from './shared'
 
-type TabKey = 'overview' | 'installed' | 'discover' | 'updates' | 'sources' | 'envprofiles' | 'diagnostics'
+type TabKey = 'overview' | 'installed' | 'discover' | 'updates' | 'sources' | 'envprofiles' | 'diagnostics' | 'envtools'
 
 const DISABLED_TITLE = 'Phase 4~6에서 제공돼요'
 
@@ -36,6 +38,7 @@ const TABS: { key: TabKey; label: string; active: boolean }[] = [
   { key: 'sources', label: '소스', active: true },
   { key: 'envprofiles', label: '환경 프로필', active: true },
   { key: 'diagnostics', label: '진단', active: true },
+  { key: 'envtools', label: '환경·지침', active: true },
 ]
 
 // Placeholder shown until /tooling/environment has ever returned successfully
@@ -150,6 +153,62 @@ export function ToolingView() {
   useEffect(() => {
     loadSources()
   }, [loadSources])
+
+  // Phase 6b Task 2 — 환경·지침 탭의 CLI 인벤토리: same independent-load/
+  // independent-error stance as catalog/sources above. `/env/inventory` lives
+  // in env_router.py, a separate parallel-built backend, and must not join
+  // the core Promise.all — EnvToolsPane alone degrades to an honest
+  // error+retry state on failure.
+  const [envInventory, setEnvInventory] = useState<EnvInventoryAll | null>(null)
+  const [envInventoryLoading, setEnvInventoryLoading] = useState(true)
+  const [envInventoryError, setEnvInventoryError] = useState(false)
+
+  const loadEnvInventory = useCallback(async () => {
+    setEnvInventoryLoading(true)
+    try {
+      const result = await envApi.getInventory('all')
+      setEnvInventory(result as EnvInventoryAll)
+      setEnvInventoryError(false)
+    } catch {
+      setEnvInventory(null)
+      setEnvInventoryError(true)
+    } finally {
+      setEnvInventoryLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadEnvInventory()
+  }, [loadEnvInventory])
+
+  // Phase 6b Task 3 — 환경·지침 탭의 두 번째 섹션(지침 매트릭스): same
+  // independent-load/independent-error stance as envInventory above, but this
+  // one also takes a `paths` argument — `[]` loads just the global scope
+  // (entries[0]), and EnvToolsPane's "프로젝트 경로 추가" UI calls this again
+  // with the user's added absolute paths appended. Eager-loaded with `[]` on
+  // mount so the global scope shows up without the user having to add
+  // anything first.
+  const [envInstructions, setEnvInstructions] = useState<EnvInstructionsMatrix | null>(null)
+  const [envInstructionsLoading, setEnvInstructionsLoading] = useState(true)
+  const [envInstructionsError, setEnvInstructionsError] = useState(false)
+
+  const loadEnvInstructions = useCallback(async (paths: string[] = []) => {
+    setEnvInstructionsLoading(true)
+    try {
+      const result = await envApi.getInstructions(paths)
+      setEnvInstructions(result)
+      setEnvInstructionsError(false)
+    } catch {
+      setEnvInstructions(null)
+      setEnvInstructionsError(true)
+    } finally {
+      setEnvInstructionsLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadEnvInstructions([])
+  }, [loadEnvInstructions])
 
   // "완료 후 재검증 반영" (Phase 4b, extended in 5b to also cover catalog
   // install_status): re-fetch just extensions/diagnostics/catalog — not
@@ -274,6 +333,8 @@ export function ToolingView() {
     const reloads: Promise<unknown>[] = [load()]
     if (catalogError) reloads.push(loadCatalog())
     if (sourcesError) reloads.push(loadSources())
+    if (envInventoryError) reloads.push(loadEnvInventory())
+    if (envInstructionsError) reloads.push(loadEnvInstructions([]))
     Promise.all(reloads).finally(() => setLoading(false))
   }
 
@@ -289,10 +350,6 @@ export function ToolingView() {
     } finally {
       setRescanning(false)
     }
-  }
-
-  if (loading) {
-    return <ToolingSkeleton />
   }
 
   // Whole-screen error only when every one of the four core reads has failed
@@ -378,78 +435,96 @@ export function ToolingView() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto pt-4">
-        {tab === 'overview' &&
-          (environmentError || providersError ? (
-            <ToolingSectionError onRetry={handleRetry} />
-          ) : (
-            <OverviewPane
-              environment={environment}
-              providers={providers}
-              extensionCount={extensions.length}
-              diagnosticsWarnCount={diagnosticsWarnCount}
-              scannedAt={scannedAt ?? environment.checked_at}
-              rescanning={rescanning}
-              rescanError={rescanError}
-              onRescan={handleRescan}
-              onRequestAction={requestAction}
-            />
-          ))}
-        {tab === 'installed' &&
-          (extensionsError ? (
-            <ToolingSectionError onRetry={handleRetry} />
-          ) : (
-            <InstalledPane
-              extensions={extensions}
-              selectedId={selectedExtensionId}
-              onSelect={setSelectedExtensionId}
-              adapters={adapters}
-              adaptersLoading={adaptersLoading}
-              adaptersError={adaptersError}
-              onRequestAction={requestAction}
-            />
-          ))}
-        {tab === 'diagnostics' &&
-          (diagnosticsError ? <ToolingSectionError onRetry={handleRetry} /> : <DiagnosticsPane diagnostics={diagnostics} />)}
-        {tab === 'discover' && (
-          <DiscoverPane
-            catalog={catalog}
-            loading={catalogLoading}
-            error={catalogError}
-            onRetry={loadCatalog}
-            adapters={adapters}
-            onRequestAction={requestAction}
-          />
-        )}
-        {tab === 'sources' && (
-          <SourcesPane
-            sources={sources}
-            loading={sourcesLoading}
-            error={sourcesError}
-            onRetry={loadSources}
-            adapters={adapters}
-            onNavigateToDiscover={() => setTab('discover')}
-          />
-        )}
-        {tab === 'envprofiles' && <EnvProfilesPane />}
-        {tab === 'updates' && (
-          <UpdatesPane
-            adapters={adapters}
-            adaptersLoading={adaptersLoading}
-            adaptersError={adaptersError}
-            extensions={extensions}
-            operations={operations}
-            operationsError={operationsError}
-            logs={logs}
-            logLoading={logLoading}
-            logError={logError}
-            onToggleLog={toggleLog}
-            onRequestAction={requestAction}
-            onCancelOperation={cancelOperation}
-            onRetryOperation={retryOperation}
-            onRefresh={refreshAll}
-            autoFocusQueue={pendingQueueFocus}
-            onQueueFocused={() => setPendingQueueFocus(false)}
-          />
+        {loading ? (
+          <ToolingSkeleton />
+        ) : (
+          <>
+            {tab === 'overview' &&
+              (environmentError || providersError ? (
+                <ToolingSectionError onRetry={handleRetry} />
+              ) : (
+                <OverviewPane
+                  environment={environment}
+                  providers={providers}
+                  extensionCount={extensions.length}
+                  diagnosticsWarnCount={diagnosticsWarnCount}
+                  scannedAt={scannedAt ?? environment.checked_at}
+                  rescanning={rescanning}
+                  rescanError={rescanError}
+                  onRescan={handleRescan}
+                  onRequestAction={requestAction}
+                />
+              ))}
+            {tab === 'installed' &&
+              (extensionsError ? (
+                <ToolingSectionError onRetry={handleRetry} />
+              ) : (
+                <InstalledPane
+                  extensions={extensions}
+                  selectedId={selectedExtensionId}
+                  onSelect={setSelectedExtensionId}
+                  adapters={adapters}
+                  adaptersLoading={adaptersLoading}
+                  adaptersError={adaptersError}
+                  onRequestAction={requestAction}
+                />
+              ))}
+            {tab === 'diagnostics' &&
+              (diagnosticsError ? <ToolingSectionError onRetry={handleRetry} /> : <DiagnosticsPane diagnostics={diagnostics} />)}
+            {tab === 'discover' && (
+              <DiscoverPane
+                catalog={catalog}
+                loading={catalogLoading}
+                error={catalogError}
+                onRetry={loadCatalog}
+                adapters={adapters}
+                onRequestAction={requestAction}
+              />
+            )}
+            {tab === 'sources' && (
+              <SourcesPane
+                sources={sources}
+                loading={sourcesLoading}
+                error={sourcesError}
+                onRetry={loadSources}
+                adapters={adapters}
+                onNavigateToDiscover={() => setTab('discover')}
+              />
+            )}
+            {tab === 'envprofiles' && <EnvProfilesPane />}
+            {tab === 'envtools' && (
+              <EnvToolsPane
+                inventory={envInventory}
+                inventoryLoading={envInventoryLoading}
+                inventoryError={envInventoryError}
+                onRetry={handleRetry}
+                instructions={envInstructions}
+                instructionsLoading={envInstructionsLoading}
+                instructionsError={envInstructionsError}
+                onReloadInstructions={loadEnvInstructions}
+              />
+            )}
+            {tab === 'updates' && (
+              <UpdatesPane
+                adapters={adapters}
+                adaptersLoading={adaptersLoading}
+                adaptersError={adaptersError}
+                extensions={extensions}
+                operations={operations}
+                operationsError={operationsError}
+                logs={logs}
+                logLoading={logLoading}
+                logError={logError}
+                onToggleLog={toggleLog}
+                onRequestAction={requestAction}
+                onCancelOperation={cancelOperation}
+                onRetryOperation={retryOperation}
+                onRefresh={refreshAll}
+                autoFocusQueue={pendingQueueFocus}
+                onQueueFocused={() => setPendingQueueFocus(false)}
+              />
+            )}
+          </>
         )}
       </div>
 
