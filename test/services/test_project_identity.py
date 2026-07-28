@@ -53,6 +53,35 @@ def _make_svc(base_dir: Path, db_path: Path) -> MemoryService:
     return MemoryService(base_dir=base_dir, db_engine=engine)
 
 
+#: Git reads these from the environment and lets them override ``cwd=``.
+_AMBIENT_GIT_VARS = (
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_PREFIX",
+    "GIT_CEILING_DIRECTORIES",
+)
+
+
+@pytest.fixture(autouse=True)
+def isolate_from_ambient_git(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Drop inherited git env vars so ``cwd=`` decides which repo we touch.
+
+    A git hook (notably ``pre-push``) exports ``GIT_DIR`` and friends to the
+    commands it invokes. Those take precedence over ``cwd=``, so ``_init_repo``
+    ran ``git remote add origin`` against the *real* repository — which already
+    has an origin, hence CalledProcessError — and the identity lookups under
+    test read the real remote instead of the temp fixture. Seven tests in this
+    module failed only when pytest was launched from the hook and passed
+    standalone, which is exactly the shape that hides this kind of bug.
+    """
+    for var in _AMBIENT_GIT_VARS:
+        monkeypatch.delenv(var, raising=False)
+
+
 @pytest.fixture
 def isolated_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Point the global SessionLocal at a test DB so alias writes land there."""
