@@ -62,6 +62,8 @@ export function Workspace({ events, status: streamStatus, selectedSessionId, set
   const sessions = useStore(s => s.sessions)
   const fetchSessions = useStore(s => s.fetchSessions)
   const showSnackbar = useStore(s => s.showSnackbar)
+  const showOverlay = useStore(s => s.showOverlay)
+  const hideOverlay = useStore(s => s.hideOverlay)
   const fleet = useFleetSummaries(sessions)
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => loadBool(SIDEBAR_KEY, false))
@@ -169,6 +171,7 @@ export function Workspace({ events, status: streamStatus, selectedSessionId, set
       workspaceSession.terminals.map((t, index) => ({
         id: t.id,
         label: index === 0 ? `${t.agent_profile ?? '오케스트레이터'} · 오케스트레이터` : t.agent_profile ?? t.id.slice(0, 8),
+        provider: t.provider,
       })),
     [workspaceSession.terminals],
   )
@@ -223,6 +226,7 @@ export function Workspace({ events, status: streamStatus, selectedSessionId, set
   const handleConfirmEndSession = async () => {
     if (!selectedSessionId) return
     setEndingSession(true)
+    showOverlay('세션을 정리하고 있어요')
     try {
       await api.deleteSession(selectedSessionId)
       showSnackbar({ type: 'success', message: `${displaySessionName(selectedSessionId)} 세션을 종료했어요` })
@@ -231,9 +235,11 @@ export function Workspace({ events, status: streamStatus, selectedSessionId, set
     } catch (error: unknown) {
       const err = error as { detail?: string; message?: string }
       showSnackbar({ type: 'error', message: err?.detail || err?.message || '세션을 종료하지 못했어요' })
+    } finally {
+      setEndingSession(false)
+      setPendingEndSession(false)
+      hideOverlay()
     }
-    setEndingSession(false)
-    setPendingEndSession(false)
   }
 
   return (
@@ -327,7 +333,7 @@ export function Workspace({ events, status: streamStatus, selectedSessionId, set
                 onSend={workspaceSession.sendMessage}
                 sending={workspaceSession.sending}
                 streamDisconnected={streamStatus !== 'connected'}
-                slashProvider={wbContext?.provider ?? null}
+                slashProvider={composerTarget?.provider ?? null}
                 slashCwd={sessionWorkingDirectory}
               />
             </>

@@ -68,6 +68,14 @@ ERROR_PATTERN = r"^(?:Error:|ERROR:|Traceback \(most recent call last\):|panic:)
 # The "·\s+[~/]" alternative anchors on the path component of the footer,
 # which is shared across v0.111 and v0.136 status bars.
 TUI_FOOTER_PATTERN = r"(?:\?\s+for shortcuts|context left|\d+%\s+left|·\s+[~/])"
+# NOTE (context gauge): CodexProvider intentionally does NOT override
+# BaseProvider.get_context_usage. Codex removed the "N% left" remaining-context
+# segment from its footer in v0.136+ (see the version history above), so on
+# current codex (0.136+) there is no remaining-context value to scrape — the UI
+# gauge is correctly hidden for codex rather than showing a fabricated number.
+# The claude_code and antigravity providers still expose it in their footers and
+# implement the scrape; codex would need an upstream footer change (or a separate
+# token-accounting data source) before a codex gauge is feasible.
 # Codex TUI progress spinner: "• Working (0s • esc to interrupt)",
 # "• Working (2m 07s ...)", "• Thinking (2s ...)",
 # "• Starting script creation (10s • esc to interrupt)".

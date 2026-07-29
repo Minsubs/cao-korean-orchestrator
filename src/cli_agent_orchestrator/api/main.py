@@ -496,6 +496,38 @@ async def ui_event_consumer() -> None:
         bus.unsubscribe("terminal.*.*", queue)
 
 
+def _prewarm_tooling() -> None:
+    """Best-effort background warm-up of the Tooling page's TTL-cached
+    collectors (providers/environment/catalog/extensions/models/adapters).
+
+    Some adapter probes take upwards of 20s on WSL; running them once here
+    means the first real ``GET /tooling/*`` request after startup is a cache
+    hit instead of a cold probe. Each collector is isolated so one failure
+    never blocks the rest — pre-warming is purely an optimization, never a
+    startup requirement.
+    """
+    from cli_agent_orchestrator.services.tooling import (
+        catalog,
+        environment,
+        extensions,
+        models,
+        providers,
+    )
+
+    for warm in (
+        providers.list_providers,
+        environment.detect_environment,
+        catalog.list_catalog,
+        extensions.list_extensions,
+        models.list_models,
+        tooling_router._collect_adapters,
+    ):
+        try:
+            warm()
+        except Exception:
+            logger.warning("Tooling pre-warm step %r failed", warm, exc_info=True)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan events."""
@@ -505,6 +537,10 @@ async def lifespan(app: FastAPI):
     registry = PluginRegistry()
     await registry.load()
     app.state.plugin_registry = registry
+
+    # Warm the Tooling collectors' caches in the background so the first real
+    # Tooling request is fast (never blocks startup).
+    asyncio.create_task(asyncio.to_thread(_prewarm_tooling))
 
     # Run cleanup in background
     asyncio.create_task(asyncio.to_thread(cleanup_old_data))

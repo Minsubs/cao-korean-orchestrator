@@ -29,7 +29,7 @@ function Snackbar() {
   }
 
   return (
-    <div role="alert" className={`fixed bottom-4 right-4 z-50 px-4 py-3 rounded-lg border shadow-lg flex items-center gap-2 text-white ${colors[snackbar.type]}`}>
+    <div role="alert" className={`fixed bottom-4 right-4 z-[100] px-4 py-3 rounded-lg border shadow-lg flex items-center gap-2 text-white ${colors[snackbar.type]}`}>
       {icons[snackbar.type]}
       <span className="text-sm">{snackbar.message}</span>
     </div>

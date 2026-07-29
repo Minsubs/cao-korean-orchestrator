@@ -86,6 +86,8 @@ class OpenCodeCliAdapter(ExtensionAdapter):
         if action == "install_cli":
             found = shutil.which(_BINARY) is not None
             return found, (
-                f"{_BINARY} is now on PATH" if found else f"{_BINARY} was not found on PATH after install"
+                f"{_BINARY} is now on PATH"
+                if found
+                else f"{_BINARY} was not found on PATH after install"
             )
         return False, _INSTALL_ONLY_REASON

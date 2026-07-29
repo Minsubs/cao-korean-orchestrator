@@ -8,6 +8,7 @@ import { filterSlashCommands, isSlashCommandProvider } from './slashCommands'
 export interface ComposerTarget {
   id: string
   label: string
+  provider?: string | null
 }
 
 interface ComposerProps {
@@ -19,10 +20,11 @@ interface ComposerProps {
   sending: boolean
   streamDisconnected: boolean
   /**
-   * Phase 2e (spec §2e) slash-command source: the current Workbench context
-   * terminal's provider, and the session's (supervisor's) working directory.
-   * Either missing, or a provider the backend can't enumerate, silently
-   * disables the dropdown (spec: "기능 자체를 숨김") — never an error toast.
+   * Phase 2e (spec §2e) slash-command source: the chat target's (the
+   * terminal the message is addressed to) provider, and the session's
+   * (supervisor's) working directory. Either missing, or a provider the
+   * backend can't enumerate, silently disables the dropdown (spec: "기능
+   * 자체를 숨김") — never an error toast.
    */
   slashProvider?: string | null
   slashCwd?: string | null

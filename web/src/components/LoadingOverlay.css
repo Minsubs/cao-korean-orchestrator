@@ -1,0 +1,19 @@
+@keyframes busy-fade { from { opacity: 0; } }
+.busy-overlay { position: fixed; inset: 0; z-index: 90; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.45); backdrop-filter: blur(1.5px); animation: busy-fade .12s ease-out; }
+.busy-box { display: flex; flex-direction: column; align-items: center; gap: 12px; min-width: 220px; max-width: 440px; padding: 28px 38px 24px; border-radius: 14px; background: var(--surface); border: 1px solid var(--border-soft); box-shadow: 0 12px 40px rgba(0,0,0,.28); }
+.busy-huni-wrap { display: flex; flex-direction: column; align-items: center; height: 132px; justify-content: flex-end; margin-bottom: 2px; }
+.busy-huni { width: 96px; height: auto; display: block; user-select: none; -webkit-user-drag: none; transform-origin: 50% 100%; animation: huni-bounce 1.5s cubic-bezier(.5,.05,.5,.95) infinite; filter: drop-shadow(0 5px 8px rgba(0,0,0,.32)); }
+@keyframes huni-bounce {
+  0% { transform: translateY(0) scaleX(1) scaleY(1) rotate(0deg); }
+  14% { transform: translateY(2px) scaleX(1.09) scaleY(.91) rotate(0deg); }
+  40% { transform: translateY(-26px) scaleX(.93) scaleY(1.07) rotate(4deg); }
+  55% { transform: translateY(-31px) scaleX(1) scaleY(1) rotate(-3deg); }
+  70% { transform: translateY(-26px) scaleX(.96) scaleY(1.04) rotate(3deg); }
+  86% { transform: translateY(2px) scaleX(1.11) scaleY(.89) rotate(0deg); }
+  100% { transform: translateY(0) scaleX(1) scaleY(1) rotate(0deg); }
+}
+.busy-huni-shadow { width: 64px; height: 11px; margin-top: 5px; border-radius: 50%; background: radial-gradient(ellipse at center, rgba(0,0,0,.32), transparent 72%); animation: huni-shadow 1.5s cubic-bezier(.5,.05,.5,.95) infinite; }
+@keyframes huni-shadow { 0%,100% { transform: scaleX(1.06); opacity: .55; } 55% { transform: scaleX(.58); opacity: .20; } }
+@media (prefers-reduced-motion: reduce) { .busy-huni, .busy-huni-shadow { animation: none; } }
+.busy-msg { font-size: 14px; font-weight: 600; color: var(--text); text-align: center; line-height: 1.5; }
+.busy-sub { font-size: 12px; color: var(--text-2); text-align: center; margin-top: -4px; }

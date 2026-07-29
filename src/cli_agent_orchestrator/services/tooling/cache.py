@@ -1,8 +1,9 @@
 """Module-level TTL cache for read-only tooling collectors.
 
-Provider and environment collection each shell out / touch the filesystem, so
-their results are cached in-process for :data:`CACHE_TTL_SECONDS`. This keeps a
-polling UI from re-probing every CLI binary on every request. ``POST
+Provider, environment, catalog, extensions and adapter collection each shell
+out / touch the filesystem (some adapter probes take upwards of 20s on WSL),
+so their results are cached in-process for :data:`CACHE_TTL_SECONDS`. This
+keeps a polling UI from re-probing every CLI binary on every request. ``POST
 /tooling/scan`` calls :func:`rescan` to force a fresh collection.
 """
 
@@ -11,9 +12,11 @@ from __future__ import annotations
 import time
 from typing import Any
 
-# Providers/environment results are cached this long. Short enough that a newly
-# installed CLI shows up on the next poll cycle without an explicit rescan.
-CACHE_TTL_SECONDS = 60.0
+# Tooling collector results are cached this long. Long enough that opening the
+# Tooling page never pays for a cold CLI probe once the server has been up a
+# while; a newly installed CLI or extension still shows up promptly via the
+# explicit "rescan" action, which invalidates every key below.
+CACHE_TTL_SECONDS = 300.0
 
 
 class TTLCache:

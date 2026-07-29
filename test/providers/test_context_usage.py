@@ -1,14 +1,16 @@
 """Unit tests for the remaining-context gauge (Phase 2d).
 
 Covers ``BaseProvider.get_context_usage`` (default None), the ClaudeCodeProvider
-footer parser across its known variants, the None-on-no-match contract, ANSI
-tolerance, freshest-match selection, and the 0–100 clamp. Codex intentionally
-inherits the base None (footer not calibrated yet).
+footer parser across its known variants, the AntigravityCliProvider status-bar
+parser, the None-on-no-match contract, ANSI tolerance, freshest-match
+selection, and the 0–100 clamp. Codex intentionally inherits the base None
+(footer not calibrated yet).
 """
 
 import pytest
 
 from cli_agent_orchestrator.models.terminal import TerminalStatus
+from cli_agent_orchestrator.providers.antigravity_cli import AntigravityCliProvider
 from cli_agent_orchestrator.providers.base import BaseProvider
 from cli_agent_orchestrator.providers.claude_code import ClaudeCodeProvider
 from cli_agent_orchestrator.providers.codex import CodexProvider
@@ -35,6 +37,10 @@ class _ConcreteProvider(BaseProvider):
 
 def _claude() -> ClaudeCodeProvider:
     return ClaudeCodeProvider("term-ctx", "session-ctx", "window-0")
+
+
+def _agy() -> AntigravityCliProvider:
+    return AntigravityCliProvider("term-ctx", "session-ctx", "window-0")
 
 
 class TestBaseDefault:
@@ -86,3 +92,32 @@ class TestClaudeContextParsing:
     def test_out_of_range_is_clamped_to_none(self) -> None:
         # A 3-digit match above 100 is rejected (no fabricated value).
         assert _claude().get_context_usage("Context left until auto-compact: 200%") is None
+
+
+class TestAntigravityContextParsing:
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            ("Gemini 3.5 Flash (High) │ Idle │ Context 100% left │ ~/proj [sandbox]", 100),
+            ("Gemini 3.5 Flash (High) │ Working │ Context 8% left │ ~/proj [sandbox]", 8),
+        ],
+    )
+    def test_known_statusbar_variants(self, text: str, expected: int) -> None:
+        assert _agy().get_context_usage(text) == expected
+
+    def test_no_footer_returns_none(self) -> None:
+        idle = "\n".join(["────────", "> ", "────────"])
+        assert _agy().get_context_usage(idle) is None
+
+    def test_empty_returns_none(self) -> None:
+        assert _agy().get_context_usage("") is None
+
+    def test_ansi_wrapped_footer_parses(self) -> None:
+        # Live buffer interleaves SGR colour codes with the status-bar text.
+        raw = "\x1b[2mContext 42% left\x1b[0m"
+        assert _agy().get_context_usage(raw) == 42
+
+    def test_freshest_match_wins(self) -> None:
+        # An older status-bar redraw (80%) precedes the freshest one (12%).
+        raw = "Context 80% left\n" "... work ...\n" "Context 12% left\n"
+        assert _agy().get_context_usage(raw) == 12

@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, cast
 
-from cli_agent_orchestrator.services.tooling import runner
+from cli_agent_orchestrator.services.tooling import cache, runner
 from cli_agent_orchestrator.services.tooling.adapters import registry
 from cli_agent_orchestrator.services.tooling.catalog_items import CATALOG_ITEMS
 from cli_agent_orchestrator.services.tooling.catalog_models import CatalogItem, InstallSpec
+
+_CACHE_KEY = "catalog"
 
 
 class CatalogError(Exception):
@@ -80,8 +82,7 @@ def _supported_entry(item: CatalogItem, provider: str, snap: Dict[str, Any]) -> 
     return entry
 
 
-def list_catalog() -> List[Dict[str, Any]]:
-    """Return every catalog item with per-provider support and install status."""
+def _collect() -> List[Dict[str, Any]]:
     referenced = {provider for item in _ITEMS for provider in item.providers}
     snapshot = _provider_snapshot(referenced)
     result: List[Dict[str, Any]] = []
@@ -110,6 +111,23 @@ def list_catalog() -> List[Dict[str, Any]]:
                 "supported": supported,
             }
         )
+    return result
+
+
+def list_catalog(*, use_cache: bool = True) -> List[Dict[str, Any]]:
+    """Return every catalog item with per-provider support and install status,
+    TTL-cached by default.
+
+    Args:
+        use_cache: When ``False``, bypass and refresh the cached value.
+    """
+    store = cache.get_cache()
+    if use_cache:
+        cached = store.get(_CACHE_KEY)
+        if cached is not None:
+            return cast(List[Dict[str, Any]], cached)
+    result = _collect()
+    store.set(_CACHE_KEY, result)
     return result
 
 
