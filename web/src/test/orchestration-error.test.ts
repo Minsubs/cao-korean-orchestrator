@@ -82,6 +82,27 @@ describe('stored chat round-trip of retryPrompt', () => {
     expect(loadStoredChat('sess').entries[0].retryPrompt).toBe('테스트 돌려줘')
   })
 
+  // Phase 1 rollup Minor: `raw` was read back unvalidated, so a non-string
+  // value made formatOrchestratorOutput throw and the outer try swallowed the
+  // whole history — the user silently lost their chat instead of one field.
+  it('keeps the rest of the history when a tampered raw is not a string', () => {
+    window.localStorage.clear()
+    window.localStorage.setItem(
+      'cao:session-chat:v2:sess',
+      JSON.stringify({
+        workspaceMessages: [
+          { id: 'u1', role: 'user', content: '테스트 돌려줘' },
+          { id: 'a1', role: 'assistant', content: '정상 답변', raw: { evil: true } },
+        ],
+        lastOutput: '정상 답변',
+      }),
+    )
+    const loaded = loadStoredChat('sess')
+    expect(loaded.entries.map(e => e.id)).toEqual(['u1', 'a1'])
+    expect(loaded.entries[1].content).toBe('정상 답변')
+    expect(loaded.entries[1].raw).toBe('정상 답변')
+  })
+
   it('drops a non-string retryPrompt from a tampered payload', () => {
     window.localStorage.clear()
     window.localStorage.setItem(
