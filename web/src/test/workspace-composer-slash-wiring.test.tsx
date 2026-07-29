@@ -99,13 +99,25 @@ describe('Workspace composer slash-command wiring (regression: target vs workben
     // provider) once terminals load — confirm that default landed before
     // proceeding, so this test is actually exercising the "dock elsewhere"
     // scenario the bug report describes.
-    await waitFor(() => {
-      expect(screen.getByText((_, el) => (
-        el?.tagName === 'SPAN'
-        && el.textContent?.includes('컨텍스트:') === true
-        && el.textContent?.includes('aaaaaaaa') === true
-      ))).toBeInTheDocument()
-    })
+    // The Workbench restore effect (Workspace.tsx) deliberately gives up for
+    // this render when `loading` has already flipped false but the selected
+    // session's terminals have not landed yet — see its own comment. Its next
+    // opportunity is the next session poll, i.e. up to SESSION_POLL_MS (4s)
+    // later. waitFor's 1s default therefore cannot cover the slow path, which
+    // is why this went flaky in the full 69-file run and never standalone.
+    // The budget below spans one whole poll cycle plus margin; the per-test
+    // timeout on `it` is raised to match, since vitest's own 5s default would
+    // otherwise fire first.
+    await waitFor(
+      () => {
+        expect(screen.getByText((_, el) => (
+          el?.tagName === 'SPAN'
+          && el.textContent?.includes('컨텍스트:') === true
+          && el.textContent?.includes('aaaaaaaa') === true
+        ))).toBeInTheDocument()
+      },
+      { timeout: 10_000 },
+    )
 
     // Switch the chat TARGET (who the message is addressed to) to the
     // worker, whose provider ('codex') the backend CAN enumerate slash
@@ -120,5 +132,5 @@ describe('Workspace composer slash-command wiring (regression: target vs workben
 
     expect(await screen.findByRole('listbox', { name: '슬래시 명령' })).toBeInTheDocument()
     await waitFor(() => expect(screen.getAllByRole('option')).toHaveLength(SLASH_COMMANDS.length))
-  })
+  }, 20_000)
 })
