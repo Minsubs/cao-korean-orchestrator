@@ -12,7 +12,8 @@ import type { DelegationCard } from './types'
 export const TURN_GRACE_MS = 2000
 
 export type OrchestrationStage = 'dispatching' | 'working' | 'callback'
-export type WorkerState = 'waiting' | 'working' | 'done' | 'error'
+/** `blocked` = 사람의 승인을 기다리며 멈춘 상태. "일하는 중"과 구분해야 조치 버튼을 붙일 수 있다. */
+export type WorkerState = 'waiting' | 'working' | 'blocked' | 'done' | 'error'
 
 export interface WorkerProgress {
   terminalId: string
@@ -22,6 +23,8 @@ export interface WorkerProgress {
   state: WorkerState
   stalled: boolean
   firstSeenAt: number
+  /** 이 워커가 살아 있은 시간. 턴 경과와 달리 워커 생성 시점 기준이다. */
+  elapsedMs: number
 }
 
 export interface OrchestrationProgress {
@@ -33,6 +36,10 @@ export interface OrchestrationProgress {
   doneCount: number
   totalCount: number
   stalled: boolean
+  /** 사람의 승인을 기다리며 멈춘 워커 수. */
+  blockedCount: number
+  /** 오류로 끝난 워커 수. 종료된 워커이므로 doneCount 에도 포함된다. */
+  errorCount: number
 }
 
 /** 응답 확정 시점에 굳혀 ChatEntry 에 붙는 스냅샷(로컬 저장 왕복 대상). */
@@ -58,14 +65,14 @@ export function formatElapsed(ms: number): string {
   return minutes === 0 ? `${hours}시간` : `${hours}시간 ${minutes}분`
 }
 
-const WORKING_STATUSES = new Set(['PROCESSING', 'WAITING_USER_ANSWER'])
 const ENDED_STATES = new Set<WorkerState>(['done', 'error'])
 
 export function workerStateFor(card: DelegationCard, statuses: Record<string, string>): WorkerState {
   if (card.killed) return 'done'
   const status = (statuses[card.terminalId] || card.status || '').toUpperCase()
   if (status === 'ERROR') return 'error'
-  if (WORKING_STATUSES.has(status)) return 'working'
+  if (status === 'WAITING_USER_ANSWER') return 'blocked'
+  if (status === 'PROCESSING') return 'working'
   if (status === 'COMPLETED') return 'done'
   return 'waiting'
 }
@@ -95,6 +102,7 @@ export function computeOrchestrationProgress(params: {
         state,
         stalled: stall.stalled,
         firstSeenAt: card.firstSeenAt,
+        elapsedMs: Math.max(0, now - card.firstSeenAt),
       }
     })
 
@@ -117,6 +125,8 @@ export function computeOrchestrationProgress(params: {
     doneCount: workers.filter(worker => ENDED_STATES.has(worker.state)).length,
     totalCount: workers.length,
     stalled: workers.some(worker => worker.stalled),
+    blockedCount: workers.filter(worker => worker.state === 'blocked').length,
+    errorCount: workers.filter(worker => worker.state === 'error').length,
   }
 }
 

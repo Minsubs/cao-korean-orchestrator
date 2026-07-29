@@ -82,9 +82,12 @@ interface StoredChatMessage {
   role: 'user' | 'assistant' | 'system'
   content: string
   targetId?: string
-  raw?: string
+  /** Unvalidated on read — narrow with `readText` before feeding it to the formatter. */
+  raw?: unknown
   /** Unvalidated on read — always pass through `readSummary` before it becomes a ChatEntry. */
   progress?: unknown
+  /** Unvalidated on read — must be narrowed to a non-empty string before use. */
+  retryPrompt?: unknown
 }
 
 /** Narrow a localStorage-sourced value to an OrchestrationSummary; anything malformed is dropped, not thrown. */
@@ -144,15 +147,30 @@ export function loadStoredChat(sessionName: string): {
         )
       : []
     const cleaned = raw
-      .map(m => (m.role === 'assistant' ? { ...m, raw: (m as StoredChatMessage).raw ?? m.content, content: formatOrchestratorOutput((m as StoredChatMessage).raw ?? m.content) } : m))
+      .map(m => {
+        if (m.role !== 'assistant') return m
+        // A tampered `raw` used to reach formatOrchestratorOutput as a non-string
+        // and throw, and the outer catch then discarded the entire history.
+        // Fall back to the content instead of losing the whole chat.
+        const stored = typeof m.raw === 'string' ? m.raw : m.content
+        return { ...m, raw: stored, content: formatOrchestratorOutput(stored) }
+      })
       .filter(m => m.content.length > 0)
       .slice(-100)
     const baseTs = Date.now() - cleaned.length * 1000
     const entries: ChatEntry[] = cleaned.map((m, i) => {
-      const { progress, ...rest } = m
+      const { progress, retryPrompt, raw: storedRaw, ...rest } = m
       const summary = readSummary(progress)
+      const retry = typeof retryPrompt === 'string' && retryPrompt.length > 0 ? retryPrompt : undefined
+      const rawText = typeof storedRaw === 'string' ? storedRaw : undefined
       const ts = baseTs + i * 1000
-      return summary ? { ...rest, ts, progress: summary } : { ...rest, ts }
+      return {
+        ...rest,
+        ts,
+        ...(rawText !== undefined ? { raw: rawText } : {}),
+        ...(summary ? { progress: summary } : {}),
+        ...(retry ? { retryPrompt: retry } : {}),
+      }
     })
     const pending = parsed.workspacePendingReply
     const startedAt = typeof pending?.startedAt === 'number'
@@ -197,13 +215,14 @@ export function saveStoredChat(
     const existing = JSON.parse(window.localStorage.getItem(storageKey(sessionName)) || '{}') as Record<string, unknown>
     const workspaceMessages: StoredChatMessage[] = entries
       .slice(-100)
-      .map(({ id, role, content, targetId, raw, progress }) => ({
+      .map(({ id, role, content, targetId, raw, progress, retryPrompt }) => ({
         id,
         role,
         content,
         ...(targetId ? { targetId } : {}),
         ...(raw ? { raw } : {}),
         ...(progress ? { progress } : {}),
+        ...(retryPrompt ? { retryPrompt } : {}),
       }))
     const messages = workspaceMessages.filter(message => !message.targetId)
     window.localStorage.setItem(storageKey(sessionName), JSON.stringify({

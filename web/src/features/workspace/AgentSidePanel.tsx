@@ -12,7 +12,7 @@ import type { TeamRosterProfile } from './teamRoster'
 import { profileLabel, profileDetail } from '../profiles/profilePresentation'
 import { InlineUsageBar } from '../usage/InlineUsageBar'
 import { useUsageAccounts } from '../usage/useUsageAccounts'
-import { isTeamWorking } from './agentGrouping'
+import { isTeamWorking, sessionStatusMap } from './agentGrouping'
 import { RoleBoard, type AgentVizItem } from './RoleBoard'
 import { DelegationHierarchy } from './DelegationHierarchy'
 
@@ -102,8 +102,16 @@ export function AgentSidePanel({
   const activeProfileNames = new Set(cards.map(card => card.agentName).filter((name): name is string => Boolean(name)))
   const waitingRoster = teamRoster.filter(profile => !activeProfileNames.has(profile.name))
   const agentCount = (supervisor ? 1 : 0) + cards.length + waitingRoster.length
+  // Session-scoped and card-aware: the raw store keeps a deleted worker's last
+  // PROCESSING forever and carries other sessions' terminals too, which would
+  // over-report both the work queue and the board→hierarchy switch.
+  const scopedStatuses = sessionStatusMap({
+    supervisorId: supervisor?.id ?? null,
+    cards,
+    terminalStatuses,
+  })
   const queueCards = cards.filter(c => {
-    const s = (resolveStatus(c.terminalId, c.status, terminalStatuses) || '').toUpperCase()
+    const s = scopedStatuses[c.terminalId] ?? ''
     return s === 'PROCESSING' || s === 'WAITING_USER_ANSWER'
   })
   const startedAt = terminals.reduce<string | null>((earliest, t) => {
@@ -116,7 +124,7 @@ export function AgentSidePanel({
   const vizOrchestrator = supervisor ? toVizItem(supervisor.agent_profile, supervisor.provider, supervisor.id) : null
   const vizWorkers = cards.map(card => toVizItem(card.agentName, card.provider, card.terminalId))
   const vizAll = vizOrchestrator ? [vizOrchestrator, ...vizWorkers] : vizWorkers
-  const vizView = vizMode === 'auto' ? (isTeamWorking(terminalStatuses) ? 'hier' : 'board') : vizMode
+  const vizView = vizMode === 'auto' ? (isTeamWorking(scopedStatuses) ? 'hier' : 'board') : vizMode
 
   return (
     <aside className="flex w-[296px] shrink-0 flex-col border-l border-[var(--border)] bg-[var(--surface)]" aria-label="에이전트와 작업">
@@ -180,9 +188,9 @@ export function AgentSidePanel({
                 </div>
                 <div data-testid="agent-viz" data-view={vizView}>
                   {vizView === 'hier' && vizOrchestrator ? (
-                    <DelegationHierarchy orchestrator={vizOrchestrator} agents={vizWorkers} statuses={terminalStatuses} />
+                    <DelegationHierarchy orchestrator={vizOrchestrator} agents={vizWorkers} statuses={scopedStatuses} />
                   ) : (
-                    <RoleBoard agents={vizAll} statuses={terminalStatuses} />
+                    <RoleBoard agents={vizAll} statuses={scopedStatuses} />
                   )}
                 </div>
               </div>

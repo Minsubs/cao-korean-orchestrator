@@ -64,9 +64,11 @@ describe('workerStateFor', () => {
     expect(workerStateFor(card({ terminalId: 'w1' }), { w1: 'ERROR' })).toBe('error')
   })
 
-  it('treats PROCESSING and WAITING_USER_ANSWER as working', () => {
+  // Phase 3 contract change: 승인 대기 is no longer "working" — it is waiting on a
+  // human, which is what earns it a warning colour and an action button.
+  it('treats PROCESSING as working and WAITING_USER_ANSWER as blocked', () => {
     expect(workerStateFor(card({ terminalId: 'w1' }), { w1: 'PROCESSING' })).toBe('working')
-    expect(workerStateFor(card({ terminalId: 'w1' }), { w1: 'WAITING_USER_ANSWER' })).toBe('working')
+    expect(workerStateFor(card({ terminalId: 'w1' }), { w1: 'WAITING_USER_ANSWER' })).toBe('blocked')
   })
 
   it('falls back to the card status when no live status is known', () => {
@@ -145,6 +147,45 @@ describe('computeOrchestrationProgress', () => {
     })
     expect(progress!.stalled).toBe(true)
     expect(progress!.workers[0].stalled).toBe(true)
+  })
+
+  it('keeps a blocked worker unfinished and counts it', () => {
+    const progress = computeOrchestrationProgress({
+      ...base,
+      pendingSince: T0,
+      cards: [card({ terminalId: 'w1', agentName: 'codex_qa_terra' })],
+      terminalStatuses: { w1: 'WAITING_USER_ANSWER' },
+    })
+    expect(progress!.stage).toBe('working')
+    expect(progress!.blockedCount).toBe(1)
+    expect(progress!.doneCount).toBe(0)
+    expect(progress!.waitingForLabel).toBe(progress!.workers[0].roleLabel)
+  })
+
+  it('counts errored workers separately from completed ones', () => {
+    const progress = computeOrchestrationProgress({
+      ...base,
+      pendingSince: T0,
+      cards: [
+        card({ terminalId: 'w1', agentName: 'codex_qa_terra', firstSeenAt: T0 + 1000 }),
+        card({ terminalId: 'w2', agentName: 'claude_scout_haiku', firstSeenAt: T0 + 2000 }),
+      ],
+      terminalStatuses: { w1: 'ERROR', w2: 'COMPLETED' },
+    })
+    expect(progress!.errorCount).toBe(1)
+    expect(progress!.doneCount).toBe(2)
+    expect(progress!.stage).toBe('callback')
+  })
+
+  it('reports how long each worker has been alive', () => {
+    const progress = computeOrchestrationProgress({
+      supervisorTerminalId: 'sup',
+      pendingSince: T0,
+      cards: [card({ terminalId: 'w1', firstSeenAt: T0 + 1000 })],
+      terminalStatuses: { w1: 'PROCESSING' },
+      now: T0 + 31_000,
+    })
+    expect(progress!.workers[0].elapsedMs).toBe(30_000)
   })
 
   it('tolerates a create event timestamped slightly before the local send', () => {

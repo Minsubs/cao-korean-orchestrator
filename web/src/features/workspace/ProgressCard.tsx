@@ -21,6 +21,7 @@ const STAGE_LABEL: Record<OrchestrationStage, string> = {
 const STATE_LABEL: Record<WorkerState, string> = {
   waiting: '대기',
   working: '작업 중',
+  blocked: '승인 대기',
   done: '완료',
   error: '오류',
 }
@@ -28,8 +29,15 @@ const STATE_LABEL: Record<WorkerState, string> = {
 const STATE_CLASS: Record<WorkerState, string> = {
   waiting: 'border-[var(--border)] bg-[var(--surface)] text-[var(--text-3)]',
   working: 'border-[var(--info)] bg-[var(--info-bg)] text-[var(--info)]',
+  blocked: 'border-[var(--warning)] bg-[var(--warning-bg)] text-[var(--warning)]',
   done: 'border-[var(--success)] bg-[var(--success-bg)] text-[var(--success)]',
   error: 'border-[var(--danger)] bg-[var(--danger-bg)] text-[var(--danger)]',
+}
+
+/** 사람이 개입해야 풀리는 상태에만 조치 버튼을 단다. */
+const ACTION_LABEL: Partial<Record<WorkerState, string>> = {
+  blocked: '승인하러 가기',
+  error: '오류 확인',
 }
 
 export function ProgressCard({
@@ -37,11 +45,13 @@ export function ProgressCard({
   supervisorTerminalId,
   cards,
   terminalStatuses,
+  onOpenWorker,
 }: {
   pendingSince: number
   supervisorTerminalId: string | null
   cards: DelegationCard[]
   terminalStatuses: Record<string, string>
+  onOpenWorker: (terminalId: string) => void
 }) {
   const now = useNowTick(1000)
   const progress = computeOrchestrationProgress({ pendingSince, supervisorTerminalId, cards, terminalStatuses, now })
@@ -51,7 +61,13 @@ export function ProgressCard({
     <div
       data-testid="progress-card"
       data-stage={progress.stage}
-      className="ml-10 max-w-[calc(86%-40px)] rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-3 shadow-sm"
+      className={`ml-10 max-w-[calc(86%-40px)] rounded-2xl border bg-[var(--surface)] p-3 shadow-sm ${
+        progress.errorCount > 0
+          ? 'border-[var(--danger)]'
+          : progress.blockedCount > 0
+            ? 'border-[var(--warning)]'
+            : 'border-[var(--border)]'
+      }`}
     >
       <div className="flex items-center gap-2">
         <span className="h-2 w-2 animate-pulse rounded-full bg-[var(--accent)]" aria-hidden />
@@ -64,6 +80,12 @@ export function ProgressCard({
         )}
       </div>
 
+      {(progress.blockedCount > 0 || progress.errorCount > 0) && (
+        <p className="mt-1 text-[11px] font-semibold text-[var(--warning)]">
+          승인 대기 {progress.blockedCount} · 오류 {progress.errorCount}
+        </p>
+      )}
+
       {progress.workers.length > 0 && (
         <ul className="mt-2 flex flex-col gap-1.5">
           {progress.workers.map(worker => (
@@ -73,11 +95,21 @@ export function ProgressCard({
               {worker.provider && (
                 <span className="text-[10px] text-[var(--text-3)]">{providerLabel(worker.provider)}</span>
               )}
+              <span className="text-[10px] text-[var(--text-3)]">{formatElapsed(worker.elapsedMs)}</span>
               <span
                 className={`rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${STATE_CLASS[worker.state]}`}
               >
                 {STATE_LABEL[worker.state]}
               </span>
+              {ACTION_LABEL[worker.state] && (
+                <button
+                  type="button"
+                  onClick={() => onOpenWorker(worker.terminalId)}
+                  className="rounded-full border border-[var(--border)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--text-2)] hover:text-[var(--text)]"
+                >
+                  {ACTION_LABEL[worker.state]}
+                </button>
+              )}
             </li>
           ))}
         </ul>

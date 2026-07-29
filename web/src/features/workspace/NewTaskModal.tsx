@@ -18,6 +18,7 @@ import {
 } from '../profiles/profilePresentation'
 import { findGroupById, groupContextLine, listProjectTargets } from './projects'
 import { saveTeamRoster } from './teamRoster'
+import { newTaskBlockReason } from './newTaskGate'
 import type { ProjectsData } from './types'
 
 interface NewTaskModalProps {
@@ -163,6 +164,12 @@ export function NewTaskModal({ projects, defaultTarget, onClose, onCreated }: Ne
   }, [additionalCandidates])
 
   const canSubmit = instruction.trim().length > 0 && selectedProfile !== null && sessionNameValid && !creating
+  const blockReason = newTaskBlockReason({
+    instruction,
+    hasOrchestrator: selectedProfile !== null,
+    sessionNameValid,
+    creating,
+  })
 
   const handleSubmit = async () => {
     if (!canSubmit) return
@@ -229,8 +236,15 @@ export function NewTaskModal({ projects, defaultTarget, onClose, onCreated }: Ne
 
         <div className="space-y-4 px-4 py-4">
           <div>
-            <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-[var(--text-3)]">작업 지시 — 무엇을 할까요?</label>
+            {/* Phase 6 접근성: 라벨을 실제로 연결해 스크린리더가 이 입력을 읽을 수 있게 한다. */}
+            <label
+              htmlFor="new-task-instruction"
+              className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-[var(--text-3)]"
+            >
+              작업 지시 — 무엇을 할까요?
+            </label>
             <textarea
+              id="new-task-instruction"
               value={instruction}
               onChange={e => setInstruction(e.target.value)}
               rows={3}
@@ -322,6 +336,17 @@ export function NewTaskModal({ projects, defaultTarget, onClose, onCreated }: Ne
             </div>
           </div>
 
+          {/* spec §4e: 기본 노출은 작업 지시 + 오케스트레이터 선택까지. 팀 구성은
+              기본값으로 이미 충분하므로 "고급"으로 접어 둔다(기본 접힘). */}
+          {(presetGroups.length > 0 || additionalGroups.length > 0) && (
+          <details className="rounded-xl border border-[var(--border)] px-3 py-2">
+            <summary className="cursor-pointer select-none text-[11px] font-bold uppercase tracking-wide text-[var(--text-3)]">
+              고급 — 팀 구성 바꾸기
+            </summary>
+            <p className="mt-1.5 text-[10.5px] text-[var(--text-3)]">
+              그냥 두면 기본 팀으로 진행해요. 특정 역할만 쓰고 싶을 때 조정하세요.
+            </p>
+            <div className="mt-2 space-y-3">
           {presetGroups.length > 0 && (
             <div>
               <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-[var(--text-3)]">기본 팀 — 오케스트레이터가 위임할 역할</label>
@@ -351,7 +376,7 @@ export function NewTaskModal({ projects, defaultTarget, onClose, onCreated }: Ne
                 ))}
               </div>
               <p className="mt-1 text-[10.5px] text-[var(--text-3)]">
-                실제 워커는 오케스트레이터가 작업을 나눌 때만 생성돼요. 체크한 역할의 내부 프로필 ID가 첫 지시에 함께 전달됩니다.
+                체크한 역할은 후보로만 전달돼요. 실제 담당자는 오케스트레이터가 작업을 나눌 때 필요한 만큼만 만들어요.
               </p>
             </div>
           )}
@@ -386,9 +411,17 @@ export function NewTaskModal({ projects, defaultTarget, onClose, onCreated }: Ne
               </div>
             </div>
           )}
+            </div>
+          </details>
+          )}
         </div>
 
-        <div className="sticky bottom-0 flex justify-end gap-2 border-t border-[var(--border-soft)] bg-[var(--surface)] px-4 py-3">
+        <div className="sticky bottom-0 flex items-center justify-end gap-2 border-t border-[var(--border-soft)] bg-[var(--surface)] px-4 py-3">
+          {blockReason && (
+            <p className="mr-auto text-[10.5px] text-[var(--text-3)]" role="status">
+              {blockReason}
+            </p>
+          )}
           <button type="button" onClick={onClose} className="h-8 rounded-full border border-[var(--border)] px-3 text-xs font-semibold text-[var(--text-2)]">
             취소
           </button>

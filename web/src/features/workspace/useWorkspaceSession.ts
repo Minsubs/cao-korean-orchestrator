@@ -12,6 +12,7 @@ import {
 } from './orchestratorChat'
 import { applyUiEvents, buildThreadItems, filterUiEventsForSession, mergeSeededCard, seedCardFromTerminalMeta, withCallerNames } from './threadReducer'
 import { computeOrchestrationProgress, summarizeOrchestration, type OrchestrationSummary } from './orchestrationProgress'
+import { classifyOrchestrationError, pendingTimeoutMessage, type ClassifiedError } from './orchestrationError'
 import type { UiConnectionStatus } from './eventsClient'
 import type { ChatEntry, DelegationCard, ThreadItem, UiEvent } from './types'
 import { orchestrationReplyFingerprint, snapshotInputGenerations } from './sessionCompletion'
@@ -301,6 +302,26 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
     [],
   )
 
+  /**
+   * Turn a failed send into a user-facing bubble: the classified message is
+   * what the user reads, the server's raw detail goes to `raw` (revealed only
+   * by "원문 보기"), and `retryPrompt` arms the one-click 다시 보내기.
+   */
+  const failChatEntry = useCallback((id: string, classified: ClassifiedError, retryPrompt?: string) => {
+    setChatEntries(current =>
+      current.map(e =>
+        e.id === id
+          ? {
+              ...e,
+              content: classified.userMessage,
+              ...(classified.raw !== undefined ? { raw: classified.raw } : {}),
+              ...(retryPrompt !== undefined ? { retryPrompt } : {}),
+            }
+          : e,
+      ),
+    )
+  }, [])
+
   const sendMessage = useCallback(
     async (text: string, explicitTargetId?: string) => {
       const prompt = text.trim()
@@ -345,13 +366,12 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
         setPendingReply(nextPendingReply)
         await api.sendInput(targetId, prompt)
       } catch (error: unknown) {
-        const err = error as { detail?: string; message?: string }
-        replaceChatEntry(replyId, err?.detail || err?.message || '메시지를 보내지 못했습니다.')
+        failChatEntry(replyId, classifyOrchestrationError(error), prompt)
         setPendingReply(null)
         setSending(false)
       }
     },
-    [composerTargetId, supervisorTerminalId, sending, replaceChatEntry, sessionName],
+    [composerTargetId, supervisorTerminalId, sending, failChatEntry, sessionName],
   )
 
   // Generalized pending-reply poll — ported from SessionChatPanel, parameterized by target terminal.
@@ -431,7 +451,7 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
     void poll()
     timeoutTimer = setTimeout(() => {
       if (cancelled) return
-      replaceChatEntry(pendingReply.messageId, '응답이 계속 처리 중입니다. 잠시 후 새로고침해 확인하세요.')
+      replaceChatEntry(pendingReply.messageId, pendingTimeoutMessage())
       setPendingReply(null)
       setSending(false)
     }, PENDING_TIMEOUT_MS)

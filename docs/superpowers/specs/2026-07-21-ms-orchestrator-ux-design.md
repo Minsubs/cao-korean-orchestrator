@@ -98,6 +98,15 @@ MS Orchestrator(작업공간 탭)는 사용자가 채팅으로 작업을 지시�
 
 **수용 기준:** 실패/승인대기 케이스가 강조되고 조치 버튼 동작. 완료 카드에 토큰·시간 표시.
 
+> **2026-07-27 실측 — 작업별 토큰은 이 수용 기준에서 제외한다.**
+> 사용량 경로는 `/usage/accounts` 하나뿐이고(`api/usage_router.py:56`) provider별 `today`/`week`
+> 총계와 `by_model_today` 만 반환한다. 집계 서비스(`services/usage/claude_transcripts.py`,
+> `codex_rollouts.py`)는 CLI 트랜스크립트/롤아웃 파일을 날짜로만 스캔하며 CAO session·terminal 과
+> 이어 붙일 키가 없다. 턴 전후 provider 총계 delta 로 대신하는 우회는 같은 머신의 다른 세션·수동
+> CLI 사용량이 섞여 들어가 "이 작업의 비용"으로 제시할 수 없다(§공통 원칙 "가짜 데이터 금지").
+> 따라서 Phase 3 은 **시간만** 표시한다 — 턴 경과, 워커별 경과, 완료 요약의 소요시간.
+> 작업별 토큰은 backend 에서 terminal↔transcript 귀속 경로를 먼저 만든 뒤 별도 작업으로 다룬다.
+
 ## Phase 4 · 새 작업 · 프로필 · 모델 · 시각화
 
 ### 4a. agy 오케스트레이터 선택
