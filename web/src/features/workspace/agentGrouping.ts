@@ -6,11 +6,51 @@ import {
   ADDITIONAL_ROLE_LABELS,
 } from '../profiles/profilePresentation'
 import type { ProfileLike } from '../profiles/profilePresentation'
+import type { DelegationCard } from './types'
 
 const WORKING_STATUSES = new Set(['PROCESSING', 'WAITING_USER_ANSWER'])
 
 export function isTeamWorking(statuses: Record<string, string>): boolean {
   return Object.values(statuses).some(status => WORKING_STATUSES.has((status || '').toUpperCase()))
+}
+
+/**
+ * Session-scoped, card-aware status map for the agent panel.
+ *
+ * The global `terminalStatuses` store is session-agnostic and is never pruned
+ * in the Workspace — `clearTerminalStatuses` is only wired into the classic
+ * DashboardHome. So a handoff worker that finished and was auto-deleted keeps
+ * its last `PROCESSING` in the store indefinitely, and entries belonging to
+ * other sessions are visible too. Anything reading the raw store therefore
+ * over-reports work (wrong "N/N 워커 작업 중", wrong board→hierarchy switch).
+ *
+ * Build the map from this session's own supervisor and cards instead, and let
+ * an ended card win over whatever the store still remembers — the same rule
+ * the per-card badge already applies.
+ */
+export function sessionStatusMap(params: {
+  supervisorId: string | null
+  cards: Pick<DelegationCard, 'terminalId' | 'status' | 'killed'>[]
+  terminalStatuses: Record<string, string>
+}): Record<string, string> {
+  const { supervisorId, cards, terminalStatuses } = params
+  const map: Record<string, string> = {}
+
+  if (supervisorId) {
+    const status = terminalStatuses[supervisorId]
+    if (status) map[supervisorId] = status.toUpperCase()
+  }
+
+  for (const card of cards) {
+    if (card.killed) {
+      map[card.terminalId] = (card.status ?? 'completed').toUpperCase()
+      continue
+    }
+    const status = terminalStatuses[card.terminalId] || card.status
+    if (status) map[card.terminalId] = status.toUpperCase()
+  }
+
+  return map
 }
 
 export type AgentRoleGroup<T> = { key: string; label: string; agents: T[] }
