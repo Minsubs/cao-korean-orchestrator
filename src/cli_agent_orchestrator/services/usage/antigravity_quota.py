@@ -5,6 +5,7 @@ The cache lists per-model ``remaining_percentage`` (100 - used%) + ``reset_time`
 single representative window from the most-consumed model (lowest remaining).
 PII in the cache (scope.email/plan_tier) is never read into the account.
 """
+
 from __future__ import annotations
 
 import json
@@ -18,9 +19,15 @@ _DEFAULT_WINDOW_MINUTES = 300  # antigravity quotas refresh on a ~5h cadence
 
 def _absent(note: str) -> Dict[str, Any]:
     return {
-        "provider": "antigravity_cli", "present": False, "source": "quota-cache",
-        "today": None, "week": None, "by_model_today": [], "rate_limits": None,
-        "last_activity": None, "note": note,
+        "provider": "antigravity_cli",
+        "present": False,
+        "source": "quota-cache",
+        "today": None,
+        "week": None,
+        "by_model_today": [],
+        "rate_limits": None,
+        "last_activity": None,
+        "note": note,
     }
 
 
@@ -40,7 +47,11 @@ def aggregate(home: Path, now: datetime) -> Dict[str, Any]:
     except (json.JSONDecodeError, OSError):
         return _absent("quota-cache.json을 읽지 못했어요")
     models = data.get("models") or {}
-    entries = [m for m in models.values() if isinstance(m, dict) and isinstance(m.get("remaining_percentage"), (int, float))]
+    entries = [
+        m
+        for m in models.values()
+        if isinstance(m, dict) and isinstance(m.get("remaining_percentage"), (int, float))
+    ]
     if not entries:
         return _absent("사용량 정보가 아직 없어요")
     worst = min(entries, key=lambda m: m["remaining_percentage"])
@@ -52,10 +63,18 @@ def aggregate(home: Path, now: datetime) -> Dict[str, Any]:
     }
     by_model = [{"model": m.get("name", "?"), "total": 0} for m in entries][:5]
     return {
-        "provider": "antigravity_cli", "present": True, "source": "quota-cache",
-        "today": None, "week": None, "by_model_today": by_model,
-        "rate_limits": {"plan": None, "primary": primary, "secondary": None,
-                         "captured_at": now.astimezone().isoformat()},
+        "provider": "antigravity_cli",
+        "present": True,
+        "source": "quota-cache",
+        "today": None,
+        "week": None,
+        "by_model_today": by_model,
+        "rate_limits": {
+            "plan": None,
+            "primary": primary,
+            "secondary": None,
+            "captured_at": now.astimezone().isoformat(),
+        },
         "last_activity": None,
         "note": "모델별 남은 한도 기준이에요 (토큰 사용량은 제공되지 않아요).",
     }

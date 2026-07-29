@@ -7,6 +7,8 @@ subprocesses or asyncio task timing. Scope gating of the mutating routes is
 verified structurally here and end-to-end by test/api/test_scope_coverage.py.
 """
 
+from unittest.mock import MagicMock
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -134,6 +136,23 @@ def test_adapters_endpoint(client):
     caps = entry["capabilities"]
     assert caps["canInstall"] is True
     assert "reasons" in caps
+
+
+def test_collect_adapters_caches_detection(monkeypatch, adapter):
+    """A cached _collect_adapters() does not re-detect; use_cache=False does."""
+    monkeypatch.setattr(tooling_router.registry, "get_adapters", lambda: {adapter.id: adapter})
+    detect_spy = MagicMock(wraps=adapter.detect)
+    monkeypatch.setattr(adapter, "detect", detect_spy)
+
+    tooling_router._collect_adapters()  # populates the cache
+    calls_after_first = detect_spy.call_count
+    assert calls_after_first == 1
+
+    tooling_router._collect_adapters()  # cache hit -> no new detect() calls
+    assert detect_spy.call_count == calls_after_first
+
+    tooling_router._collect_adapters(use_cache=False)  # forced refresh re-detects
+    assert detect_spy.call_count == calls_after_first * 2
 
 
 # --- POST /tooling/plan ---------------------------------------------------

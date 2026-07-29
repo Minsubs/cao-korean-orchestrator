@@ -141,3 +141,34 @@ def test_provider_managed_extensions_are_merged_with_qualified_ids(tmp_path, mon
     assert by_id["skill:generic_skills:frontend-design"]["provider"] == "generic_skills"
     assert by_id["mcp:codex:context7"]["kind"] == "mcp"
     assert "mcp:claude_code:ignored" not in by_id
+
+
+def test_list_extensions_caches_provider_probe(tmp_path, monkeypatch):
+    """A cached list_extensions() does not re-detect adapters; use_cache=False does."""
+    monkeypatch.setattr(extensions.constants, "SKILLS_DIR", tmp_path / "absent")
+    monkeypatch.setattr(extensions.settings_service, "get_extra_skill_dirs", lambda: [])
+    monkeypatch.setattr(extensions, "list_agent_profiles", lambda: [])
+
+    class CountingAdapter:
+        def __init__(self):
+            self.calls = 0
+
+        def detect(self):
+            self.calls += 1
+            return type("Env", (), {"installed": True})()
+
+        def list_installed(self):
+            return [{"name": "frontend-design", "raw": "frontend-design"}]
+
+    adapter = CountingAdapter()
+    monkeypatch.setattr(extensions.registry, "get_adapters", lambda: {"generic_skills": adapter})
+
+    extensions.list_extensions()  # populates the cache
+    calls_after_first = adapter.calls
+    assert calls_after_first == 1
+
+    extensions.list_extensions()  # cache hit -> no new detect() calls
+    assert adapter.calls == calls_after_first
+
+    extensions.list_extensions(use_cache=False)  # forced refresh re-detects
+    assert adapter.calls == calls_after_first * 2

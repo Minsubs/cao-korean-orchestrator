@@ -318,7 +318,9 @@ class ClaudeCodeAdapter(ExtensionAdapter):
         if action == "install_cli":
             found = shutil.which(_BINARY) is not None
             return found, (
-                f"{_BINARY} is now on PATH" if found else f"{_BINARY} was not found on PATH after install"
+                f"{_BINARY} is now on PATH"
+                if found
+                else f"{_BINARY} was not found on PATH after install"
             )
         if not target:
             return False, f"action {action!r} requires a target to verify"
