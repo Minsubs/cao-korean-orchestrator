@@ -227,7 +227,11 @@ describe('Workspace (Phase 2b render-level)', () => {
     fireEvent.change(textarea, { target: { value: '팀 연결 테스트' } })
     fireEvent.keyDown(textarea, { key: 'Enter', metaKey: true })
 
-    expect(await screen.findByText('오케스트레이터 응답을 기다리는 중…')).toBeInTheDocument()
+    // Phase 2: the pending placeholder now renders as the live progress card
+    // instead of the plain WAITING sentence — the turn must still read as
+    // unresolved, and the worker's intermediate output must not be promoted.
+    expect(await screen.findByTestId('progress-card')).toBeInTheDocument()
+    expect(screen.queryByText('오케스트레이터 응답을 기다리는 중…')).not.toBeInTheDocument()
     expect(screen.queryByText('워커에게 위임했습니다.')).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '전송 중' })).toBeDisabled()
   })
@@ -267,6 +271,9 @@ describe('Workspace (Phase 2b render-level)', () => {
         baselineGenerations: { aaaaaaaa: 0 },
         baselineInboxMessageId: 0,
       })
+      // Phase 2: the turn's start time is part of the persisted metadata, so a
+      // restored turn can keep counting instead of restarting its elapsed clock.
+      expect(typeof stored.workspacePendingReply.startedAt).toBe('number')
     })
     first.unmount()
     await act(async () => resolveInput?.(jsonResponse({ success: true })))
@@ -274,7 +281,8 @@ describe('Workspace (Phase 2b render-level)', () => {
     render(<TestWorkspace />)
 
     expect(await screen.findByText('팀 연결 테스트')).toBeInTheDocument()
-    expect(screen.getByText('오케스트레이터 응답을 기다리는 중…')).toBeInTheDocument()
+    // Restored as still-pending — now surfaced by the Phase 2 progress card.
+    expect(screen.getByTestId('progress-card')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '전송 중' })).toBeDisabled()
   })
 

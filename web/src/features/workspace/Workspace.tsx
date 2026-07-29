@@ -314,6 +314,10 @@ export function Workspace({ events, status: streamStatus, selectedSessionId, set
                 threadItems={workspaceSession.threadItems}
                 connectionStatus={streamStatus}
                 terminalStatuses={workspaceSession.terminalStatuses}
+                cards={workspaceSession.cards}
+                supervisorTerminalId={workspaceSession.supervisorTerminalId}
+                pendingSince={workspaceSession.pendingSince}
+                pendingMessageId={workspaceSession.pendingMessageId}
                 onOpenTerminal={id => openInWorkbench(id, 'term')}
                 onOpenOutput={id => openInWorkbench(id, 'output')}
                 onOpenLogs={() => openInWorkbench(workspaceSession.supervisorTerminalId ?? '', 'logs')}

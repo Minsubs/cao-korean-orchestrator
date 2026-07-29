@@ -6,6 +6,8 @@
 // implemented in parallel — read there, never edited here). Event envelope:
 // `{id: number, ts: iso8601, type, detail}`, original CAO vocabulary preserved.
 
+import type { OrchestrationSummary } from './orchestrationProgress'
+
 export type UiEventType =
   | 'session_created'
   | 'session_killed'
@@ -125,6 +127,8 @@ export interface ChatEntry {
   targetId?: string
   /** Assistant only: pre-cleaned original transcript, revealed by the "원문 보기" toggle. */
   raw?: string
+  /** Assistant only: frozen snapshot of the orchestration turn that produced this reply (Phase 2). */
+  progress?: OrchestrationSummary
 }
 
 export type ThreadItem =
