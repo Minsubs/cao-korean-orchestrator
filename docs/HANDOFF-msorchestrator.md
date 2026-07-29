@@ -144,6 +144,205 @@ subagent-driven-development(구현 sonnet / 리뷰 sonnet / 최종 opus)로 **Ph
 
 - **라이브 서버:** `127.0.0.1:9889`에 `cao-server` 가동 중(pid 3970095, ext4 `CAO_HOME_DIR=/home/minsub57/.local/share/cao-home`). 라우트 prefix는 `/tooling`(not `/api/tooling`). web_ui는 Phase 1까지 반영된 빌드. Windows 브라우저 `http://localhost:9889`.
 
+### 0.15. 2026-07-27 콜드스타트 복구 + UX Phase 2·3 구현 + EOD 자율 루프 (Claude Opus, 백그라운드 잡)
+
+이 세션은 콜드스타트로 시작해 Phase 2 → Phase 3 을 구현하고, 마지막에 `/end-of-day-handoff-loop`
+로 전환해 잔여 항목 일부를 더 처리했다. **작업 산출물이 세 갈래로 나뉘어 있으니 아래 위치를
+먼저 확인할 것.**
+
+#### 산출물 위치 (중요)
+
+작업은 워크트리 `/home/minsub57/hunesion_workspace/cao-korean-orchestrator/.claude/worktrees/coldstart-phase4d`
+에서 수행했다.
+
+| 갈래 | 상태 | 위치 |
+|---|---|---|
+| Phase 2 진행 카드 | 커밋·push 완료, **draft PR #7** | 브랜치 `worktree-coldstart-phase4d` (`3d201a9`), base `main` |
+| Phase 3 에러·승인대기 | 커밋·push 완료, **draft PR #8** | 브랜치 `phase3-error-cost` (`55c8b78`), base **PR #7 브랜치**(스택) |
+| EOD 루프 산출물 | **미커밋 — 워크트리 작업 디렉터리에만 있음** | 같은 워크트리, 브랜치 `phase3-error-cost` 위 uncommitted |
+
+⚠️ EOD 루프분은 `/end-of-day-handoff-loop` skill 규칙(commit/push 를 외부 상태 변경으로 금지)에
+따라 **의도적으로 커밋하지 않았다.** 워크트리를 제거하면 소실된다. 이어받을 때 가장 먼저
+`git -C <worktree> status` 로 존재를 확인하고 커밋 여부를 결정할 것. 커밋 메시지 초안은 아래에 있다.
+
+PR 머지 순서: #7 먼저 머지 → #8 의 base 를 `main` 으로 변경 → #8 머지. #8 은 #7 의 타입
+(`OrchestrationSummary`, `WorkerState`)을 직접 확장하므로 순서를 바꾸면 충돌한다.
+
+#### 콜드스타트에서 확인한 저장소 상태
+
+- **로컬 `main` 이 `origin/main` 보다 41 커밋 뒤처져 있었다**(fast-forward 가능, 분기 아님). 아직
+  pull 하지 않았다. `origin/main` tip = `e73ce5d`(PR #5 머지).
+- **CRLF phantom diff 재확인**: 원본 체크아웃의 973 파일이 전부 수정됨으로 보이지만
+  `git diff --ignore-cr-at-eol --stat` 출력이 비어 실변경 0건이다(§3-5 기록과 일치). 이 세션은
+  건드리지 않고 fresh 워크트리에서 작업했다. 정리는 여전히 사용자 승인 대기.
+- `.venv` 가 없어 `uv python install 3.12` → `uv sync -p 3.12` 로 부트스트랩했다(워크트리 로컬).
+  결과 `.venv` = Python `3.12.13`. 시스템 기본 3.14.4 는 §3 대로 피해야 한다.
+- 베이스라인 게이트(`e73ce5d`): backend `4784 passed / 14 skipped`, tsc 0, vitest `432/432`, build ✓.
+
+#### Phase 2 — 실시간 진행 카드 (PR #7, 커밋 5개)
+
+계획: `docs/superpowers/plans/2026-07-27-phase2-live-progress-card.md`.
+
+- `web/src/features/workspace/orchestrationProgress.ts` (신규, React 비의존 순수 모듈):
+  `formatElapsed`(초/분/시간), `workerStateFor`, `computeOrchestrationProgress`(stage =
+  `dispatching`/`working`/`callback`), `summarizeOrchestration`.
+  턴 경계는 `pendingSince` 하나로 정하고, 워커 create 이벤트의 서버 시각이 로컬 전송 시각보다
+  살짝 앞설 수 있어 `TURN_GRACE_MS = 2000` 만큼 관대하게 본다.
+- `WorkspacePendingReply.startedAt` · `ChatEntry.progress` 를 additive-optional 로 추가.
+  `loadStoredChat` 이 둘 다 명시적 가드로 좁힌다(변조 payload 는 조용히 버림).
+- `ProgressCard.tsx` (신규): 단계 라벨·경과시간·워커 행·대기 대상·stall 경고. **표시 전용** —
+  1초 tick 은 경과 라벨 갱신용 로컬 리렌더일 뿐 터미널 read 를 유발하지 않는다(과거 환각 폴링
+  회귀 금지). 상태원은 `AgentSidePanel` 과 동일한 `cards` + `terminalStatuses` 뿐이다.
+- 응답 확정 시 `summarizeOrchestration` 스냅샷을 굳혀 `✓ 완료 · 워커 N · 소요 M` 이 리로드 후에도 남는다.
+- 게이트: tsc 0, vitest `466/466`, build ✓, design-token ✓.
+
+**실서버 라이브 검증 완료** — 증거 `.omo/evidence/phase2-live-2026-07-27/`(report.md + 캡처 3장).
+실제 Codex 위임 턴에서 `작업 배정 중 · 7초` → `워커 작업 중 · 35초 · 0/1 완료 · 테스트 담당 ·
+Codex · 작업 중 · 테스트 담당의 콜백 대기 중` → `✓ 완료 · 워커 1 · 소요 39초` + `PHASE2_LIVE_OK2`
+를 확인했다. REST 대조로 워커 `b7528bbb:codex_qa_terra` 생성→처리→자동정리, 오케스트레이터
+`4/4 completed` 일치. 프로필 ID 노출 0, console error/warning 0, 리로드 후 요약 유지.
+
+- **미확인 1건**: `callback` 단계 프레임은 워커 종료와 최종 답변 도착 사이가 스냅샷 간격보다
+  짧아 캡처하지 못했다. 단위 테스트로만 덮여 있다.
+- **알게 된 것**: 새 작업 모달의 첫 프롬프트는 `sendMessage` 를 안 거치고 모달이 직접 API 를
+  호출해 `pendingReply` 가 등록되지 않는다. 그래서 세션 생성 직후 첫 턴에는 진행 카드가 안 뜬다
+  (Phase 2 이전부터의 기존 동작). 카드는 채팅 컴포저 경로에서만 뜬다. 이걸 통일할지는 미결.
+
+#### Phase 3 — 에러 / 승인대기 (PR #8, 커밋 5개)
+
+계획: `docs/superpowers/plans/2026-07-27-phase3-error-cost.md`.
+
+- **실버그 수정(보안성)**: `useWorkspaceSession.ts` 의 전송 실패 catch 가
+  `err.detail || err.message` 를 그대로 assistant 말풍선 content 로 넣고 있었다. FastAPI 가
+  `detail` 에 담은 파일 경로·예외·내부 식별자가 사용자 화면 문구가 됐다. 이제 신규
+  `orchestrationError.ts` 가 HTTP status·AbortError 만 보고 **6종 고정 문구**로 분류하고, 원문은
+  `raw` 로만 실어 Phase 1 `원문 보기` 토글 뒤에 둔다. traceback·경로·토큰이 `userMessage` 에
+  섞이지 않는지 회귀 테스트가 직접 단언한다.
+- 대기 타임아웃 문구를 "실패"가 아니라 "아직 도착하지 않았고 계속 작업 중일 수 있다"로 정정.
+- `WAITING_USER_ANSWER` 를 `working` 에서 떼어 **`blocked`** 상태로 분리(경고색 + 조치 버튼).
+  `blockedCount`/`errorCount` 추가. 두 상태 모두 미종료라 stage 판정은 불변.
+- 진행 카드: 오류 시 danger 테두리, 승인대기 시 warning 테두리, `승인 대기 N · 오류 N` 요약줄,
+  해당 워커 행에 `승인하러 가기` / `오류 확인` 버튼(그 워커 터미널을 연다). 정상 워커엔 버튼 없음.
+- 전송 실패한 말풍선에 `다시 보내기`(`ChatEntry.retryPrompt`, additive-optional + 읽기 시 좁힘).
+- 워커별 경과시간 표시.
+- 게이트: tsc 0, vitest `489/489`, build ✓, design-token ✓.
+
+**⚠️ 스펙 축소 — 작업별 토큰은 구현하지 않았다.** 스펙 수용 기준은 "완료 카드에 토큰·시간"인데
+변경란은 "새 백엔드 없이 기존 usage 데이터 활용"으로 제약한다. 실측 결과 둘이 양립하지 않는다:
+사용량 경로는 `/usage/accounts` 하나뿐이고(`api/usage_router.py:56`) provider별 `today`/`week`
+총계와 `by_model_today` 만 반환하며, 집계 서비스(`services/usage/claude_transcripts.py`,
+`codex_rollouts.py`)는 CLI 트랜스크립트/롤아웃 파일을 **날짜로만** 스캔해 CAO session·terminal 과
+이을 키가 없다. 턴 전후 provider 총계 delta 우회는 같은 머신의 다른 CAO 세션·수동 CLI 사용량이
+섞여 "이 작업의 비용"으로 제시할 수 없다(가짜 데이터 금지). 커밋 `55c8b78` 으로 스펙 본문 옆에
+사유를 남겼다. **정직하게 표시하려면 backend 에서 terminal ↔ transcript 귀속 경로가 선행돼야 한다.**
+
+**라이브 미검증**: 오류·승인대기 실화면은 확인하지 못했다(페이지 로드 스모크만). 재현에는
+승인 정책 `on-request` 프로필(승인대기)과 서버 중단(네트워크 오류)이 필요하다.
+
+#### EOD 자율 루프 산출물 (미커밋)
+
+`/end-of-day-handoff-loop` 로 전환해 아래를 추가로 구현했다. **전부 uncommitted.**
+
+1. **Phase 4-C 실버그 수정 — 정리된 워커를 계속 "작업 중"으로 집계**
+   Phase 2 라이브 검증 중 발견했다. 워커 2개가 모두 자동 정리돼 오케스트레이터만 남았는데도
+   우측 패널이 `2/2 워커 작업 중` 을 표시하고, 같은 패널의 위임 카드는 `완료` 라 한 화면에서
+   어긋났다.
+   원인은 `AgentSidePanel` 이 **세션 무관 전역** `useStore.terminalStatuses` 를 그대로
+   `isTeamWorking`·`DelegationHierarchy`·`RoleBoard` 에 넘긴 것이다. `store.ts:107`
+   `clearTerminalStatuses` 는 클래식 `DashboardHome.tsx:177` 에서만 호출되고 Workspace 경로엔
+   배선이 없어, 삭제된 터미널의 마지막 `PROCESSING` 이 스토어에 영구히 남고 **타 세션 터미널까지
+   보인다**. 그래서 A/B 자동전환(`vizView`)과 `작업 큐` 카운트도 같이 오염됐다.
+   수정: `agentGrouping.ts` 에 `sessionStatusMap({supervisorId, cards, terminalStatuses})` 추가 —
+   이 세션의 supervisor + cards 만 담고, `card.killed` 면 스토어보다 카드를 우선한다(위임 카드
+   배지가 이미 쓰는 규칙과 동일). `AgentSidePanel` 의 `queueCards`·`isTeamWorking`·두 viz 컴포넌트를
+   이 맵으로 교체했다. store 를 건드리지 않아 타 세션 영향 없음. 테스트
+   `web/src/test/session-status-map.test.ts` 9건.
+2. **Phase 6 — "작업 시작" 비활성 사유 안내**: 신규 `newTaskGate.ts` 의
+   `newTaskBlockReason()` 이 canSubmit 과 같은 조건으로 우선순위 하나만 문구화한다(지시 미입력 →
+   오케스트레이터 프로필 미설치 → 세션 이름 규칙). `creating` 중엔 스피너가 말하므로 침묵.
+   테스트 `new-task-block-reason.test.ts` 6건.
+3. **스펙 §4e — 새 작업 모달 간결화**: 기본 팀 + 추가 전문 에이전트를 `고급 — 팀 구성 바꾸기`
+   `<details>` 하나로 묶어 **기본 접힘**. 내부용어 문구("체크한 역할의 내부 프로필 ID가 첫 지시에
+   함께 전달됩니다")를 "체크한 역할은 후보로만 전달돼요…"로 순화.
+   테스트 `new-task-modal-simplify.test.tsx` 5건 — 접힘은 DOM 에 내용이 남아 query 로는 검증이
+   안 되므로 `details` 의 `open` 속성으로 단언한다.
+4. **Phase 6 접근성**: 작업 지시 textarea 에 `id`/`htmlFor` 를 붙여 라벨을 실제 연결했다(기존엔
+   미연결이라 스크린리더가 못 읽었고 `getByLabelText` 도 실패).
+5. **Phase 1 잔여 Minor — `loadStoredChat` 의 `raw` 타입 미검증 해소**: 변조된 non-string `raw`
+   하나가 `formatOrchestratorOutput` 에서 throw 하고 outer catch 가 삼켜 **대화 전체가 사라졌다.**
+   이제 문자열이 아니면 `content` 로 폴백해 나머지 히스토리를 지킨다. 회귀 테스트 추가.
+
+**EOD 루프 게이트**: tsc 0, vitest **`510/510` (61 파일)**, build ✓ `index-D5-mTHcU.js`,
+design-token ✓. backend 는 Python 파일 무변경이라 미실행(기준 `4784 passed / 14 skipped`).
+라이브 스모크: 서버가 새 번들 서빙, 새 작업 모달에서 고급 접힘·비활성 사유 표시·console 0 확인.
+캡처 `eod-newtask-simplified.png`(워크트리 루트, 미커밋).
+
+#### 미커밋분 커밋 메시지 초안 (사용자 승인 후)
+
+```
+fix(viz): scope the agent panel's status map to this session and honour ended cards
+
+우측 패널이 자동 정리된 handoff 워커를 계속 "작업 중"으로 집계했다. 원인은 세션 무관 전역
+terminalStatuses 를 isTeamWorking/DelegationHierarchy/RoleBoard 에 그대로 넘긴 것이다
+(clearTerminalStatuses 는 클래식 DashboardHome 에만 배선돼 Workspace 에서는 삭제된 터미널의
+마지막 PROCESSING 이 영구히 남고 타 세션 터미널도 보인다).
+
+sessionStatusMap() 이 이 세션의 supervisor + cards 만 담고 card.killed 를 스토어보다 우선한다.
+작업 큐 카운트와 보드→계층 자동전환도 같은 맵을 쓴다. store 는 건드리지 않았다.
+```
+
+```
+feat(new-task): explain why 작업 시작 is disabled + fold the team pickers into 고급
+
+버튼만 흐려지면 무엇을 채워야 하는지 알 수 없었다. newTaskBlockReason() 이 canSubmit 과 같은
+조건으로 우선순위 하나만 알려준다. 스펙 §4e 대로 기본 팀·추가 전문 에이전트를 기본 접힌
+"고급" 섹션으로 묶고 내부 프로필 ID 문구를 순화했다. 작업 지시 라벨에 htmlFor/id 를 붙여
+접근성도 함께 고쳤다.
+```
+
+```
+fix(chat): keep the history when a tampered raw is not a string
+
+변조된 non-string raw 하나가 formatOrchestratorOutput 에서 throw 하고 outer catch 가 삼켜
+대화 전체가 사라졌다. 문자열이 아니면 content 로 폴백한다. Phase 1 잔여 Minor 해소.
+```
+
+#### escalate — 사용자 턴 필요 (이 루프에서 실행하지 않음)
+
+1. **미커밋분 커밋 여부 결정** + PR #7 → #8 머지 순서 진행. 브랜치 삭제·머지는 전부 사용자 턴.
+2. 원본 체크아웃의 `main` pull(41 커밋 뒤처짐) 과 CRLF 정리(`.gitattributes` + `--renormalize`,
+   973 파일 대형 커밋) — 둘 다 승인 대기.
+3. **Phase 7 Electron** — 큰 신규 기능이라 무인 루프에서 착수하지 않았다. 자체 스펙·플랜 사이클
+   필요. `docs/electron-plan.md` 참조.
+
+#### 다음 세션 추천 순서
+
+1. 위 escalate 1번(미커밋분 처리) — 가장 먼저. 워크트리 제거 전에.
+2. **Phase 5** — 미착수. 3항목 전부 남았다:
+   (a) `useUiEventStream.ts`/`eventsClient.ts` **SSE 자동 재연결** + "재연결 중…" 표시(서버 재시작
+   후 수동 새로고침 없이 복구). 이번에 medium 규모라 판단해 착수하지 않고 넘겼다.
+   (b) `ToolingView.tsx` 스켈레톤 + 부분 로딩(빠른 environment/providers 먼저, 느린 extensions 뒤늦게).
+   (c) 설정 화면의 에이전트 프로필 디렉터리가 실제 경로(`CAO_HOME_DIR` override 반영)를 표시.
+3. **Phase 6 잔여** — 이번에 비활성 사유·접근성 1건·내부용어 1건만 처리했다. 남은 것:
+   (a) **내부용어 잔여** — 새 작업 모달의 오케스트레이터 카드가 아직 프로필 ID 원문
+   (`codex_orchestrator_sol`, `claude_orchestrator_sonnet`, `antigravity_orchestrator_agy`)을
+   monospace 로 노출한다. 캡처 `eod-newtask-simplified.png` 참조. 식별 목적이면 유지, 아니면 제거.
+   (b) 알림 배지 읽음/초기화 동선. (c) 로딩 상태(스켈레톤/스피너/텍스트) 일관화.
+   (d) favicon 404 는 `dfe4778` 로 이미 해결됨 — 확인만.
+4. **Phase 3 라이브 검증** — 승인 정책 `on-request` 프로필로 승인대기, 서버 중단으로 네트워크
+   오류를 재현해 실화면 확인.
+5. **Phase 2 callback 프레임 캡처** — 폴링 간격을 좁혀 재시도.
+6. **작업별 토큰 귀속(backend)** — Phase 3 에서 제외한 항목. terminal ↔ CLI transcript 를 잇는
+   경로 설계가 선행.
+
+#### 라이브 서버
+
+`127.0.0.1:9889` 에서 계속 실행 중이다. 기동 명령은
+`CAO_HOME_DIR=/home/minsub57/.local/share/cao-home PYTHONPATH=src uv run cao-server --host 127.0.0.1 --port 9889`
+(워크트리 `coldstart-phase4d` 에서 실행). web_ui 는 **EOD 루프까지 반영된 빌드**
+(`index-D5-mTHcU.js`). 실측 provider: Claude Code `2.1.220`, Codex `0.145.0`.
+임시 세션 `cao-phase2-live` 는 검증 후 삭제했다(`/sessions` = `[]`).
+
 ## 1. 프로젝트가 무엇인가
 CAO fork를 "채팅 중심 멀티 에이전트 오케스트레이션 작업대 + AI CLI/확장 컨트롤센터"(**MS Orchestrator**)로 개편.
 핵심 문서: `docs/ui-refactor-plan.md`(전체 계획·실행 방법·함정), `docs/electron-plan.md`(Phase 7 확정 설계 — **머지 후 착수하기로 사용자와 합의된 다음 큰 단계**), `docs/ux-benchmark.md`, `docs/specs/`(작업별 상세 스펙).
