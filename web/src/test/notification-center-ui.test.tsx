@@ -111,3 +111,74 @@ describe('notification center UI', () => {
     expect(row).toHaveAttribute('title', '이 알림은 세션 정보가 없어 이동할 수 없어요')
   })
 })
+
+// Phase 6 — 알림 배지 읽음/초기화 동선.
+//
+// Mark-read already existed (opening the popover marks every alert read), but it
+// had no test, so nothing protected it. Clearing the stored history did not
+// exist at all — that was the one real gap, and the badge could only ever grow
+// across sessions. These three cover: the pre-existing read behaviour, the new
+// clear flow (including cancel), and the defensive load that silently drops a
+// tampered entry.
+describe('notification center — 읽음/초기화 동선', () => {
+  afterEach(() => window.localStorage.clear())
+
+  const openPanel = () => fireEvent.click(screen.getByRole('button', { name: '알림 센터 열기' }))
+
+  it('clears the unread badge once the panel is opened (pre-existing, previously untested)', () => {
+    render(<NotificationCenter sessions={[]} />)
+    act(() => emitWorkspaceAlert('stall', '정체', '출력이 없어요', 'aaaaaaaa'))
+
+    expect(screen.getByText('1')).toBeInTheDocument()
+    openPanel()
+    expect(screen.queryByText('1')).toBeNull()
+
+    const stored = JSON.parse(window.localStorage.getItem('cao:notifications:history:v1') || '[]')
+    expect(stored[0].read).toBe(true)
+  })
+
+  it('asks for confirmation before clearing and leaves the history intact on cancel', () => {
+    render(<NotificationCenter sessions={[]} />)
+    act(() => emitWorkspaceAlert('stall', '정체', '출력이 없어요', 'aaaaaaaa'))
+    openPanel()
+
+    fireEvent.click(screen.getByRole('button', { name: '알림 내역 모두 지우기' }))
+    fireEvent.click(screen.getByRole('button', { name: '취소' }))
+
+    expect(screen.getByText('정체')).toBeInTheDocument()
+    expect(screen.queryByText('아직 알림이 없습니다.')).toBeNull()
+  })
+
+  it('empties the history and its storage once the clear is confirmed', () => {
+    render(<NotificationCenter sessions={[]} />)
+    act(() => emitWorkspaceAlert('stall', '정체', '출력이 없어요', 'aaaaaaaa'))
+    openPanel()
+
+    fireEvent.click(screen.getByRole('button', { name: '알림 내역 모두 지우기' }))
+    fireEvent.click(screen.getByRole('button', { name: '모두 지우기' }))
+
+    expect(screen.getByText('아직 알림이 없습니다.')).toBeInTheDocument()
+    expect(JSON.parse(window.localStorage.getItem('cao:notifications:history:v1') || 'null')).toEqual([])
+  })
+
+  it('offers no clear action when there is nothing stored', () => {
+    render(<NotificationCenter sessions={[]} />)
+    openPanel()
+    expect(screen.queryByRole('button', { name: '알림 내역 모두 지우기' })).toBeNull()
+  })
+
+  it('drops a tampered stored entry instead of throwing (pre-existing, previously untested)', () => {
+    window.localStorage.setItem(
+      'cao:notifications:history:v1',
+      JSON.stringify([
+        { kind: 'not-a-real-kind', title: 'x', body: 'y', id: '1', terminalId: 't', createdAt: 'z', read: false },
+        { kind: 'stall', title: '살아있는 알림', body: 'y', id: '2', terminalId: 't', createdAt: 'z', read: true },
+      ]),
+    )
+    render(<NotificationCenter sessions={[]} />)
+    openPanel()
+
+    expect(screen.getByText('살아있는 알림')).toBeInTheDocument()
+    expect(screen.queryByText('x')).toBeNull()
+  })
+})
