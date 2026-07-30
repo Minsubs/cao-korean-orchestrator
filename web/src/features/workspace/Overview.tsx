@@ -163,7 +163,7 @@ export function Overview({ onSelectSession, onNewTask, summariesOverride }: Over
             </button>
           </div>
         ) : initialLoading ? (
-          <p className="mt-16 text-center text-xs text-[var(--text-3)]">불러오는 중...</p>
+          <p className="mt-16 text-center text-xs text-[var(--text-3)]">불러오는 중…</p>
         ) : (
           <>
             <div className="flex flex-wrap items-center gap-2">

@@ -152,7 +152,7 @@ export function FlowsPanel() {
   }
 
   if (loading) {
-    return <div className="text-gray-500 text-sm py-8 text-center">자동화 불러오는 중...</div>
+    return <div className="text-gray-500 text-sm py-8 text-center">자동화 불러오는 중…</div>
   }
 
   const scheduleSelectOptions = [
@@ -244,7 +244,7 @@ export function FlowsPanel() {
                       ) : (
                         <Play size={12} />
                       )}
-                      {runningFlow === f.name ? '실행 중...' : '지금 실행'}
+                      {runningFlow === f.name ? '실행 중…' : '지금 실행'}
                     </button>
 
                     {/* Delete */}
@@ -428,7 +428,7 @@ export function FlowsPanel() {
                 className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors"
               >
                 {creating ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-                {creating ? '만드는 중...' : '자동화 만들기'}
+                {creating ? '만드는 중…' : '자동화 만들기'}
               </button>
             </div>
           </div>

@@ -121,7 +121,7 @@ export function PreviewModal({ preview, onExecute, onClose }: PreviewModalProps)
               className="flex h-8 items-center gap-1.5 rounded-full bg-[var(--accent)] px-3 text-xs font-semibold text-[var(--on-accent)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {executing ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
-              {executing ? '실행하는 중...' : '실행하기'}
+              {executing ? '실행하는 중…' : '실행하기'}
             </button>
           )}
         </div>

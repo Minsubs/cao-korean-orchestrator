@@ -70,7 +70,7 @@ export function OverviewPane({
             className="flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2 text-xs font-semibold text-[var(--text-2)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-60"
           >
             <RefreshCw size={13} className={rescanning ? 'animate-spin' : ''} />
-            {rescanning ? '검사 중...' : '다시 검사'}
+            {rescanning ? '검사 중…' : '다시 검사'}
           </button>
         </div>
       </div>

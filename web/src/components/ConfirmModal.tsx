@@ -107,7 +107,7 @@ export function ConfirmModal({
             className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-all focus:outline-none focus:ring-2 disabled:opacity-60 ${colors.btn}`}
           >
             {loading && <Loader2 size={14} className="animate-spin" />}
-            {loading ? '처리 중...' : confirmLabel}
+            {loading ? '처리 중…' : confirmLabel}
           </button>
         </div>
       </div>
