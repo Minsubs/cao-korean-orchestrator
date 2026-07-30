@@ -19,6 +19,7 @@ import {
 import { findGroupById, groupContextLine, listProjectTargets } from './projects'
 import { saveTeamRoster } from './teamRoster'
 import { newTaskBlockReason } from './newTaskGate'
+import { teamSizeHint } from './teamSizeHint'
 import type { ProjectsData } from './types'
 
 interface NewTaskModalProps {
@@ -165,6 +166,19 @@ export function NewTaskModal({ projects, defaultTarget, onClose, onCreated }: Ne
     })
     return [...byRole.entries()]
   }, [additionalCandidates])
+
+  // What the orchestrator will actually be offered — same rule as the submit
+  // path, so the hint can never disagree with what gets sent.
+  const checkedDelegateCount = delegatableCandidates.filter(p => presetChecks[p.name] === true).length
+  const hint = teamSizeHint(checkedDelegateCount)
+  const setAllDelegates = (on: boolean) =>
+    setPresetChecks(prev => {
+      const next = { ...prev }
+      delegatableCandidates.forEach(p => {
+        if (workerGroup(p) !== null) next[p.name] = on
+      })
+      return next
+    })
 
   const canSubmit = instruction.trim().length > 0 && selectedProfile !== null && sessionNameValid && !creating
   const blockReason = newTaskBlockReason({
@@ -346,8 +360,45 @@ export function NewTaskModal({ projects, defaultTarget, onClose, onCreated }: Ne
             </div>
           </div>
 
-          {/* spec §4e: 기본 노출은 작업 지시 + 오케스트레이터 선택까지. 팀 구성은
-              기본값으로 이미 충분하므로 "고급"으로 접어 둔다(기본 접힘). */}
+          {/* Team size drives how long the first answer takes, so the choice and
+              its consequence live outside 고급 — burying the control made the
+              explanation useless. Detailed per-role editing stays folded. */}
+          {presetGroups.length > 0 && (
+            <div className="rounded-xl border border-[var(--border)] px-3 py-2.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-3)]">팀</span>
+                <button
+                  type="button"
+                  onClick={() => setAllDelegates(false)}
+                  aria-pressed={checkedDelegateCount === 0}
+                  className={`h-7 rounded-full border px-2.5 text-[11px] font-semibold ${
+                    checkedDelegateCount === 0
+                      ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-text)]'
+                      : 'border-[var(--border)] text-[var(--text-2)] hover:text-[var(--text)]'
+                  }`}
+                >
+                  오케스트레이터만
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAllDelegates(true)}
+                  aria-pressed={checkedDelegateCount > 0}
+                  className={`h-7 rounded-full border px-2.5 text-[11px] font-semibold ${
+                    checkedDelegateCount > 0
+                      ? 'border-[var(--accent)] bg-[var(--accent-soft)] text-[var(--accent-text)]'
+                      : 'border-[var(--border)] text-[var(--text-2)] hover:text-[var(--text)]'
+                  }`}
+                >
+                  기본 팀
+                </button>
+                <span className="ml-auto text-[10.5px] text-[var(--text-3)]">위임 후보 {checkedDelegateCount}개</span>
+              </div>
+              <p className={`mt-1.5 text-[10.5px] leading-relaxed ${hint.slow ? 'text-[var(--warning)]' : 'text-[var(--text-3)]'}`}>
+                {hint.text}
+              </p>
+            </div>
+          )}
+
           {(presetGroups.length > 0 || additionalGroups.length > 0) && (
           <details className="rounded-xl border border-[var(--border)] px-3 py-2">
             <summary className="cursor-pointer select-none text-[11px] font-bold uppercase tracking-wide text-[var(--text-3)]">

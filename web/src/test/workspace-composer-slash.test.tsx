@@ -3,12 +3,11 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { Composer, type ComposerTarget } from '../features/workspace/Composer'
 
 // Phase 2e (spec §2e): Composer slash-command dropdown. The critical
-// regression guard here is the Enter keymap: it must only be consumed as
-// "select from the dropdown" while the dropdown is open — with it closed,
-// the existing Cmd/Ctrl+Enter-to-send (and plain-Enter-does-not-send)
-// behavior must be byte-for-byte unchanged (see workspace.test.tsx's own
-// "sends a Composer message on Cmd+Enter" test for the sibling coverage this
-// must never break).
+// regression guard here is the Enter keymap: Enter may only be consumed as
+// "select from the dropdown" while the dropdown is open. With it closed, Enter
+// belongs to the composer — which now means it sends (Shift+Enter is the
+// newline, as the placeholder always advertised). Cmd/Ctrl+Enter sends
+// unconditionally, open or closed.
 
 function jsonResponse(data: unknown) {
   return { ok: true, status: 200, statusText: 'OK', json: () => Promise.resolve(data) }
@@ -220,14 +219,23 @@ describe('Composer slash-command dropdown (Phase 2e spec §2e)', () => {
     expect(textarea.value).toBe('')
   })
 
-  it('regression guard: with the dropdown CLOSED, plain Enter does not send (unchanged no-op passthrough)', () => {
+  // This guard exists so the slash-dropdown work cannot hijack plain Enter. It
+  // used to assert "plain Enter does nothing", which pinned the composer's own
+  // behaviour of the day — and that behaviour turned out to be the bug: the
+  // placeholder has always advertised "Shift+Enter 줄바꿈", i.e. Enter sends.
+  // The guard's real subject is unchanged: with the dropdown closed, Enter is
+  // the composer's business, not the slash feature's. Enter-while-open is
+  // covered separately above ('Enter selects the highlighted command … without
+  // sending'), so that protection is not lost here.
+  it('regression guard: with the dropdown CLOSED, plain Enter is the composer\'s own send', () => {
     const { onSend } = renderComposer()
     const textarea = screen.getByLabelText('메시지 입력') as HTMLTextAreaElement
     fireEvent.change(textarea, { target: { value: '진행 상황 알려줘' } })
+    expect(screen.queryByRole('listbox', { name: '슬래시 명령' })).not.toBeInTheDocument()
 
     fireEvent.keyDown(textarea, { key: 'Enter' })
 
-    expect(onSend).not.toHaveBeenCalled()
+    expect(onSend).toHaveBeenCalledWith('진행 상황 알려줘')
   })
 
   it('Cmd/Ctrl+Enter still sends even while a slash dropdown is open (an explicit "send now" always wins)', async () => {

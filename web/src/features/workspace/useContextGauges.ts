@@ -10,8 +10,6 @@
 // low-context notification through the existing workspace-alert path.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiUi } from '../../api.ui'
-import { emitWorkspaceAlert } from '../../components/NotificationCenter'
-import { INITIAL_LOW_CONTEXT_STATE, nextLowContextState, type LowContextState } from './contextGauge'
 
 /** Poll interval for a visible, gauge-eligible terminal (spec: "20s 간격"). */
 const POLL_MS = 20000
@@ -41,7 +39,6 @@ export function useContextGauges(
   sessionName: string | null,
 ): GaugeMap {
   const [percentLeft, setPercentLeft] = useState<GaugeMap>({})
-  const lowStateRef = useRef<Record<string, LowContextState>>({})
   const prevStatusRef = useRef<Record<string, string>>({})
   const mountedRef = useRef(true)
 
@@ -64,19 +61,12 @@ export function useContextGauges(
 
         setPercentLeft(prev => (prev[terminalId] === value ? prev : { ...prev, [terminalId]: value }))
 
-        const prior = lowStateRef.current[terminalId] ?? INITIAL_LOW_CONTEXT_STATE
-        const { state, notify } = nextLowContextState(prior, value)
-        lowStateRef.current[terminalId] = state
-        if (notify) {
-          const shown = label || terminalId.slice(0, 8)
-          emitWorkspaceAlert(
-            'stall',
-            `⚠️ ${shown} 컨텍스트 부족 (${value}%)`,
-            '/compact 를 고려하세요 — 컨텍스트가 얼마 남지 않았어요.',
-            terminalId,
-            sessionName ?? undefined,
-          )
-        }
+        // Low-context notifications are deliberately gone: notifications now
+        // announce only the orchestrator's answer. The percentage itself still
+        // renders on every agent card and in the Workbench header, so the signal
+        // is on screen — it is simply not pushed at the user.
+        //   Trade-off accepted by the user: a worker that runs out of context
+        //   will no longer announce itself, so the gauge is the only warning.
       } catch {
         // 404 (terminal gone) or a transient network error — keep the
         // last-known value in place and never crash the poll loop.

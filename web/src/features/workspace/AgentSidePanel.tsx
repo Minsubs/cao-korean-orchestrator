@@ -13,6 +13,8 @@ import { profileLabel, profileDetail } from '../profiles/profilePresentation'
 import { InlineUsageBar } from '../usage/InlineUsageBar'
 import { useUsageAccounts } from '../usage/useUsageAccounts'
 import { isTeamWorking, sessionStatusMap } from './agentGrouping'
+import { instructionSummary } from './instructionSummary'
+import { workerStateFor } from './orchestrationProgress'
 import { RoleBoard, type AgentVizItem } from './RoleBoard'
 import { DelegationHierarchy } from './DelegationHierarchy'
 
@@ -110,9 +112,14 @@ export function AgentSidePanel({
     cards,
     terminalStatuses,
   })
+  // "In flight" must mean the same thing here as on the in-chat progress card,
+  // so both read it through workerStateFor. The old filter only counted
+  // PROCESSING/WAITING_USER_ANSWER literals, which dropped a worker that exists
+  // but has not reported a status yet — it was alive and working, and the queue
+  // showed 0.
   const queueCards = cards.filter(c => {
-    const s = scopedStatuses[c.terminalId] ?? ''
-    return s === 'PROCESSING' || s === 'WAITING_USER_ANSWER'
+    const state = workerStateFor(c, scopedStatuses)
+    return state === 'working' || state === 'blocked' || state === 'waiting'
   })
   const startedAt = terminals.reduce<string | null>((earliest, t) => {
     if (!t.created_at) return earliest
@@ -124,7 +131,15 @@ export function AgentSidePanel({
   const vizOrchestrator = supervisor ? toVizItem(supervisor.agent_profile, supervisor.provider, supervisor.id) : null
   const vizWorkers = cards.map(card => toVizItem(card.agentName, card.provider, card.terminalId))
   const vizAll = vizOrchestrator ? [vizOrchestrator, ...vizWorkers] : vizWorkers
-  const vizView = vizMode === 'auto' ? (isTeamWorking(scopedStatuses) ? 'hier' : 'board') : vizMode
+  // Auto used to require a worker to be actively PROCESSING before switching to
+  // the hierarchy, so a session whose workers had already finished fell back to
+  // the flat board — which shows who exists but not who delegated to whom. That
+  // is precisely the "어떻게 흘러가는지 모르겠다" case. Show the hierarchy whenever
+  // this session has delegated at all; the board is for a session with no
+  // workers yet, where a tree of one node would say nothing. isTeamWorking still
+  // drives the live highlighting inside the hierarchy.
+  const hasDelegated = vizWorkers.length > 0
+  const vizView = vizMode === 'auto' ? (hasDelegated ? 'hier' : 'board') : vizMode
 
   return (
     <aside className="flex w-[296px] shrink-0 flex-col border-l border-[var(--border)] bg-[var(--surface)]" aria-label="에이전트와 작업">
@@ -225,7 +240,7 @@ export function AgentSidePanel({
                 percentLeft={gauges[card.terminalId] ?? null}
                 accounts={accounts}
                 roleLabel={null}
-                subLine={card.instruction}
+                subLine={instructionSummary(card.instruction).text || null}
                 callerAgentName={card.callerAgentName}
                 location={card.location}
                 onMessage={() => onMessageTarget(card.terminalId)}
@@ -253,7 +268,7 @@ export function AgentSidePanel({
                   <div key={card.terminalId} className="flex items-start gap-2.5 rounded-xl border border-[var(--border)] px-2.5 py-2">
                     {waiting ? <Clock size={15} className="mt-0.5 text-[var(--warning)]" /> : <Loader2 size={15} className="mt-0.5 animate-spin text-[var(--info)]" />}
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-xs font-semibold text-[var(--text)]">{card.instruction || card.agentName || card.terminalId.slice(0, 8)}</div>
+                      <div className="truncate text-xs font-semibold text-[var(--text)]">{instructionSummary(card.instruction).text || card.agentName || card.terminalId.slice(0, 8)}</div>
                       <div className="text-[10.5px] text-[var(--text-3)]">{card.agentName ?? card.terminalId.slice(0, 8)} · {waiting ? '입력 대기' : '실행 중'}</div>
                     </div>
                   </div>
