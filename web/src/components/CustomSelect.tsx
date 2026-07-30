@@ -57,20 +57,20 @@ export function CustomSelect({ value, onChange, options, placeholder = '선택�
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between bg-gray-900 border border-gray-700 text-sm rounded-lg px-3 py-2.5 focus:border-emerald-500 focus:outline-none transition-colors hover:border-gray-600"
+        className="w-full flex items-center justify-between bg-[var(--surface)] border border-[var(--border)] text-sm rounded-lg px-3 py-2.5 focus:border-[var(--accent)] focus:outline-none transition-colors hover:border-[var(--accent-soft)]"
       >
-        <span className={selected ? 'text-gray-200' : 'text-gray-500'}>
+        <span className={selected ? 'text-[var(--text)]' : 'text-[var(--text-3)]'}>
           {selected ? selected.label : placeholder}
         </span>
-        <ChevronDown size={14} className={`text-gray-500 transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown size={14} className={`text-[var(--text-3)] transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open && (
-        <div className="absolute z-50 mt-1 w-full bg-gray-900 border border-gray-700 rounded-lg shadow-xl shadow-black/30 max-h-64 overflow-y-auto">
+        <div className="absolute z-50 mt-1 w-full bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-xl max-h-64 overflow-y-auto">
           {groups.map((group, gi) => (
             <div key={gi}>
               {group.label && (
-                <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-gray-500 font-semibold bg-gray-800/50 sticky top-0">
+                <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-[var(--text-3)] font-semibold bg-[var(--surface-2)] sticky top-0">
                   {group.label}
                 </div>
               )}
@@ -87,25 +87,25 @@ export function CustomSelect({ value, onChange, options, placeholder = '선택�
                   }}
                   className={`w-full text-left px-3 py-2 flex items-center justify-between transition-colors ${
                     opt.disabled
-                      ? 'text-gray-600 cursor-not-allowed'
+                      ? 'text-[var(--text-3)] opacity-60 cursor-not-allowed'
                       : value === opt.value
-                        ? 'bg-emerald-900/30 text-emerald-300'
-                        : 'text-gray-300 hover:bg-gray-800'
+                        ? 'bg-[var(--accent-soft)] text-[var(--accent-text)]'
+                        : 'text-[var(--text)] hover:bg-[var(--surface-2)]'
                   }`}
                 >
                   <div className="min-w-0">
                     <span className="text-sm block truncate">{opt.label}</span>
                     {opt.sublabel && (
-                      <span className="text-[11px] text-gray-500 block truncate">{opt.sublabel}</span>
+                      <span className="text-[11px] text-[var(--text-3)] block truncate">{opt.sublabel}</span>
                     )}
                   </div>
-                  {value === opt.value && <Check size={14} className="text-emerald-400 shrink-0 ml-2" />}
+                  {value === opt.value && <Check size={14} className="text-[var(--accent-text)] shrink-0 ml-2" />}
                 </button>
               ))}
             </div>
           ))}
           {options.length === 0 && (
-            <div className="px-3 py-4 text-sm text-gray-500 text-center">선택할 수 있는 항목이 없습니다</div>
+            <div className="px-3 py-4 text-sm text-[var(--text-3)] text-center">선택할 수 있는 항목이 없습니다</div>
           )}
         </div>
       )}
