@@ -33,12 +33,25 @@ const MODEL_CATALOG: ModelCatalogEntry[] = [
   { provider: 'claude_code', source: 'known', models: [{ name: 'sonnet' }, { name: 'opus' }], probed_at: null },
 ]
 
+// A non-default CAO_HOME_DIR (e.g. WSL override) — used to prove the modal
+// reads the real configured directory instead of a hardcoded `~/.aws/...` guess.
+const AGENT_DIRS = {
+  agent_dirs: {
+    kiro_cli: '/home/u/.kiro/agents',
+    claude_code: '/home/u/.claude/agents',
+    codex: '/home/u/cao-home-override/agent-store',
+    cao_installed: '/home/u/cao-home-override/agent-context',
+  },
+  extra_dirs: [],
+}
+
 describe('ProfilesView', () => {
   let modelsFail = false
 
   const mockFetch = vi.fn(async (url: string) => {
     if (url === '/agents/profiles') return jsonResponse(PROFILES)
     if (url === '/agents/providers') return jsonResponse(PROVIDERS)
+    if (url === '/settings/agent-dirs') return jsonResponse(AGENT_DIRS)
     if (url === '/tooling/models') {
       if (modelsFail) return jsonResponse({ detail: 'not found' }, 404)
       return jsonResponse(MODEL_CATALOG)
@@ -165,6 +178,19 @@ describe('ProfilesView', () => {
     expect(await screen.findByText('모델 목록을 조회할 수 없어요 — 직접 입력하세요')).toBeInTheDocument()
   })
 
+  it('shows the real settings-backed install directory, not a hardcoded ~/.aws/... guess', async () => {
+    render(<ProfilesView />)
+    fireEvent.click(await screen.findByRole('button', { name: '에이전트 만들기' }))
+    const dialog = await screen.findByRole('dialog', { name: '에이전트 추가' })
+
+    fireEvent.change(within(dialog).getByLabelText('이름'), { target: { value: 'nova' } })
+
+    // Reflects AGENT_DIRS.agent_dirs.codex (the settings-configured, possibly
+    // CAO_HOME_DIR-overridden directory) rather than any fixed literal.
+    await waitFor(() => expect(within(dialog).getByText('/home/u/cao-home-override/agent-store/nova.md')).toBeInTheDocument())
+    expect(within(dialog).queryByText(/~\/\.aws\/cli-agent-orchestrator/)).not.toBeInTheDocument()
+  })
+
   it('auto-generates the description from role + specialty and updates it as either changes', async () => {
     render(<ProfilesView />)
     fireEvent.click(await screen.findByRole('button', { name: '에이전트 만들기' }))
@@ -227,6 +253,7 @@ describe('ProfilesView', () => {
           )
         }
         if (url === '/agents/providers') return jsonResponse(PROVIDERS)
+        if (url === '/settings/agent-dirs') return jsonResponse(AGENT_DIRS)
         if (url === '/tooling/models') return jsonResponse(MODEL_CATALOG)
         return jsonResponse({ detail: `unhandled in test: ${url}` }, 404)
       }),

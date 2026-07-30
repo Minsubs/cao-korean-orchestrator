@@ -304,7 +304,13 @@ export function NewTaskModal({ projects, defaultTarget, onClose, onCreated }: Ne
             <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="오케스트레이터 실행 AI">
               {ORCHESTRATOR_CHOICES.map(choice => {
                 const profileName = ORCHESTRATOR_PROFILES[choice.provider]
-                const available = profiles.some(profile => profile.name === profileName)
+                const profile = profiles.find(entry => entry.name === profileName)
+                const available = !!profile
+                // Phase 6 내부용어 정리: the raw profile id used to sit here. The
+                // model is the part a user actually cares about, and the card
+                // title already names the provider — so show only the model, and
+                // nothing at all when it is unknown rather than a placeholder.
+                const modelLabel = profile?.model ?? null
                 const selected = orchestratorProvider === choice.provider
                 return (
                   <button
@@ -327,9 +333,11 @@ export function NewTaskModal({ projects, defaultTarget, onClose, onCreated }: Ne
                       {selected && <Check size={12} className="ml-auto text-[var(--accent-text)]" />}
                     </span>
                     <span className="mt-1 block text-[10px] leading-relaxed text-[var(--text-3)]">{choice.description}</span>
-                    <span className="mt-1 block font-mono text-[9px] text-[var(--text-3)]">
-                      {available ? profileName : '프로필 설치 필요'}
-                    </span>
+                    {(!available || modelLabel) && (
+                      <span className="mt-1 block font-mono text-[9px] text-[var(--text-3)]">
+                        {available ? modelLabel : '프로필 설치 필요'}
+                      </span>
+                    )}
                   </button>
                 )
               })}

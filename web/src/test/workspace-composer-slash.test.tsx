@@ -52,7 +52,7 @@ function renderComposer(overrides: Partial<React.ComponentProps<typeof Composer>
         onChangeTarget={() => {}}
         onSend={onSend}
         sending={false}
-        streamDisconnected={false}
+        streamStatus="connected"
         slashProvider="claude_code"
         {...overrides}
         slashCwd={slashCwd}

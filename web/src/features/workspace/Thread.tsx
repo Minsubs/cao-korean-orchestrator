@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, ChevronRight, Eye, FileText, MessageSquare, Square, Terminal as TermIcon, WifiOff } from 'lucide-react'
+import { AlertTriangle, ChevronRight, Eye, FileText, Loader2, MessageSquare, Square, Terminal as TermIcon, WifiOff } from 'lucide-react'
 import { StatusBadge } from '../../components/StatusBadge'
 import { AgentAvatar } from './AgentAvatar'
 import { ProgressCard } from './ProgressCard'
@@ -238,12 +238,21 @@ export function Thread(props: ThreadProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {connectionStatus !== 'connected' && (
+      {/* Phase 5: `connecting` means the client is already retrying (eventsClient
+          backs off 1s→30s on its own), so it must not read as a dead stream —
+          and the user must not be told to refresh. Only a true `disconnected`
+          gets the warning treatment. */}
+      {connectionStatus === 'connecting' ? (
+        <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-soft)] bg-[var(--info-bg)] px-4 py-1.5 text-[11px] text-[var(--info)]">
+          <Loader2 size={12} className="animate-spin" />
+          이벤트 스트림에 재연결 중이에요 — 기존 폴링 데이터로 계속 동작해요
+        </div>
+      ) : connectionStatus === 'disconnected' ? (
         <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border-soft)] bg-[var(--warning-bg)] px-4 py-1.5 text-[11px] text-[var(--warning)]">
           <WifiOff size={12} />
           이벤트 스트림을 사용할 수 없어요 — 기존 폴링 데이터로 계속 동작해요
         </div>
-      )}
+      ) : null}
 
       <div className="flex-1 overflow-y-auto px-5 py-5">
         <div className="mx-auto flex max-w-[780px] flex-col gap-3.5">

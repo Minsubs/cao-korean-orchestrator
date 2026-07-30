@@ -353,7 +353,7 @@ export function Workspace({ events, status: streamStatus, selectedSessionId, set
                 onChangeTarget={workspaceSession.setComposerTarget}
                 onSend={workspaceSession.sendMessage}
                 sending={workspaceSession.sending}
-                streamDisconnected={streamStatus !== 'connected'}
+                streamStatus={streamStatus}
                 slashProvider={composerTarget?.provider ?? null}
                 slashCwd={sessionWorkingDirectory}
               />

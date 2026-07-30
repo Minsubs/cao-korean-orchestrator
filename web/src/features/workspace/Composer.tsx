@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { ChevronDown, Loader2, Send, WifiOff } from 'lucide-react'
+import type { UiConnectionStatus } from './eventsClient'
 import { AgentAvatar } from './AgentAvatar'
 import { STORAGE_KEYS } from './constants'
 import { apiUi, type SlashCommandInfo } from '../../api.ui'
@@ -18,7 +19,8 @@ interface ComposerProps {
   onChangeTarget: (id: string) => void
   onSend: (text: string) => void
   sending: boolean
-  streamDisconnected: boolean
+  /** Phase 5: tri-state so `connecting` (client already retrying) reads differently from a dead stream. */
+  streamStatus: UiConnectionStatus
   /**
    * Phase 2e (spec §2e) slash-command source: the chat target's (the
    * terminal the message is addressed to) provider, and the session's
@@ -62,7 +64,7 @@ export function Composer({
   onChangeTarget,
   onSend,
   sending,
-  streamDisconnected,
+  streamStatus,
   slashProvider = null,
   slashCwd = null,
 }: ComposerProps) {
@@ -312,7 +314,13 @@ export function Composer({
 
           <div className="mt-1.5 flex items-center gap-2">
             <span className="text-[10.5px] text-[var(--text-3)]">↑ 입력 이력 · ⌘⏎ 전송</span>
-            {streamDisconnected && (
+            {streamStatus === 'connecting' && (
+              <span className="flex items-center gap-1 text-[10.5px] text-[var(--info)]">
+                <Loader2 size={11} className="animate-spin" />
+                이벤트 스트림 재연결 중 — 전송은 계속 가능해요
+              </span>
+            )}
+            {streamStatus === 'disconnected' && (
               <span className="flex items-center gap-1 text-[10.5px] text-[var(--warning)]">
                 <WifiOff size={11} />
                 이벤트 스트림 끊김 — 전송은 계속 가능해요

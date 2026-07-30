@@ -8,7 +8,7 @@ import pytest
 
 from cli_agent_orchestrator.services import settings_service
 from cli_agent_orchestrator.services.settings_service import (
-    _DEFAULTS,
+    _defaults,
     _load,
     _save,
     get_agent_dirs,
@@ -107,7 +107,7 @@ class TestGetAgentDirs:
     def test_returns_defaults_when_no_settings_file(self, settings_file):
         """get_agent_dirs returns all default dirs when no settings file exists."""
         result = get_agent_dirs()
-        assert result == _DEFAULTS
+        assert result == _defaults()
         assert result["claude_code"] == str(Path.home() / ".claude" / "agents")
 
     def test_returns_saved_overrides_merged_with_defaults(self, settings_file):
@@ -118,14 +118,77 @@ class TestGetAgentDirs:
         # The overridden key should have the custom value
         assert result["kiro_cli"] == "/my/custom/kiro"
         # Other defaults should be preserved
-        assert result["claude_code"] == _DEFAULTS["claude_code"]
-        assert result["codex"] == _DEFAULTS["codex"]
+        assert result["claude_code"] == _defaults()["claude_code"]
+        assert result["codex"] == _defaults()["codex"]
 
     def test_returns_all_default_keys(self, settings_file):
         """get_agent_dirs always returns all known provider keys."""
         result = get_agent_dirs()
-        for key in _DEFAULTS:
+        for key in _defaults():
             assert key in result
+
+    def test_codex_and_cao_installed_derive_from_local_agent_store_and_context_dirs(
+        self, settings_file, tmp_path
+    ):
+        """codex/cao_installed must track LOCAL_AGENT_STORE_DIR/AGENT_CONTEXT_DIR
+        (GH regression) rather than re-deriving their own copy of the path.
+
+        Previously these two defaults hardcoded ``~/.aws/cli-agent-orchestrator/...``
+        directly, so overriding CAO_HOME_DIR (e.g. because ~/.aws is a WSL 9p
+        mount that can't host FIFOs) left Settings pointing at a directory that
+        doesn't exist, while the real installed-profile store went unlisted.
+        Patching the actual constants (not CAO_HOME_DIR) proves there is a
+        single derivation, not two that merely happen to agree today.
+        """
+        store_dir = tmp_path / "custom-store"
+        context_dir = tmp_path / "custom-context"
+        with (
+            patch(
+                "cli_agent_orchestrator.services.settings_service.LOCAL_AGENT_STORE_DIR", store_dir
+            ),
+            patch(
+                "cli_agent_orchestrator.services.settings_service.AGENT_CONTEXT_DIR", context_dir
+            ),
+        ):
+            result = get_agent_dirs()
+        assert result["codex"] == str(store_dir)
+        assert result["cao_installed"] == str(context_dir)
+        # claude_code must NOT be redirected to the CAO store — see comment above
+        # _defaults() explaining why native Claude Code subagents stay separate.
+        assert result["claude_code"] == str(Path.home() / ".claude" / "agents")
+
+    def test_defaults_not_frozen_at_import_time(self, settings_file, tmp_path):
+        """_defaults() must reflect LOCAL_AGENT_STORE_DIR/AGENT_CONTEXT_DIR at
+        call time, not whatever was bound the first time this module was
+        imported.
+
+        Regression guard for the old frozen `_DEFAULTS` module dict: computing
+        codex/cao_installed once at import time means no later override —
+        CAO_HOME_DIR env var, or these constants patched — could ever change
+        them. Calling _defaults() both inside and outside the patch proves the
+        value tracks the *current* binding rather than a cached one.
+        """
+        before = _defaults()
+        other_store = tmp_path / "another-store"
+        other_context = tmp_path / "another-context"
+        with (
+            patch(
+                "cli_agent_orchestrator.services.settings_service.LOCAL_AGENT_STORE_DIR",
+                other_store,
+            ),
+            patch(
+                "cli_agent_orchestrator.services.settings_service.AGENT_CONTEXT_DIR", other_context
+            ),
+        ):
+            during = _defaults()
+        after = _defaults()
+
+        assert during["codex"] == str(other_store)
+        assert during["cao_installed"] == str(other_context)
+        # Reverts once the patch exits — proves _defaults() re-reads the
+        # module names live rather than caching them.
+        assert after["codex"] == before["codex"]
+        assert after["cao_installed"] == before["cao_installed"]
 
 
 class TestSetAgentDirs:
@@ -136,14 +199,14 @@ class TestSetAgentDirs:
         result = set_agent_dirs({"codex": "/new/codex/path"})
         assert result["codex"] == "/new/codex/path"
         # Other defaults preserved
-        assert result["kiro_cli"] == _DEFAULTS["kiro_cli"]
+        assert result["kiro_cli"] == _defaults()["kiro_cli"]
 
     def test_ignores_unknown_providers(self, settings_file):
-        """set_agent_dirs ignores provider names not in _DEFAULTS."""
+        """set_agent_dirs ignores provider names not in _defaults()."""
         result = set_agent_dirs({"unknown_provider": "/some/path"})
         assert "unknown_provider" not in result
         # All defaults unchanged
-        assert result == _DEFAULTS
+        assert result == _defaults()
 
     def test_persists_to_disk_and_can_be_read_back(self, settings_file):
         """set_agent_dirs writes to disk; get_agent_dirs reads it back."""

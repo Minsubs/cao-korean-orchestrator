@@ -60,6 +60,24 @@ describe('NewTaskModal — 간결화된 기본 노출', () => {
     await waitFor(() => expect(screen.getByText('고급 — 팀 구성 바꾸기')).toBeTruthy())
     expect(screen.queryByText(/내부 프로필 ID/)).toBeNull()
   })
+
+  // Phase 6 내부용어 정리: the orchestrator cards used to print the raw profile
+  // id (codex_orchestrator_sol …) under each description. Internal identifiers
+  // are not user-facing copy.
+  it('never prints a raw orchestrator profile id on the cards', async () => {
+    mountModal()
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Codex 오케스트레이터' })).toBeTruthy())
+    expect(screen.queryByText('codex_orchestrator_sol')).toBeNull()
+    expect(screen.queryByText('claude_orchestrator_sonnet')).toBeNull()
+    expect(screen.queryByText('antigravity_orchestrator_agy')).toBeNull()
+  })
+
+  it('still says so when the orchestrator profile is not installed', async () => {
+    mountModal()
+    // Only codex_orchestrator_sol is installed in the harness, so the Claude and
+    // Antigravity cards must keep their honest unavailable wording.
+    await waitFor(() => expect(screen.getAllByText('프로필 설치 필요').length).toBeGreaterThan(0))
+  })
 })
 
 describe('NewTaskModal — 작업 시작 비활성 사유', () => {
