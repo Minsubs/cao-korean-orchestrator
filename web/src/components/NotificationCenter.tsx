@@ -4,6 +4,7 @@ import { api, Session } from '../api'
 import { useStore } from '../store'
 import { displaySessionName } from '../features/workspace/displayName'
 import { profileLabel } from '../features/profiles/profilePresentation'
+import { ConfirmModal } from './ConfirmModal'
 
 const ENABLED_KEY = 'cao:notifications:enabled'
 const ALERTS_KEY = 'cao:notifications:history:v1'
@@ -204,6 +205,10 @@ export function NotificationCenter({ sessions }: { sessions: Session[] }) {
     }
   }, [alerts])
 
+  // Phase 6: clearing the stored history is destructive, so it goes through the
+  // shared ConfirmModal rather than firing on a single click.
+  const [confirmClearOpen, setConfirmClearOpen] = useState(false)
+
   useEffect(() => {
     if (!open) return
     setAlerts(current => current.some(alert => !alert.read)
@@ -344,6 +349,19 @@ export function NotificationCenter({ sessions }: { sessions: Session[] }) {
             </button>
           </div>
 
+          {alerts.length > 0 && (
+            <div className="flex justify-end border-b border-[var(--border-soft)] px-4 py-1.5">
+              <button
+                type="button"
+                aria-label="알림 내역 모두 지우기"
+                onClick={() => setConfirmClearOpen(true)}
+                className="text-[11px] font-semibold text-[var(--text-3)] hover:text-[var(--danger)]"
+              >
+                모두 지우기
+              </button>
+            </div>
+          )}
+
           <div className="max-h-[360px] overflow-y-auto">
             {alerts.length === 0 ? (
               <div className="px-6 py-10 text-center">
@@ -399,6 +417,19 @@ export function NotificationCenter({ sessions }: { sessions: Session[] }) {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        open={confirmClearOpen}
+        title="알림 내역 삭제"
+        message="저장된 알림 내역을 모두 삭제합니다. 이 작업은 되돌릴 수 없어요."
+        confirmLabel="모두 지우기"
+        variant="danger"
+        onConfirm={() => {
+          setAlerts([])
+          setConfirmClearOpen(false)
+        }}
+        onCancel={() => setConfirmClearOpen(false)}
+      />
     </div>
   )
 }
