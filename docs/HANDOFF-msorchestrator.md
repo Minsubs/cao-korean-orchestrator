@@ -396,5 +396,65 @@ CAO fork를 "채팅 중심 멀티 에이전트 오케스트레이션 작업대 +
 - e2e용 임시 프로필 4개(agent-store) 정리 여부.
 - push/PR: 사용자 지시 없음 — **로컬 머지만 완료된 상태**.
 
+### 0.16. 2026-07-30 라이브 사용 결함 8건 + 다크 팔레트 하드코딩 제거 (Claude Opus, 백그라운드 잡)
+
+사용자가 라이브 서버(`127.0.0.1:9889`)를 직접 쓰면서 올린 보고를 하나씩 원인까지 확인해 고친
+세션이다. 작업 위치는 워크트리 `.claude/worktrees/pr6-ci`, 브랜치 `live-ux-round2`
+(커밋 `ac1d1cf`). **PR 은 아직 안 만들어졌다 — 아래 §미완 참고.**
+
+이 세션 앞부분에서 PR #15(`live-ux-fixes`)를 머지했다. Trivy 체크가 5분 넘게 `pending` 0초로
+고착됐으나 이 브랜치가 의존성을 전혀 바꾸지 않아(변경 21개 파일 전부 `.ts`/`.tsx`) 사용자 승인
+후 머지했다. 머지 후 `main` = `55247d6`.
+
+#### 고친 것과 각각의 실제 원인
+
+| 증상 (사용자 보고) | 실제 원인 | 수정 |
+|---|---|---|
+| `documentation-writer` 가 크로스 테스트에서 빠짐 | **그 프로필 문제가 아님.** `tools: Read, Grep, Glob` 는 Claude Code 공식 형식인데 `AgentProfile.tools` 가 `List[str]` 만 받아 assign 전에 pydantic 검증 실패. `~/.claude/agents/` 전체가 이 형식 → 발견된 네이티브 에이전트 전부 위임 불가 | `agent_profile.py` 에 `tools`/`allowedTools`/`resources`/`skills` 문자열→리스트 강제 변환 |
+| 완료 보고가 깨져 보임 | ① codex 상태줄(모델·경로·Context·한도)이 답변에 섞임 ② 보고가 터미널이 그린 표 | ① 위치가 아니라 내용으로 판정(`isProviderStatusLine`) ② 괘선(U+2500–U+257F)만 제거 ③ 오케스트레이터 프로필 3개에 완료 보고 형식 추가 |
+| 작업 큐가 항상 0 | 오케스트레이터가 콜백 직후 `delete_terminal` → 카드가 즉시 `killed`(=done). 큐는 **살아있는 워커만** 셌다. 8건 위임한 런에서도 내내 0 | 큐 = 그 턴의 작업 목록 전체 + 상태별 정렬. 진행 중 수는 요약 줄로 분리 |
+| 사용량이 버튼 뒤에 숨음 | 설계 자체 | `HeaderUsageBars` — 활성 AI별 한도 막대 상시 노출. 팝오버 전용 컨트롤(계정 상세·Claude 옵트인·새로고침)은 **설정 › AI 계정 사용량** 으로 이동 |
+| 채팅 자동 스크롤 없음 | 스크롤 관리 코드가 아예 없었음 | `useStickToBottom` — 바닥에 있을 때만 따라감, 올려 읽는 중이면 `맨 아래로` 버튼 |
+| 오케스트레이터 카드 `오케스트레이터오케스트레이터` | 프로필 라벨 + 하드코딩된 동일 역할 배지 | `roleLabel.ts` — 이름과 다를 때만 배지 |
+| 받는 대상에 내부 프로필 id 노출 | `Workspace.tsx` 가 `t.agent_profile` 원문 사용 | `composerTargetLabel()` 로 통일 |
+| Claude 고정 오케스트레이터가 sonnet | — | `claude_orchestrator_opus` 로 **이름까지** 변경(다른 Claude 프로필이 모두 이름에 모델을 담음). packaged `agent_store` copy byte-identical 유지 |
+| 에이전트 수정 화면 model 자유 입력 | 추가 화면에만 셀렉트가 있었음 | 카탈로그 셀렉트 + `직접 입력…`. 카탈로그에 없는 기존 값은 보존 |
+
+부수로 발견해 고친 것:
+- 사용량 응답이 예상 형태가 아니면 **설정 탭 전체가 크래시**했다(`accounts` 미검증) → 훅에서 방어.
+- 정의되지 않은 `--border-strong` 토큰을 쓰던 hover 규칙(죽은 코드).
+
+#### 다크 팔레트 하드코딩 제거
+
+- `dark:` 접두사는 **0건**이었다. 실제 문제는 `bg-gray-900` 류 **팔레트 하드코딩 ~580곳** —
+  라이트 모드에서 값이 그대로 남는다. 13개 컴포넌트를 토큰으로 전환(6개 에이전트 병렬).
+- 재발 방지: `web/src/test/theme-token-only.test.ts` — 하드코딩 팔레트 클래스가 다시 들어오면
+  실패한다. scrim(`bg-black/NN`)과 마크다운 표는 의도적 제외.
+- **토큰 어휘에 `--surface-hover` 추가**: `--surface-3` 위에 얹힌 컨트롤은 hover 로 갈 단계가
+  없어 `bg-gray-700`+`hover:bg-gray-600` 이 같은 토큰으로 접히며 **hover 가 시각적으로 아무
+  일도 하지 않았다**. 자기 자신으로 hover 하던 곳은 0으로 정리.
+
+#### 검증
+
+- 프론트 **652/652** (88 파일), 백엔드 **4809 passed / 21 skipped, 커버리지 90%**
+- `npx tsc --noEmit` 0, `node design-tokens/gen.mjs --check` 통과, `npm run build` 성공
+- 라이브 서버 재기동 후 **라이트 모드 실화면 확인**: 사용량 막대(Codex 70%·Antigravity 1%),
+  작업 큐 15(이전 0), 오케스트레이터 라벨 중복 해소, 받는 대상 프로필 id 제거
+- `documentation-writer` 실측: `GET /agents/profiles/documentation-writer` → `tools: ['Read','Grep','Glob']`
+
+#### 미완 / 이어받을 것
+
+- **`live-ux-round2` push 가 미완료다.** 원격(`github.com/Minsubs/cao-korean-orchestrator`)이
+  응답 지연으로 여러 번 타임아웃했다. 커밋 `ac1d1cf` 는 로컬에만 있다. 이어받으면
+  `git -C .claude/worktrees/pr6-ci push -u origin live-ux-round2` 부터 재시도하고 PR 생성 →
+  CI 통과 확인 → main 머지.
+- 채팅 이력은 로드할 때 다시 정리되므로, 수정 전에 저장된 깨진 메시지도 **브라우저 강제
+  새로고침(Ctrl+Shift+R)** 하면 정리된다(테스트로 고정: `stored-chat-recleaning.test.ts`).
+- 남아 있는 것: 습니다체 54곳, Phase 7 Electron(7a→7b→7c), 원본 체크아웃 `main` pull +
+  CRLF 973파일 정리(**사용자 승인 대기**), mypy 27건(CI 는 허용), `MemoryGraphView` 의 Sigma
+  캔버스 hex paint 4개(테마 비반응 — 토큰화하려면 mount 시점에 CSS 변수를 읽어야 해서 별건),
+  `.omc/` 미추적 디렉터리(커밋 대상 아님).
+
+
 ## 7. 데이터/저장 규약 (프런트 로컬)
 `cao:theme`(라이트 기본), `cao:projects:v1`, `cao:hidden-providers:v1`(기본 [kiro_cli,kimi_cli,cursor_cli,hermes]), `cao:workbench:v1:<session>`, `cao:workspace:team-roster:v1:<session>`, `cao:workspace:delegation-history:v1:<session>`, `cao:env-profiles:v1`, `cao:usage:claude-limits-optin:v1`, `cao:pending-select-session`(sessionStorage). 세션명은 서버 규칙 `^[A-Za-z0-9_][A-Za-z0-9_-]{0,59}$`(cao- 프리픽스는 표시에서만 숨김 — displayName.ts).
