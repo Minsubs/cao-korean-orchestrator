@@ -236,7 +236,7 @@ export function MemoryPanel() {
       {viewMode === 'graph' ? (
         <MemoryGraphView scope={scopeFilter} scopeId={graphScopeId} />
       ) : loading ? (
-        <div className="text-gray-500 text-sm py-8 text-center">메모리 불러오는 중...</div>
+        <div className="text-gray-500 text-sm py-8 text-center">메모리 불러오는 중…</div>
       ) : (
       /* Memory List */
       <div className="bg-gray-800/60 border border-gray-700/50 rounded-xl p-5">
@@ -345,7 +345,7 @@ export function MemoryPanel() {
                         {detail.data.content}
                       </div>
                     ) : (
-                      <div className="text-gray-500">내용 불러오는 중...</div>
+                      <div className="text-gray-500">내용 불러오는 중…</div>
                     )}
                   </div>
                 )}

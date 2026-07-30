@@ -134,7 +134,7 @@ export function EditProfileModal({ profile, onClose, onSaved }: EditProfileModal
           </div>
 
           {loading ? (
-            <p className="text-xs text-[var(--text-3)]">불러오는 중...</p>
+            <p className="text-xs text-[var(--text-3)]">불러오는 중…</p>
           ) : loadError ? (
             <p className="text-xs text-[var(--danger)]">{loadError}</p>
           ) : (

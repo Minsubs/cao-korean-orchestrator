@@ -300,7 +300,7 @@ export function AppShell() {
         {/* Content */}
         <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <ErrorBoundary>
-            <Suspense fallback={<div className="py-12 text-center text-sm text-[var(--text-3)]">불러오는 중...</div>}>
+            <Suspense fallback={<div className="py-12 text-center text-sm text-[var(--text-3)]">불러오는 중…</div>}>
               {activeView === 'workspace' ? (
                 <div className="min-h-0 flex-1">{renderView()}</div>
               ) : (

@@ -161,7 +161,7 @@ export function AddAgentModal({ sessionName, defaultWorkingDirectory, onClose, o
           <div>
             <label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-[var(--text-3)]">에이전트 프로필</label>
             {loadingProfiles ? (
-              <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-2 text-xs text-[var(--text-3)]">프로필 불러오는 중...</div>
+              <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-2 text-xs text-[var(--text-3)]">프로필 불러오는 중…</div>
             ) : workerProfiles.length > 0 ? (
               <CustomSelect value={profile} onChange={handleProfileChange} placeholder="프로필 선택..." options={profileOptions} />
             ) : (
@@ -211,7 +211,7 @@ export function AddAgentModal({ sessionName, defaultWorkingDirectory, onClose, o
             className="flex h-8 items-center gap-1.5 rounded-full bg-[var(--accent)] px-3 text-xs font-semibold text-[var(--on-accent)] disabled:opacity-40"
           >
             {adding ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
-            {adding ? '추가 중...' : '추가'}
+            {adding ? '추가 중…' : '추가'}
           </button>
         </div>
       </div>

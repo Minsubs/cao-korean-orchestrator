@@ -367,7 +367,7 @@ export function AgentPanel() {
                   className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors"
                 >
                   <Plus size={14} />
-                  {addingAgent ? '추가 중...' : '추가'}
+                  {addingAgent ? '추가 중…' : '추가'}
                 </button>
               </div>
               <div>
@@ -430,7 +430,7 @@ export function AgentPanel() {
                       title="정상 종료"
                     >
                       <LogOut size={14} />
-                      {exitingTerminal === t.id ? '종료 중...' : '정상 종료'}
+                      {exitingTerminal === t.id ? '종료 중…' : '정상 종료'}
                     </button>
                     <button
                       onClick={() => setPendingClose(t as TerminalMeta)}
@@ -439,7 +439,7 @@ export function AgentPanel() {
                       title="터미널 닫기"
                     >
                       <Trash2 size={14} />
-                      {closingTerminal === t.id ? '닫는 중...' : '닫기'}
+                      {closingTerminal === t.id ? '닫는 중…' : '닫기'}
                     </button>
                   </div>
                 </div>
@@ -475,7 +475,7 @@ export function AgentPanel() {
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-medium rounded-lg transition-colors"
                     >
                       <Send size={12} />
-                      {sendingInput === t.id ? '보내는 중...' : '보내기'}
+                      {sendingInput === t.id ? '보내는 중…' : '보내기'}
                     </button>
                   </div>
                 )}
@@ -593,7 +593,7 @@ export function AgentPanel() {
               <div>
                 <label className="block text-xs text-gray-500 mb-1">에이전트 프로필</label>
                 {loadingProfiles ? (
-                  <div className="bg-gray-900 border border-gray-700 text-gray-500 text-sm rounded-lg px-3 py-2.5">프로필 불러오는 중...</div>
+                  <div className="bg-gray-900 border border-gray-700 text-gray-500 text-sm rounded-lg px-3 py-2.5">프로필 불러오는 중…</div>
                 ) : profiles.length > 0 ? (
                   <CustomSelect
                     value={profile}
@@ -685,7 +685,7 @@ export function AgentPanel() {
                 className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors"
               >
                 <Play size={14} />
-                {creating ? '실행 중...' : '에이전트 실행'}
+                {creating ? '실행 중…' : '에이전트 실행'}
               </button>
             </div>
           </div>

@@ -82,7 +82,7 @@ export function SettingsPanel() {
   }
 
   if (!settings) {
-    return <div className="text-gray-500 text-sm py-8 text-center">설정 불러오는 중...</div>
+    return <div className="text-gray-500 text-sm py-8 text-center">설정 불러오는 중…</div>
   }
 
   const disabled = new Set(settings.disabled_dirs ?? [])
@@ -216,7 +216,7 @@ export function SettingsPanel() {
 
       <div className="flex items-center gap-3">
         <button
-          onClick={() => { refreshProfiles(); showSnackbar({ type: 'info', message: '프로필 새로고침 중...' }) }}
+          onClick={() => { refreshProfiles(); showSnackbar({ type: 'info', message: '프로필 새로고침 중…' }) }}
           className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white text-sm px-4 py-2.5 rounded-lg transition-colors"
         >
           <RefreshCw size={14} /> 프로필 새로고침

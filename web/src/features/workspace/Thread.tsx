@@ -259,7 +259,7 @@ export function Thread(props: ThreadProps) {
           {!sessionName ? (
             <p className="mt-16 text-center text-xs text-[var(--text-3)]">왼쪽에서 세션을 선택하거나 새 세션을 시작하세요.</p>
           ) : loading && threadItems.length === 0 ? (
-            <p className="mt-16 text-center text-xs text-[var(--text-3)]">불러오는 중...</p>
+            <p className="mt-16 text-center text-xs text-[var(--text-3)]">불러오는 중…</p>
           ) : threadItems.length === 0 ? (
             <p className="mt-16 text-center text-xs text-[var(--text-3)]">이벤트 없음 — 아직 이 세션에서 관측된 활동이 없어요.</p>
           ) : (

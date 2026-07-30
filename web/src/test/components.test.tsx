@@ -139,7 +139,7 @@ describe('ConfirmModal', () => {
         onCancel={() => {}}
       />
     )
-    const button = screen.getByText('처리 중...').closest('button')
+    const button = screen.getByText('처리 중…').closest('button')
     expect(button).toBeDisabled()
   })
 })

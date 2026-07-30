@@ -362,7 +362,7 @@ describe('ToolingView', () => {
     const callsBeforeRescan = mockFetch.mock.calls.filter(c => c[0] === '/tooling/environment').length
 
     fireEvent.click(screen.getByRole('button', { name: '다시 검사' }))
-    expect(screen.getByRole('button', { name: '검사 중...' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '검사 중…' })).toBeDisabled()
 
     await waitFor(() => expect(scanCalls).toBe(1))
     await waitFor(() => {
