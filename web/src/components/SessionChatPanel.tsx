@@ -366,18 +366,18 @@ export function SessionChatPanel({ sessionName, terminalId, onClose }: SessionCh
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center" role="dialog" aria-modal="true" aria-label={`${sessionName} 오케스트레이터 채팅`}>
       <div className="absolute inset-0 bg-black/65 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-gray-900 border border-gray-700/60 rounded-2xl shadow-2xl w-full max-w-3xl mx-4 h-[78vh] max-h-[760px] min-h-[520px] overflow-hidden flex flex-col">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-700/40 shrink-0">
+      <div className="relative bg-[var(--surface)] border border-[var(--border-soft)] rounded-2xl shadow-2xl w-full max-w-3xl mx-4 h-[78vh] max-h-[760px] min-h-[520px] overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border-soft)] shrink-0">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-emerald-600/20 text-emerald-400 flex items-center justify-center shrink-0">
+            <div className="w-9 h-9 rounded-xl bg-[var(--accent-soft)] text-[var(--accent-text)] flex items-center justify-center shrink-0">
               <MessageCircle size={18} />
             </div>
             <div className="min-w-0">
-              <h3 className="text-sm font-semibold text-white truncate">{sessionName} 오케스트레이터 채팅</h3>
-              <div className="flex items-center gap-2 text-xs text-gray-500">
+              <h3 className="text-sm font-semibold text-[var(--text)] truncate">{sessionName} 오케스트레이터 채팅</h3>
+              <div className="flex items-center gap-2 text-xs text-[var(--text-3)]">
                 <span className="font-mono truncate">{terminalId}</span>
                 <span>·</span>
-                <span className={statusKey === 'error' ? 'text-red-400' : statusKey === 'processing' ? 'text-amber-400' : 'text-emerald-400'}>
+                <span className={statusKey === 'error' ? 'text-[var(--danger)]' : statusKey === 'processing' ? 'text-[var(--warning)]' : 'text-[var(--accent-text)]'}>
                   {STATUS_LABELS[statusKey] || status || '상태 확인 중'}
                 </span>
               </div>
@@ -387,46 +387,46 @@ export function SessionChatPanel({ sessionName, terminalId, onClose }: SessionCh
             <button
               onClick={() => void loadRecentOutput(true)}
               disabled={loading || sending}
-              className="p-2 text-gray-400 hover:text-white disabled:opacity-30 transition-colors rounded-lg hover:bg-gray-800"
+              className="p-2 text-[var(--text-3)] hover:text-[var(--text)] disabled:opacity-30 transition-colors rounded-lg hover:bg-[var(--surface-2)]"
               title="최근 응답 새로고침"
             >
               <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
             </button>
-            <button onClick={onClose} className="p-2 text-gray-500 hover:text-white transition-colors rounded-lg hover:bg-gray-800" title="닫기">
+            <button onClick={onClose} className="p-2 text-[var(--text-3)] hover:text-[var(--text)] transition-colors rounded-lg hover:bg-[var(--surface-2)]" title="닫기">
               <X size={17} />
             </button>
           </div>
         </div>
 
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-5 space-y-4 bg-gray-950/40">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-5 space-y-4 bg-[var(--bg)]">
           {loading ? (
             <div className="h-full flex items-center justify-center">
-              <Loader2 size={24} className="animate-spin text-gray-500" />
+              <Loader2 size={24} className="animate-spin text-[var(--text-3)]" />
             </div>
           ) : messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center px-6">
-              <Bot size={34} className="text-gray-700 mb-3" />
-              <p className="text-gray-400 text-sm">오케스트레이터에게 첫 작업을 요청해 보세요.</p>
-              <p className="text-gray-600 text-xs mt-1">역할 배분과 검토 순서는 세션 운영 규칙에 따라 자동으로 처리됩니다.</p>
+              <Bot size={34} className="text-[var(--text-3)] mb-3" />
+              <p className="text-[var(--text-3)] text-sm">오케스트레이터에게 첫 작업을 요청해 보세요.</p>
+              <p className="text-[var(--text-3)] text-xs mt-1">역할 배분과 검토 순서는 세션 운영 규칙에 따라 자동으로 처리됩니다.</p>
             </div>
           ) : messages.map(message => (
             <div key={message.id} className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               {message.role !== 'user' && (
-                <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${message.role === 'system' ? 'bg-red-900/40 text-red-400' : 'bg-emerald-900/40 text-emerald-400'}`}>
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${message.role === 'system' ? 'bg-[var(--danger-bg)] text-[var(--danger)]' : 'bg-[var(--accent-soft)] text-[var(--accent-text)]'}`}>
                   <Bot size={14} />
                 </div>
               )}
               <div className={`max-w-[82%] rounded-2xl px-4 py-3 text-sm whitespace-pre-wrap break-words leading-relaxed ${
                 message.role === 'user'
-                  ? 'bg-emerald-600 text-white rounded-br-md'
+                  ? 'bg-[var(--accent)] text-[var(--on-accent)] rounded-br-md'
                   : message.role === 'system'
-                    ? 'bg-red-950/50 border border-red-900/50 text-red-300 rounded-bl-md'
-                    : 'bg-gray-800 border border-gray-700/50 text-gray-200 rounded-bl-md font-mono'
+                    ? 'bg-[var(--danger-bg)] border border-[var(--danger)] text-[var(--danger)] rounded-bl-md'
+                    : 'bg-[var(--surface-2)] border border-[var(--border-soft)] text-[var(--text)] rounded-bl-md font-mono'
               }`}>
                 {message.content}
               </div>
               {message.role === 'user' && (
-                <div className="w-7 h-7 rounded-lg bg-blue-900/40 text-blue-400 flex items-center justify-center shrink-0">
+                <div className="w-7 h-7 rounded-lg bg-[var(--info-bg)] text-[var(--info)] flex items-center justify-center shrink-0">
                   <User size={14} />
                 </div>
               )}
@@ -434,7 +434,7 @@ export function SessionChatPanel({ sessionName, terminalId, onClose }: SessionCh
           ))}
         </div>
 
-        <div className="border-t border-gray-700/40 p-4 bg-gray-900 shrink-0">
+        <div className="border-t border-[var(--border-soft)] p-4 bg-[var(--surface)] shrink-0">
           <div className="flex items-end gap-3">
             <textarea
               value={input}
@@ -449,18 +449,18 @@ export function SessionChatPanel({ sessionName, terminalId, onClose }: SessionCh
               rows={3}
               placeholder="오케스트레이터에게 작업을 요청하세요. Shift+Enter로 줄바꿈"
               aria-label="오케스트레이터 프롬프트"
-              className="flex-1 resize-none bg-gray-950 border border-gray-700 text-gray-200 text-sm rounded-xl px-4 py-3 focus:border-emerald-500 focus:outline-none disabled:opacity-60"
+              className="flex-1 resize-none bg-[var(--bg)] border border-[var(--border)] text-[var(--text)] text-sm rounded-xl px-4 py-3 focus:border-[var(--accent)] focus:outline-none disabled:opacity-60"
             />
             <button
               onClick={() => void handleSend()}
               disabled={!input.trim() || sending}
-              className="h-11 px-4 flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-sm font-medium rounded-xl transition-colors"
+              className="h-11 px-4 flex items-center gap-2 bg-[var(--accent)] hover:bg-[var(--accent)] disabled:opacity-40 text-[var(--on-accent)] text-sm font-medium rounded-xl transition-colors"
             >
               {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
               {sending ? '응답 대기 중' : '보내기'}
             </button>
           </div>
-          <p className="text-[11px] text-gray-600 mt-2">Enter로 전송 · Shift+Enter로 줄바꿈 · 대화 기록은 이 브라우저에 세션별로 저장됩니다.</p>
+          <p className="text-[11px] text-[var(--text-3)] mt-2">Enter로 전송 · Shift+Enter로 줄바꿈 · 대화 기록은 이 브라우저에 세션별로 저장됩니다.</p>
         </div>
       </div>
     </div>

@@ -17,17 +17,65 @@ const SEPARATOR_LINE = /^\s*─{20,}\s*$/m
 const ACTIVE_PROGRESS_LINE = /^\s*•.*\((?:(?:\d+h\s+)?(?:\d+m\s+)?)\d+s\s*•\s*esc to interrupt\)\s*$/m
 export const WAITING_MESSAGE = '오케스트레이터 응답을 기다리는 중…'
 
+/**
+ * The provider's own status bar — model, cwd, context and quota readouts.
+ *
+ * Reported from the live chat: a completion reply arrived with
+ * `gpt-5.6-sol high fast · ~/…/k8s-access-control · Context 28% used · weekly 30%
+ * left · Fast on · Read Only` sitting inside it. It is TUI chrome that happens to
+ * be redrawn wherever the capture lands, so it is matched by content rather than
+ * by position.
+ *
+ * The `·` requirement keeps this from swallowing an answer that merely says
+ * something like "이 디렉터리는 Read Only 입니다".
+ */
+export function isProviderStatusLine(line: string): boolean {
+  const trimmed = line.trim()
+  if (!trimmed.includes('·')) return false
+  return (
+    /Context\s+\d+%\s+used/i.test(trimmed)
+    || /\b(?:weekly|daily|hourly|monthly)\s+\d+%\s+left\b/i.test(trimmed)
+    || /\bRead Only\b/.test(trimmed)
+    || /\bFast (?:on|off)\b/i.test(trimmed)
+  )
+}
+
 function sanitizeResponseBlock(text: string): string {
-  return text
-    .split('\n')
-    .filter(line => {
+  const lines = text.split('\n')
+  /** Index of the next non-empty line after `from`, or -1. */
+  const nextContent = (from: number): number => {
+    for (let i = from + 1; i < lines.length; i += 1) {
+      if (lines[i].trim()) return i
+    }
+    return -1
+  }
+  return lines
+    .filter((line, index) => {
       const trimmed = line.trim()
       if (!trimmed) return true
+      if (isProviderStatusLine(trimmed)) return false
+      // The composer marker that sits directly above that status bar — its text is
+      // the placeholder hint ("Run /review on my current changes"), never output.
+      // Recognised by adjacency so a delivered callback echoed as "› CROSS_OK …"
+      // mid-transcript is left alone.
+      if (/^[›❯>]/.test(trimmed)) {
+        const following = nextContent(index)
+        if (following >= 0 && isProviderStatusLine(lines[following])) return false
+      }
       if (/^(?:❯|>)\s*$/.test(trimmed)) return false
       if (/^[✻✽✶✢✳·*]\s+.*\bfor\s+\d+(?:\.\d+)?s\b/.test(trimmed)) return false
       if (/^⎿\s*Stop says:/.test(trimmed)) return false
       if (/^(?:high|medium|low|max)\s*·\s*\/effort$/i.test(trimmed)) return false
       if (/^─+\s*Worked for\s+\d+/i.test(trimmed)) return false
+      // 터미널이 그린 표의 괘선 — 채팅 버블에서는 깨진 문자열로만 보인다.
+      //
+      // Observed live: a completion report drawn as a codex TUI table reached the
+      // chat as rows of `━━━━━` / `─────  ──────`. The bubble is
+      // `whitespace-pre-wrap`, so the column alignment survives and reads fine
+      // once the rules are gone; the rules themselves carry no information.
+      // Restricted to box-drawing characters (U+2500–U+257F) so a markdown table
+      // written with `|---|` is untouched.
+      if (/^[─-╿\s]+$/.test(trimmed)) return false
       // 도구 결과 continuation ("  └ {...}") 및 단독 도구 metadata JSON 라인
       if (/^└/.test(trimmed)) return false
       if (/^\{.*"(?:terminal_id|sender_id|message_id|thread_id|agent_id|success)"\s*:.*\}$/.test(trimmed)) return false

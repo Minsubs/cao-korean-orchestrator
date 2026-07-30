@@ -152,7 +152,7 @@ export function FlowsPanel() {
   }
 
   if (loading) {
-    return <div className="text-gray-500 text-sm py-8 text-center">자동화 불러오는 중…</div>
+    return <div className="text-[var(--text-3)] text-sm py-8 text-center">자동화 불러오는 중…</div>
   }
 
   const scheduleSelectOptions = [
@@ -167,14 +167,14 @@ export function FlowsPanel() {
   return (
     <div className="space-y-6">
       {/* Flow List */}
-      <div className="bg-gray-800/60 border border-gray-700/50 rounded-xl p-5">
+      <div className="bg-[var(--surface-2)] border border-[var(--border-soft)] rounded-xl p-5">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">
+          <h3 className="text-sm font-semibold text-[var(--text-2)] uppercase tracking-wide">
             예약 자동화 ({flows.length})
           </h3>
           <button
             onClick={() => { resetForm(); setShowCreateModal(true) }}
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            className="flex items-center gap-2 bg-[var(--accent)] hover:bg-[var(--accent)] text-[var(--on-accent)] text-sm font-medium px-4 py-2 rounded-lg transition-colors"
           >
             <Plus size={14} />
             자동화 만들기
@@ -183,32 +183,32 @@ export function FlowsPanel() {
 
         {flows.length === 0 ? (
           <div className="text-center py-8">
-            <Clock size={32} className="mx-auto text-gray-600 mb-3" />
-            <p className="text-gray-500 text-sm">설정된 자동화가 없습니다.</p>
-            <p className="text-gray-600 text-xs mt-1">
-              위의 "자동화 만들기"를 누르거나 CLI를 사용하세요: <code className="text-emerald-400">cao schedule add &lt;file.md&gt;</code>
+            <Clock size={32} className="mx-auto text-[var(--text-3)] mb-3" />
+            <p className="text-[var(--text-3)] text-sm">설정된 자동화가 없습니다.</p>
+            <p className="text-[var(--text-3)] text-xs mt-1">
+              위의 "자동화 만들기"를 누르거나 CLI를 사용하세요: <code className="text-[var(--accent-text)]">cao schedule add &lt;file.md&gt;</code>
             </p>
           </div>
         ) : (
           <div className="space-y-2">
             {flows.map(f => (
-              <div key={f.name} className="bg-gray-900/50 border border-gray-700/30 rounded-lg">
+              <div key={f.name} className="bg-[var(--surface)] border border-[var(--border-soft)] rounded-lg">
                 {/* Row header */}
                 <div
-                  className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-800/50 transition-colors"
+                  className="flex items-center justify-between p-3 cursor-pointer hover:bg-[var(--surface-2)] transition-colors"
                   onClick={() => setExpanded(expanded === f.name ? null : f.name)}
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <Clock size={14} className="text-gray-400 shrink-0" />
-                    <span className="text-sm text-gray-200 font-medium truncate">{f.name}</span>
-                    <span className="text-xs text-gray-500 shrink-0" title={f.schedule}>
+                    <Clock size={14} className="text-[var(--text-3)] shrink-0" />
+                    <span className="text-sm text-[var(--text)] font-medium truncate">{f.name}</span>
+                    <span className="text-xs text-[var(--text-3)] shrink-0" title={f.schedule}>
                       {cronToLabel(f.schedule)}
                     </span>
-                    <span className="text-xs text-gray-500 shrink-0">{f.agent_profile}</span>
+                    <span className="text-xs text-[var(--text-3)] shrink-0">{f.agent_profile}</span>
                     {f.provider && (
-                      <span className="text-xs text-gray-600 shrink-0">{f.provider}</span>
+                      <span className="text-xs text-[var(--text-3)] shrink-0">{f.provider}</span>
                     )}
-                    <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${f.enabled ? 'bg-emerald-900/50 text-emerald-400' : 'bg-gray-700 text-gray-400'}`}>
+                    <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${f.enabled ? 'bg-[var(--accent-soft)] text-[var(--accent-text)]' : 'bg-[var(--surface-3)] text-[var(--text-3)]'}`}>
                       {f.enabled ? '활성' : '비활성'}
                     </span>
                   </div>
@@ -219,12 +219,12 @@ export function FlowsPanel() {
                       onClick={e => { e.stopPropagation(); handleToggle(f) }}
                       disabled={togglingFlow === f.name}
                       className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                        f.enabled ? 'bg-emerald-600' : 'bg-gray-600'
+                        f.enabled ? 'bg-[var(--accent)]' : 'bg-[var(--surface-3)]'
                       } ${togglingFlow === f.name ? 'opacity-50' : ''}`}
                       title={f.enabled ? '자동화 비활성화' : '자동화 활성화'}
                     >
                       {togglingFlow === f.name ? (
-                        <Loader2 size={12} className="absolute left-1/2 -translate-x-1/2 animate-spin text-white" />
+                        <Loader2 size={12} className="absolute left-1/2 -translate-x-1/2 animate-spin text-[var(--text)]" />
                       ) : (
                         <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${
                           f.enabled ? 'translate-x-[18px]' : 'translate-x-[3px]'
@@ -236,7 +236,7 @@ export function FlowsPanel() {
                     <button
                       onClick={e => { e.stopPropagation(); handleRun(f) }}
                       disabled={runningFlow === f.name}
-                      className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-medium rounded-lg transition-colors"
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[var(--accent)] hover:bg-[var(--accent)] disabled:opacity-40 text-[var(--on-accent)] text-xs font-medium rounded-lg transition-colors"
                       title="자동화 지금 실행"
                     >
                       {runningFlow === f.name ? (
@@ -250,7 +250,7 @@ export function FlowsPanel() {
                     {/* Delete */}
                     <button
                       onClick={e => { e.stopPropagation(); setPendingDelete(f) }}
-                      className="p-1.5 text-gray-500 hover:text-red-400 transition-colors rounded"
+                      className="p-1.5 text-[var(--text-3)] hover:text-[var(--danger)] transition-colors rounded"
                       title="자동화 삭제"
                     >
                       <Trash2 size={14} />
@@ -258,30 +258,30 @@ export function FlowsPanel() {
 
                     {/* Expand chevron */}
                     {expanded === f.name ? (
-                      <ChevronDown size={14} className="text-gray-500" />
+                      <ChevronDown size={14} className="text-[var(--text-3)]" />
                     ) : (
-                      <ChevronRight size={14} className="text-gray-500" />
+                      <ChevronRight size={14} className="text-[var(--text-3)]" />
                     )}
                   </div>
                 </div>
 
                 {/* Expanded details */}
                 {expanded === f.name && (
-                  <div className="px-3 pb-3 text-xs text-gray-400 space-y-3 border-t border-gray-700/30 pt-3">
+                  <div className="px-3 pb-3 text-xs text-[var(--text-3)] space-y-3 border-t border-[var(--border-soft)] pt-3">
                     <div className="grid grid-cols-2 gap-x-6 gap-y-1">
-                      <div>일정: <span className="text-gray-300 font-mono">{f.schedule}</span></div>
-                      <div>제공자: <span className="text-gray-300">{f.provider || '기본값'}</span></div>
-                      <div>프로필: <span className="text-gray-300">{f.agent_profile}</span></div>
-                      <div>마지막 실행: <span className="text-gray-300">{f.last_run ? new Date(f.last_run).toLocaleString('ko-KR') : '실행 기록 없음'}</span></div>
-                      <div>다음 실행: <span className="text-gray-300">{f.next_run ? new Date(f.next_run).toLocaleString('ko-KR') : '해당 없음'}</span></div>
+                      <div>일정: <span className="text-[var(--text-2)] font-mono">{f.schedule}</span></div>
+                      <div>제공자: <span className="text-[var(--text-2)]">{f.provider || '기본값'}</span></div>
+                      <div>프로필: <span className="text-[var(--text-2)]">{f.agent_profile}</span></div>
+                      <div>마지막 실행: <span className="text-[var(--text-2)]">{f.last_run ? new Date(f.last_run).toLocaleString('ko-KR') : '실행 기록 없음'}</span></div>
+                      <div>다음 실행: <span className="text-[var(--text-2)]">{f.next_run ? new Date(f.next_run).toLocaleString('ko-KR') : '해당 없음'}</span></div>
                       {f.file_path && (
-                        <div className="col-span-2">파일: <span className="text-gray-300 font-mono">{f.file_path}</span></div>
+                        <div className="col-span-2">파일: <span className="text-[var(--text-2)] font-mono">{f.file_path}</span></div>
                       )}
                     </div>
                     {f.prompt_template && (
                       <div>
-                        <div className="text-[11px] text-gray-500 uppercase tracking-wider mb-1.5">프롬프트</div>
-                        <div className="bg-gray-950/60 border border-gray-700/30 rounded-lg p-3 text-sm text-gray-300 font-mono whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto">
+                        <div className="text-[11px] text-[var(--text-3)] uppercase tracking-wider mb-1.5">프롬프트</div>
+                        <div className="bg-[var(--bg)] border border-[var(--border-soft)] rounded-lg p-3 text-sm text-[var(--text-2)] font-mono whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto">
                           {f.prompt_template}
                         </div>
                       </div>
@@ -298,18 +298,18 @@ export function FlowsPanel() {
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowCreateModal(false)} />
-          <div className="relative bg-gray-800 border border-gray-700 rounded-2xl shadow-2xl shadow-black/50 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+          <div className="relative bg-[var(--surface-2)] border border-[var(--border)] rounded-2xl shadow-2xl shadow-black/50 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
             {/* Modal header */}
-            <div className="flex items-center justify-between p-5 border-b border-gray-700/50">
+            <div className="flex items-center justify-between p-5 border-b border-[var(--border-soft)]">
               <div>
-                <h3 className="text-base font-semibold text-gray-200">자동화 만들기</h3>
-                <p className="text-xs text-gray-500 mt-1">
+                <h3 className="text-base font-semibold text-[var(--text)]">자동화 만들기</h3>
+                <p className="text-xs text-[var(--text-3)] mt-1">
                   에이전트를 반복 일정에 따라 자동으로 실행합니다.
                 </p>
               </div>
               <button
                 onClick={() => setShowCreateModal(false)}
-                className="p-1.5 text-gray-500 hover:text-gray-300 transition-colors rounded-lg hover:bg-gray-700/50"
+                className="p-1.5 text-[var(--text-3)] hover:text-[var(--text-2)] transition-colors rounded-lg hover:bg-[var(--surface-3)]"
               >
                 <X size={18} />
               </button>
@@ -318,19 +318,19 @@ export function FlowsPanel() {
             {/* Modal body */}
             <div className="p-5 space-y-4">
               <div>
-                <label className="block text-xs text-gray-500 mb-1">이름</label>
+                <label className="block text-xs text-[var(--text-3)] mb-1">이름</label>
                 <input
                   type="text"
                   value={name}
                   onChange={e => setName(e.target.value)}
                   placeholder="my-daily-review"
-                  className="w-full bg-gray-900 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2.5 focus:border-emerald-500 focus:outline-none"
+                  className="w-full bg-[var(--surface)] border border-[var(--border)] text-[var(--text)] text-sm rounded-lg px-3 py-2.5 focus:border-[var(--accent)] focus:outline-none"
                   autoFocus
                 />
               </div>
 
               <div>
-                <label className="block text-xs text-gray-500 mb-1">일정</label>
+                <label className="block text-xs text-[var(--text-3)] mb-1">일정</label>
                 <CustomSelect
                   value={scheduleMode === 'custom' ? CUSTOM_CRON_VALUE : schedule}
                   onChange={val => {
@@ -351,12 +351,12 @@ export function FlowsPanel() {
                     value={schedule}
                     onChange={e => setSchedule(e.target.value)}
                     placeholder="*/30 * * * *"
-                    className="w-full mt-2 bg-gray-900 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2.5 font-mono focus:border-emerald-500 focus:outline-none"
+                    className="w-full mt-2 bg-[var(--surface)] border border-[var(--border)] text-[var(--text)] text-sm rounded-lg px-3 py-2.5 font-mono focus:border-[var(--accent)] focus:outline-none"
                     autoFocus
                   />
                 )}
                 {schedule && (
-                  <p className="text-[11px] text-emerald-500/70 mt-1.5">
+                  <p className="text-[11px] text-[var(--accent-text)] mt-1.5">
                     {cronToLabel(schedule)}{scheduleMode === 'custom' && schedule ? ` — ${schedule}` : ''}
                   </p>
                 )}
@@ -364,7 +364,7 @@ export function FlowsPanel() {
 
               <div className="flex gap-3">
                 <div className="flex-1">
-                  <label className="block text-xs text-gray-500 mb-1">에이전트 프로필</label>
+                  <label className="block text-xs text-[var(--text-3)] mb-1">에이전트 프로필</label>
                   {profiles.length > 0 ? (
                     <CustomSelect
                       value={agentProfile}
@@ -382,12 +382,12 @@ export function FlowsPanel() {
                       value={agentProfile}
                       onChange={e => setAgentProfile(e.target.value)}
                       placeholder="예: developer"
-                      className="w-full bg-gray-900 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2.5 focus:border-emerald-500 focus:outline-none"
+                      className="w-full bg-[var(--surface)] border border-[var(--border)] text-[var(--text)] text-sm rounded-lg px-3 py-2.5 focus:border-[var(--accent)] focus:outline-none"
                     />
                   )}
                 </div>
                 <div className="flex-1">
-                  <label className="block text-xs text-gray-500 mb-1">제공자</label>
+                  <label className="block text-xs text-[var(--text-3)] mb-1">제공자</label>
                   <CustomSelect
                     value={provider}
                     onChange={setProvider}
@@ -403,29 +403,29 @@ export function FlowsPanel() {
               </div>
 
               <div>
-                <label className="block text-xs text-gray-500 mb-1">프롬프트</label>
+                <label className="block text-xs text-[var(--text-3)] mb-1">프롬프트</label>
                 <textarea
                   value={promptTemplate}
                   onChange={e => setPromptTemplate(e.target.value)}
                   placeholder="이 자동화가 수행할 작업을 설명하세요..."
                   rows={5}
-                  className="w-full bg-gray-900 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2.5 font-mono focus:border-emerald-500 focus:outline-none resize-y"
+                  className="w-full bg-[var(--surface)] border border-[var(--border)] text-[var(--text)] text-sm rounded-lg px-3 py-2.5 font-mono focus:border-[var(--accent)] focus:outline-none resize-y"
                 />
               </div>
             </div>
 
             {/* Modal footer */}
-            <div className="flex items-center justify-end gap-3 p-5 border-t border-gray-700/50">
+            <div className="flex items-center justify-end gap-3 p-5 border-t border-[var(--border-soft)]">
               <button
                 onClick={() => setShowCreateModal(false)}
-                className="px-4 py-2 text-sm text-gray-400 hover:text-gray-200 transition-colors"
+                className="px-4 py-2 text-sm text-[var(--text-3)] hover:text-[var(--text)] transition-colors"
               >
                 취소
               </button>
               <button
                 onClick={handleCreate}
                 disabled={!name.trim() || !schedule.trim() || !agentProfile.trim() || !promptTemplate.trim() || creating}
-                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors"
+                className="flex items-center gap-2 bg-[var(--accent)] hover:bg-[var(--accent)] disabled:opacity-40 text-[var(--on-accent)] text-sm font-medium px-5 py-2.5 rounded-lg transition-colors"
               >
                 {creating ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
                 {creating ? '만드는 중…' : '자동화 만들기'}

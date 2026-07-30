@@ -50,7 +50,11 @@ describe('AppShell', () => {
   it('renders the rail with the Workspace view selected by default', async () => {
     render(<AppShell />)
     expect(await screen.findByRole('tab', { name: '작업공간' })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByRole('button', { name: 'AI 사용량' })).toBeInTheDocument()
+    // The header's usage widget is no longer a button: it is always-visible
+    // per-AI bars (HeaderUsageBars), and the detail moved to 설정. With this
+    // test's fetch mock reporting no measured limits, the bars render nothing —
+    // what must hold is that the old click-to-open control is gone.
+    expect(screen.queryByRole('button', { name: 'AI 사용량' })).not.toBeInTheDocument()
     expect(screen.getByRole('tab', { name: '자동화' })).toHaveAttribute('aria-selected', 'false')
     expect(screen.getByRole('tab', { name: '도구 및 확장' })).toHaveAttribute('aria-selected', 'false')
     expect(screen.getByRole('tab', { name: 'Agent 프로필' })).toHaveAttribute('aria-selected', 'false')

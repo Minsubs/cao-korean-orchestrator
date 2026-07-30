@@ -18,9 +18,9 @@ function Snackbar() {
   if (!snackbar) return null
 
   const colors = {
-    success: 'bg-emerald-600 border-emerald-500',
-    error: 'bg-red-600 border-red-500',
-    info: 'bg-blue-600 border-blue-500',
+    success: 'bg-[var(--accent)] border-[var(--accent)]',
+    error: 'bg-[var(--danger)] border-[var(--danger)]',
+    info: 'bg-[var(--info)] border-[var(--info)]',
   }
   const icons = {
     success: <CheckCircle size={18} />,
@@ -29,7 +29,7 @@ function Snackbar() {
   }
 
   return (
-    <div role="alert" className={`fixed bottom-4 right-4 z-[100] px-4 py-3 rounded-lg border shadow-lg flex items-center gap-2 text-white ${colors[snackbar.type]}`}>
+    <div role="alert" className={`fixed bottom-4 right-4 z-[100] px-4 py-3 rounded-lg border shadow-lg flex items-center gap-2 text-[var(--on-accent)] ${colors[snackbar.type]}`}>
       {icons[snackbar.type]}
       <span className="text-sm">{snackbar.message}</span>
     </div>

@@ -520,7 +520,7 @@ class TestCuratedTeamProfiles:
 
     PROFILE_NAMES = (
         "codex_orchestrator_sol",
-        "claude_orchestrator_sonnet",
+        "claude_orchestrator_opus",
         "claude_scout_haiku",
         "claude_architect_opus",
         "claude_developer_sonnet",
@@ -548,8 +548,8 @@ class TestCuratedTeamProfiles:
             "codex_orchestrator_sol",
         )
         claude = parse_agent_profile_text(
-            (source_dir / "claude_orchestrator_sonnet.md").read_text(),
-            "claude_orchestrator_sonnet",
+            (source_dir / "claude_orchestrator_opus.md").read_text(),
+            "claude_orchestrator_opus",
         )
 
         assert codex.role == "supervisor"

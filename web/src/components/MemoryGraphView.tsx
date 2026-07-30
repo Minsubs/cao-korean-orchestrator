@@ -316,28 +316,28 @@ export function MemoryGraphView({ scope, scopeId }: MemoryGraphViewProps) {
   // Friendly guard: don't fire a doomed request for '' / session / agent.
   if (!graphable) {
     return (
-      <div className="bg-gray-800/60 border border-gray-700/50 rounded-xl p-8 text-center">
-        <Brain size={32} className="mx-auto text-gray-600 mb-3" />
-        <p className="text-gray-400 text-sm">그래프를 보려면 <span className="text-emerald-400">전역</span> 또는 <span className="text-emerald-400">프로젝트</span>를 선택하세요.</p>
-        <p className="text-gray-600 text-xs mt-1">
-          <span className="text-gray-400">모든 범위</span>, <span className="text-gray-400">세션</span>, <span className="text-gray-400">에이전트</span> 계층은 비공개이므로 그래프로 표시할 수 없습니다.
+      <div className="bg-[var(--surface-2)] border border-[var(--border-soft)] rounded-xl p-8 text-center">
+        <Brain size={32} className="mx-auto text-[var(--text-3)] mb-3" />
+        <p className="text-[var(--text-3)] text-sm">그래프를 보려면 <span className="text-[var(--accent-text)]">전역</span> 또는 <span className="text-[var(--accent-text)]">프로젝트</span>를 선택하세요.</p>
+        <p className="text-[var(--text-3)] text-xs mt-1">
+          <span className="text-[var(--text-3)]">모든 범위</span>, <span className="text-[var(--text-3)]">세션</span>, <span className="text-[var(--text-3)]">에이전트</span> 계층은 비공개이므로 그래프로 표시할 수 없습니다.
         </p>
       </div>
     )
   }
 
   return (
-    <div className="bg-gray-800/60 border border-gray-700/50 rounded-xl p-5">
+    <div className="bg-[var(--surface-2)] border border-[var(--border-soft)] rounded-xl p-5">
       {/* Toolbar */}
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">
+        <h3 className="text-sm font-semibold text-[var(--text-2)] uppercase tracking-wide">
           지식 그래프{view ? ` (노드 ${view.nodes.length}개)` : ''}
         </h3>
         <div className="flex items-center gap-2">
           <button
             onClick={fetchGraph}
             disabled={loading}
-            className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 disabled:opacity-40 text-gray-200 text-sm font-medium px-3 py-2 rounded-lg transition-colors"
+            className="flex items-center gap-2 bg-[var(--surface-3)] hover:bg-[var(--surface-hover)] disabled:opacity-40 text-[var(--text)] text-sm font-medium px-3 py-2 rounded-lg transition-colors"
             title="그래프 다시 만들기"
           >
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
@@ -346,7 +346,7 @@ export function MemoryGraphView({ scope, scopeId }: MemoryGraphViewProps) {
           <button
             onClick={handleExport}
             disabled={!hasGraph || exporting}
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-sm font-medium px-3 py-2 rounded-lg transition-colors"
+            className="flex items-center gap-2 bg-[var(--accent)] hover:bg-[var(--accent)] disabled:opacity-40 text-[var(--on-accent)] text-sm font-medium px-3 py-2 rounded-lg transition-colors"
             title={hasGraph ? '이 그래프를 Obsidian vault로 내보내기' : '먼저 그래프를 불러오세요'}
           >
             <Download size={14} />
@@ -358,25 +358,25 @@ export function MemoryGraphView({ scope, scopeId }: MemoryGraphViewProps) {
       {/* Graph + side panel */}
       <div className="flex gap-4 h-[600px]">
         {/* Canvas area */}
-        <div className="relative flex-1 min-w-0 bg-gray-950/60 border border-gray-700/30 rounded-lg overflow-hidden">
+        <div className="relative flex-1 min-w-0 bg-[var(--bg)] border border-[var(--border-soft)] rounded-lg overflow-hidden">
           {loading ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6" data-testid="graph-loading">
-              <RefreshCw size={26} className="text-emerald-500 animate-spin mb-3" />
-              <p className="text-gray-300 text-sm">그래프 만드는 중…</p>
-              <p className="text-gray-500 text-xs mt-1">서버가 wiki-lint 검사를 실행하므로 약 30초, 부하 시 최대 약 148초가 걸릴 수 있습니다.</p>
+              <RefreshCw size={26} className="text-[var(--accent-text)] animate-spin mb-3" />
+              <p className="text-[var(--text-2)] text-sm">그래프 만드는 중…</p>
+              <p className="text-[var(--text-3)] text-xs mt-1">서버가 wiki-lint 검사를 실행하므로 약 30초, 부하 시 최대 약 148초가 걸릴 수 있습니다.</p>
             </div>
           ) : error ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6" data-testid="graph-error">
-              <X size={28} className="text-red-500 mb-3" />
-              <p className="text-red-400 text-sm">{error}</p>
-              <button onClick={fetchGraph} className="mt-3 text-emerald-400 text-xs hover:underline">다시 시도</button>
+              <X size={28} className="text-[var(--danger)] mb-3" />
+              <p className="text-[var(--danger)] text-sm">{error}</p>
+              <button onClick={fetchGraph} className="mt-3 text-[var(--accent-text)] text-xs hover:underline">다시 시도</button>
             </div>
           ) : !hasGraph ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-6" data-testid="graph-empty">
-              <Brain size={32} className="text-gray-600 mb-3" />
-              <p className="text-gray-500 text-sm">이 범위에는 그래프가 없습니다.</p>
-              <p className="text-gray-600 text-xs mt-1">
-                범위 <code className="text-emerald-400">{scope}</code>{scopeId ? <> / <code className="text-emerald-400">{scopeId}</code></> : null}에 아직 주제가 없습니다.
+              <Brain size={32} className="text-[var(--text-3)] mb-3" />
+              <p className="text-[var(--text-3)] text-sm">이 범위에는 그래프가 없습니다.</p>
+              <p className="text-[var(--text-3)] text-xs mt-1">
+                범위 <code className="text-[var(--accent-text)]">{scope}</code>{scopeId ? <> / <code className="text-[var(--accent-text)]">{scopeId}</code></> : null}에 아직 주제가 없습니다.
               </p>
             </div>
           ) : null}
@@ -387,13 +387,13 @@ export function MemoryGraphView({ scope, scopeId }: MemoryGraphViewProps) {
 
         {/* Side panel: click-to-read. Content renders as PLAIN TEXT only —
             memory bodies are untrusted agent output (matches MemoryPanel). */}
-        <aside className="w-80 shrink-0 flex flex-col bg-gray-950/60 border border-gray-700/30 rounded-lg overflow-hidden">
+        <aside className="w-80 shrink-0 flex flex-col bg-[var(--bg)] border border-[var(--border-soft)] rounded-lg overflow-hidden">
           {selectedNode ? (
             <>
-              <div className="px-4 py-3 border-b border-gray-700/30">
-                <div className="text-sm font-semibold text-gray-200 break-all">{selectedNode}</div>
+              <div className="px-4 py-3 border-b border-[var(--border-soft)]">
+                <div className="text-sm font-semibold text-[var(--text)] break-all">{selectedNode}</div>
                 {detail && detail.id === selectedNode && (
-                  <div className="text-xs text-gray-500 mt-1">
+                  <div className="text-xs text-[var(--text-3)] mt-1">
                     {detail.data.memory_type}
                     {detail.data.updated_at ? ` · 수정 ${new Date(detail.data.updated_at).toLocaleString('ko-KR')}` : ''}
                   </div>
@@ -401,26 +401,26 @@ export function MemoryGraphView({ scope, scopeId }: MemoryGraphViewProps) {
               </div>
               <div className="flex-1 overflow-y-auto p-4">
                 {detailError ? (
-                  <div className="text-red-400 text-sm">{detailError}</div>
+                  <div className="text-[var(--danger)] text-sm">{detailError}</div>
                 ) : detail && detail.id === selectedNode ? (
-                  <div className="text-sm text-gray-300 font-mono whitespace-pre-wrap leading-relaxed">
+                  <div className="text-sm text-[var(--text-2)] font-mono whitespace-pre-wrap leading-relaxed">
                     {detail.data.content}
                   </div>
                 ) : (
-                  <div className="text-gray-500 text-sm">“{selectedNode}” 불러오는 중…</div>
+                  <div className="text-[var(--text-3)] text-sm">“{selectedNode}” 불러오는 중…</div>
                 )}
               </div>
             </>
           ) : (
             <div className="flex-1 flex items-center justify-center text-center px-6">
-              <p className="text-gray-500 text-sm">메모리를 읽으려면 그래프에서 노드를 클릭하세요.</p>
+              <p className="text-[var(--text-3)] text-sm">메모리를 읽으려면 그래프에서 노드를 클릭하세요.</p>
             </div>
           )}
         </aside>
       </div>
 
       {/* Legend */}
-      <div className="flex flex-wrap items-center gap-4 mt-3 text-xs text-gray-500">
+      <div className="flex flex-wrap items-center gap-4 mt-3 text-xs text-[var(--text-3)]">
         <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ background: DEFAULT_NODE_COLOR }} /> 주제</span>
         <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full" style={{ background: ORPHAN_COLOR }} /> 고립 노드</span>
         <span className="flex items-center gap-1.5"><span className="w-3.5 h-3.5 rounded-full" style={{ background: DEFAULT_NODE_COLOR }} /> 클수록 허브</span>

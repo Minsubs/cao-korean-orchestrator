@@ -141,18 +141,18 @@ export function TerminalView({ terminalId, provider, agentProfile, onClose, embe
   return (
     <div className="fixed inset-0 z-50 flex flex-col" style={{ background: '#0d1117' }}>
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 bg-gray-900 border-b border-gray-700/50 shrink-0">
+      <div className="flex items-center justify-between px-4 py-2 bg-[var(--surface)] border-b border-[var(--border-soft)] shrink-0">
         <div className="flex items-center gap-3">
-          <TermIcon size={16} className="text-emerald-400" />
-          <span className="text-sm font-mono text-gray-300">{terminalId}</span>
-          {provider && <span className="text-xs text-gray-500 bg-gray-800 px-2 py-0.5 rounded">{provider}</span>}
-          {agentProfile && <span className="text-xs text-emerald-400 bg-emerald-900/30 px-2 py-0.5 rounded">{agentProfile}</span>}
+          <TermIcon size={16} className="text-[var(--accent-text)]" />
+          <span className="text-sm font-mono text-[var(--text-2)]">{terminalId}</span>
+          {provider && <span className="text-xs text-[var(--text-3)] bg-[var(--surface-2)] px-2 py-0.5 rounded">{provider}</span>}
+          {agentProfile && <span className="text-xs text-[var(--accent-text)] bg-[var(--accent-soft)] px-2 py-0.5 rounded">{agentProfile}</span>}
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-[10px] text-gray-600">X를 눌러 닫기</span>
+          <span className="text-[10px] text-[var(--text-3)]">X를 눌러 닫기</span>
           <button
             onClick={onClose}
-            className="p-1 text-gray-500 hover:text-white transition-colors rounded"
+            className="p-1 text-[var(--text-3)] hover:text-[var(--text)] transition-colors rounded"
             title="터미널 닫기"
           >
             <X size={18} />

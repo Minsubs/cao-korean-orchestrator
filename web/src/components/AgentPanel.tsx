@@ -224,52 +224,52 @@ export function AgentPanel() {
   return (
     <div className="space-y-6">
       {/* Sessions List */}
-      <div className="bg-gray-800/60 border border-gray-700/50 rounded-xl p-5">
+      <div className="bg-[var(--surface-2)] border border-[var(--border-soft)] rounded-xl p-5">
         <div className="flex items-center justify-between mb-1">
-          <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">
+          <h3 className="text-sm font-semibold text-[var(--text-2)] uppercase tracking-wide">
             세션 ({sessions.length})
           </h3>
           <div className="flex items-center gap-2">
             {sessions.length > 3 && (
               <div className="relative">
-                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-3)]" />
                 <input
                   type="text"
                   value={sessionSearch}
                   onChange={e => setSessionSearch(e.target.value)}
                   placeholder="세션 검색..."
-                  className="bg-gray-900 border border-gray-700 text-gray-200 text-xs rounded-lg pl-8 pr-3 py-1.5 w-48 focus:border-emerald-500 focus:outline-none"
+                  className="bg-[var(--surface)] border border-[var(--border)] text-[var(--text)] text-xs rounded-lg pl-8 pr-3 py-1.5 w-48 focus:border-[var(--accent)] focus:outline-none"
                 />
               </div>
             )}
             <button
               onClick={() => setShowSpawnModal(true)}
-              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+              className="flex items-center gap-2 bg-[var(--accent)] hover:bg-[var(--accent)] text-[var(--on-accent)] text-sm font-medium px-4 py-2 rounded-lg transition-colors"
             >
               <Plus size={14} />
               에이전트 실행
             </button>
           </div>
         </div>
-        <p className="text-xs text-gray-500 mb-4">
+        <p className="text-xs text-[var(--text-3)] mb-4">
           세션은 에이전트가 협업하는 작업 공간입니다. 여러 에이전트가 메시지로 통신할 수 있습니다. 세션을 누르면 소속 에이전트를 확인할 수 있습니다.
         </p>
         {sessions.length === 0 ? (
-          <p className="text-gray-500 text-sm">활성 세션이 없습니다. 위에서 에이전트를 실행해 세션을 만드세요.</p>
+          <p className="text-[var(--text-3)] text-sm">활성 세션이 없습니다. 위에서 에이전트를 실행해 세션을 만드세요.</p>
         ) : (
           <div className="space-y-2">
             {sessions.filter(s => !sessionSearch || s.id.includes(sessionSearch) || s.name.includes(sessionSearch)).map(s => (
               <div
                 key={s.id}
                 className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors ${
-                  activeSession === s.id ? 'bg-emerald-900/30 border border-emerald-700/50' : 'bg-gray-900/50 border border-gray-700/30 hover:bg-gray-800/80'
+                  activeSession === s.id ? 'bg-[var(--accent-soft)] border border-[var(--accent)]' : 'bg-[var(--surface)] border border-[var(--border-soft)] hover:bg-[var(--surface-2)]'
                 }`}
                 onClick={() => selectSession(activeSession === s.id ? null : s.id)}
               >
                 <div className="flex items-center gap-3">
-                  <Bot size={16} className="text-emerald-400" />
-                  <span className="text-sm text-gray-200 font-mono">{s.id}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${s.status === 'active' ? 'bg-emerald-900/50 text-emerald-400' : 'bg-gray-700 text-gray-400'}`}>
+                  <Bot size={16} className="text-[var(--accent-text)]" />
+                  <span className="text-sm text-[var(--text)] font-mono">{s.id}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${s.status === 'active' ? 'bg-[var(--accent-soft)] text-[var(--accent-text)]' : 'bg-[var(--surface-3)] text-[var(--text-3)]'}`}>
                     {SESSION_STATUS_LABELS[s.status] || s.status}
                   </span>
                 </div>
@@ -277,7 +277,7 @@ export function AgentPanel() {
                   <button
                     onClick={e => { e.stopPropagation(); void openSessionChat(s.id) }}
                     disabled={openingChat === s.id}
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-emerald-400 hover:text-white bg-emerald-950/40 hover:bg-emerald-700/60 disabled:opacity-40 border border-emerald-800/40 rounded-lg transition-colors"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-[var(--accent-text)] hover:text-[var(--on-accent)] bg-[var(--accent-soft)] hover:bg-[var(--accent)] disabled:opacity-40 border border-[var(--accent)] rounded-lg transition-colors"
                     title={`${s.id} 오케스트레이터에게 프롬프트 보내기`}
                     aria-label={`${s.id} 오케스트레이터 채팅`}
                   >
@@ -286,12 +286,12 @@ export function AgentPanel() {
                   </button>
                   <button
                     onClick={e => { e.stopPropagation(); deleteSession(s.id) }}
-                    className="p-1.5 text-gray-500 hover:text-red-400 transition-colors rounded"
+                    className="p-1.5 text-[var(--text-3)] hover:text-[var(--danger)] transition-colors rounded"
                     title="세션 삭제"
                   >
                     <Trash2 size={14} />
                   </button>
-                  <ChevronRight size={14} className={`text-gray-500 transition-transform ${activeSession === s.id ? 'rotate-90' : ''}`} />
+                  <ChevronRight size={14} className={`text-[var(--text-3)] transition-transform ${activeSession === s.id ? 'rotate-90' : ''}`} />
                 </div>
               </div>
             ))}
@@ -301,14 +301,14 @@ export function AgentPanel() {
 
       {/* Session Detail */}
       {activeSessionDetail && (
-        <div className="bg-gray-800/60 border border-gray-700/50 rounded-xl p-5">
+        <div className="bg-[var(--surface-2)] border border-[var(--border-soft)] rounded-xl p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">
+            <h3 className="text-sm font-semibold text-[var(--text-2)] uppercase tracking-wide">
               {activeSession}의 터미널
             </h3>
             <button
               onClick={() => setShowAddAgent(!showAddAgent)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-400 hover:text-emerald-400 bg-gray-900/50 hover:bg-gray-900 border border-gray-700/50 hover:border-emerald-700/50 rounded-lg transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[var(--text-3)] hover:text-[var(--accent-text)] bg-[var(--surface)] hover:bg-[var(--surface-hover)] border border-[var(--border-soft)] hover:border-[var(--accent)] rounded-lg transition-colors"
               title="협업할 에이전트를 이 세션에 추가"
             >
               <Plus size={14} />
@@ -318,13 +318,13 @@ export function AgentPanel() {
 
           {/* Add Agent Inline Form */}
           {showAddAgent && (
-            <div className="mb-4 p-4 bg-gray-900/70 border border-gray-700/50 rounded-lg space-y-3">
-              <p className="text-xs text-gray-500">
+            <div className="mb-4 p-4 bg-[var(--surface)] border border-[var(--border-soft)] rounded-lg space-y-3">
+              <p className="text-xs text-[var(--text-3)]">
                 이 세션에 에이전트를 추가합니다. 같은 세션의 에이전트는 서로 메시지를 보내고 작업을 조율할 수 있으며, 오케스트레이터가 추가된 에이전트에게 작업을 위임할 수 있습니다.
               </p>
               <div className="flex gap-3 items-end flex-wrap">
                 <div className="min-w-[160px]">
-                  <label className="block text-xs text-gray-500 mb-1">제공자</label>
+                  <label className="block text-xs text-[var(--text-3)] mb-1">제공자</label>
                   <CustomSelect
                     value={addProvider}
                     onChange={setAddProvider}
@@ -338,7 +338,7 @@ export function AgentPanel() {
                   />
                 </div>
                 <div className="flex-1 min-w-[180px]">
-                  <label className="block text-xs text-gray-500 mb-1">에이전트 프로필</label>
+                  <label className="block text-xs text-[var(--text-3)] mb-1">에이전트 프로필</label>
                   {profiles.length > 0 ? (
                     <CustomSelect
                       value={addProfile}
@@ -357,30 +357,30 @@ export function AgentPanel() {
                       value={addProfile}
                       onChange={e => setAddProfile(e.target.value)}
                       placeholder="예: developer, reviewer"
-                      className="w-full bg-gray-900 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2.5 focus:border-emerald-500 focus:outline-none"
+                      className="w-full bg-[var(--surface)] border border-[var(--border)] text-[var(--text)] text-sm rounded-lg px-3 py-2.5 focus:border-[var(--accent)] focus:outline-none"
                     />
                   )}
                 </div>
                 <button
                   onClick={handleAddAgent}
                   disabled={!addProfile.trim() || addingAgent}
-                  className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-medium px-4 py-2 rounded-lg transition-colors"
+                  className="flex items-center gap-2 bg-[var(--accent)] hover:bg-[var(--accent)] disabled:opacity-40 text-[var(--on-accent)] text-xs font-medium px-4 py-2 rounded-lg transition-colors"
                 >
                   <Plus size={14} />
                   {addingAgent ? '추가 중…' : '추가'}
                 </button>
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">작업 디렉터리</label>
+                <label className="block text-xs text-[var(--text-3)] mb-1">작업 디렉터리</label>
                 <div className="relative">
-                  <FolderOpen size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                  <FolderOpen size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-3)]" />
                   <input
                     type="text"
                     value={addWorkDir}
                     onChange={e => setAddWorkDir(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleAddAgent()}
                     placeholder="/path/to/project (선택 사항)"
-                    className="w-full bg-gray-900 border border-gray-700 text-gray-200 text-sm font-mono rounded-lg pl-9 pr-3 py-2 focus:border-emerald-500 focus:outline-none"
+                    className="w-full bg-[var(--surface)] border border-[var(--border)] text-[var(--text)] text-sm font-mono rounded-lg pl-9 pr-3 py-2 focus:border-[var(--accent)] focus:outline-none"
                   />
                 </div>
               </div>
@@ -389,19 +389,19 @@ export function AgentPanel() {
 
           <div className="space-y-2">
             {activeSessionDetail.terminals.map(t => (
-              <div key={t.id} className="bg-gray-900/50 border border-gray-700/30 rounded-lg p-3 space-y-2">
+              <div key={t.id} className="bg-[var(--surface)] border border-[var(--border-soft)] rounded-lg p-3 space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <TermIcon size={14} className="text-gray-400" />
-                    <span className="text-sm font-mono text-gray-300">{t.id}</span>
+                    <TermIcon size={14} className="text-[var(--text-3)]" />
+                    <span className="text-sm font-mono text-[var(--text-2)]">{t.id}</span>
                     <StatusBadge status={terminalStatuses[t.id] || null} />
-                    <span className="text-xs text-gray-500">{t.provider}</span>
-                    {t.agent_profile && <span className="text-xs text-emerald-400">{profileLabel(t.agent_profile)}</span>}
+                    <span className="text-xs text-[var(--text-3)]">{t.provider}</span>
+                    {t.agent_profile && <span className="text-xs text-[var(--accent-text)]">{profileLabel(t.agent_profile)}</span>}
                   </div>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={() => setInboxTerminalId(t.id)}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-xs font-medium rounded-lg transition-colors"
+                      className="flex items-center gap-2 px-3 py-1.5 bg-[var(--surface-3)] hover:bg-[var(--surface-hover)] text-[var(--text)] text-xs font-medium rounded-lg transition-colors"
                       title="받은편지함 보기"
                     >
                       <Mail size={14} />
@@ -409,7 +409,7 @@ export function AgentPanel() {
                     </button>
                     <button
                       onClick={() => openTerminal(t.id, t.provider, t.agent_profile)}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium rounded-lg transition-colors"
+                      className="flex items-center gap-2 px-3 py-1.5 bg-[var(--accent)] hover:bg-[var(--accent)] text-[var(--on-accent)] text-xs font-medium rounded-lg transition-colors"
                       title="실시간 터미널 열기"
                     >
                       <Monitor size={14} />
@@ -417,7 +417,7 @@ export function AgentPanel() {
                     </button>
                     <button
                       onClick={() => setOutputTerminalId(t.id)}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-xs font-medium rounded-lg transition-colors"
+                      className="flex items-center gap-2 px-3 py-1.5 bg-[var(--surface-3)] hover:bg-[var(--surface-hover)] text-[var(--text)] text-xs font-medium rounded-lg transition-colors"
                       title="출력 보기"
                     >
                       <FileText size={14} />
@@ -426,7 +426,7 @@ export function AgentPanel() {
                     <button
                       onClick={() => setPendingExit(t as TerminalMeta)}
                       disabled={exitingTerminal === t.id}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white text-xs font-medium rounded-lg transition-colors"
+                      className="flex items-center gap-2 px-3 py-1.5 bg-[var(--warning)] hover:bg-[var(--warning)] disabled:opacity-40 text-[var(--on-accent)] text-xs font-medium rounded-lg transition-colors"
                       title="정상 종료"
                     >
                       <LogOut size={14} />
@@ -435,7 +435,7 @@ export function AgentPanel() {
                     <button
                       onClick={() => setPendingClose(t as TerminalMeta)}
                       disabled={closingTerminal === t.id}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white text-xs font-medium rounded-lg transition-colors"
+                      className="flex items-center gap-2 px-3 py-1.5 bg-[var(--danger)] hover:bg-[var(--danger)] disabled:opacity-40 text-[var(--on-accent)] text-xs font-medium rounded-lg transition-colors"
                       title="터미널 닫기"
                     >
                       <Trash2 size={14} />
@@ -446,15 +446,15 @@ export function AgentPanel() {
                 {/* Working Directory Display */}
                 {terminalWorkDirs[t.id] && (
                   <div className="flex items-center gap-1.5" title={terminalWorkDirs[t.id]!}>
-                    <FolderOpen size={12} className="text-gray-600 shrink-0" />
-                    <span className="text-xs font-mono text-gray-500 truncate max-w-[400px]">{terminalWorkDirs[t.id]}</span>
+                    <FolderOpen size={12} className="text-[var(--text-3)] shrink-0" />
+                    <span className="text-xs font-mono text-[var(--text-3)] truncate max-w-[400px]">{terminalWorkDirs[t.id]}</span>
                   </div>
                 )}
                 {/* Quick Send Input */}
                 {!sendInputOpen[t.id] ? (
                   <button
                     onClick={() => setSendInputOpen(prev => ({ ...prev, [t.id]: true }))}
-                    className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                    className="text-xs text-[var(--text-3)] hover:text-[var(--text-2)] transition-colors"
                   >
                     에이전트에게 메시지...
                   </button>
@@ -466,13 +466,13 @@ export function AgentPanel() {
                       onChange={e => setSendInputValues(prev => ({ ...prev, [t.id]: e.target.value }))}
                       onKeyDown={e => { if (e.key === 'Enter') handleSendInput(t.id) }}
                       placeholder="메시지를 입력하세요..."
-                      className="flex-1 bg-gray-900 border border-gray-700 text-gray-200 text-sm font-mono rounded-lg px-3 py-1.5 focus:border-emerald-500 focus:outline-none"
+                      className="flex-1 bg-[var(--surface)] border border-[var(--border)] text-[var(--text)] text-sm font-mono rounded-lg px-3 py-1.5 focus:border-[var(--accent)] focus:outline-none"
                       autoFocus
                     />
                     <button
                       onClick={() => handleSendInput(t.id)}
                       disabled={sendingInput === t.id || !(sendInputValues[t.id] || '').trim()}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-medium rounded-lg transition-colors"
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-[var(--accent)] hover:bg-[var(--accent)] disabled:opacity-40 text-[var(--on-accent)] text-xs font-medium rounded-lg transition-colors"
                     >
                       <Send size={12} />
                       {sendingInput === t.id ? '보내는 중…' : '보내기'}
@@ -556,18 +556,18 @@ export function AgentPanel() {
       {showSpawnModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowSpawnModal(false)} />
-          <div className="relative bg-gray-800 border border-gray-700 rounded-2xl shadow-2xl shadow-black/50 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+          <div className="relative bg-[var(--surface-2)] border border-[var(--border)] rounded-2xl shadow-2xl shadow-black/50 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
             {/* Modal header */}
-            <div className="flex items-center justify-between p-5 border-b border-gray-700/50">
+            <div className="flex items-center justify-between p-5 border-b border-[var(--border-soft)]">
               <div>
-                <h3 className="text-base font-semibold text-gray-200">에이전트 실행</h3>
-                <p className="text-xs text-gray-500 mt-1">
+                <h3 className="text-base font-semibold text-[var(--text)]">에이전트 실행</h3>
+                <p className="text-xs text-[var(--text-3)] mt-1">
                   새로운 AI 에이전트를 독립된 tmux 세션에서 실행합니다.
                 </p>
               </div>
               <button
                 onClick={() => setShowSpawnModal(false)}
-                className="p-1.5 text-gray-500 hover:text-gray-300 transition-colors rounded-lg hover:bg-gray-700/50"
+                className="p-1.5 text-[var(--text-3)] hover:text-[var(--text-2)] transition-colors rounded-lg hover:bg-[var(--surface-3)]"
               >
                 <X size={18} />
               </button>
@@ -576,7 +576,7 @@ export function AgentPanel() {
             {/* Modal body */}
             <div className="p-5 space-y-4">
               <div>
-                <label className="block text-xs text-gray-500 mb-1">제공자</label>
+                <label className="block text-xs text-[var(--text-3)] mb-1">제공자</label>
                 <CustomSelect
                   value={provider}
                   onChange={setProvider}
@@ -591,9 +591,9 @@ export function AgentPanel() {
               </div>
 
               <div>
-                <label className="block text-xs text-gray-500 mb-1">에이전트 프로필</label>
+                <label className="block text-xs text-[var(--text-3)] mb-1">에이전트 프로필</label>
                 {loadingProfiles ? (
-                  <div className="bg-gray-900 border border-gray-700 text-gray-500 text-sm rounded-lg px-3 py-2.5">프로필 불러오는 중…</div>
+                  <div className="bg-[var(--surface)] border border-[var(--border)] text-[var(--text-3)] text-sm rounded-lg px-3 py-2.5">프로필 불러오는 중…</div>
                 ) : profiles.length > 0 ? (
                   <CustomSelect
                     value={profile}
@@ -612,37 +612,37 @@ export function AgentPanel() {
                     value={profile}
                     onChange={e => setProfile(e.target.value)}
                     placeholder="예: developer, reviewer"
-                    className="w-full bg-gray-900 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2.5 focus:border-emerald-500 focus:outline-none"
+                    className="w-full bg-[var(--surface)] border border-[var(--border)] text-[var(--text)] text-sm rounded-lg px-3 py-2.5 focus:border-[var(--accent)] focus:outline-none"
                   />
                 )}
               </div>
 
               <div>
-                <label className="block text-xs text-gray-500 mb-1">세션 이름 <span className="text-gray-600">(선택 사항)</span></label>
+                <label className="block text-xs text-[var(--text-3)] mb-1">세션 이름 <span className="text-[var(--text-3)]">(선택 사항)</span></label>
                 <div className="relative">
-                  <Tag size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                  <Tag size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-3)]" />
                   <input
                     type="text"
                     value={sessionName}
                     onChange={e => setSessionName(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleCreate()}
                     placeholder="my-session (비우면 cao-a1b2c3d4 같은 임의 ID 사용)"
-                    className="w-full bg-gray-900 border border-gray-700 text-gray-200 text-sm rounded-lg pl-9 pr-3 py-2.5 focus:border-emerald-500 focus:outline-none"
+                    className="w-full bg-[var(--surface)] border border-[var(--border)] text-[var(--text)] text-sm rounded-lg pl-9 pr-3 py-2.5 focus:border-[var(--accent)] focus:outline-none"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs text-gray-500 mb-1">작업 디렉터리 <span className="text-gray-600">(선택 사항)</span></label>
+                <label className="block text-xs text-[var(--text-3)] mb-1">작업 디렉터리 <span className="text-[var(--text-3)]">(선택 사항)</span></label>
                 <div className="relative">
-                  <FolderOpen size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                  <FolderOpen size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-3)]" />
                   <input
                     type="text"
                     value={workingDirectory}
                     onChange={e => setWorkingDirectory(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleCreate()}
                     placeholder="/path/to/project (기본값: 홈 디렉터리)"
-                    className="w-full bg-gray-900 border border-gray-700 text-gray-200 text-sm font-mono rounded-lg pl-9 pr-3 py-2.5 focus:border-emerald-500 focus:outline-none"
+                    className="w-full bg-[var(--surface)] border border-[var(--border)] text-[var(--text)] text-sm font-mono rounded-lg pl-9 pr-3 py-2.5 focus:border-[var(--accent)] focus:outline-none"
                   />
                 </div>
               </div>
@@ -650,7 +650,7 @@ export function AgentPanel() {
               {/* Quick-pick profiles */}
               {profiles.length > 0 && (
                 <div>
-                  <label className="block text-xs text-gray-500 mb-2">빠른 선택</label>
+                  <label className="block text-xs text-[var(--text-3)] mb-2">빠른 선택</label>
                   <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto">
                     {profiles.slice(0, 12).map(p => (
                       <button
@@ -658,12 +658,12 @@ export function AgentPanel() {
                         onClick={() => setProfile(p.name)}
                         className={`text-left px-2.5 py-2 rounded-lg border text-xs transition-all ${
                           profile === p.name
-                            ? 'bg-emerald-900/30 border-emerald-700/50 text-emerald-300'
-                            : 'bg-gray-900/50 border-gray-700/30 hover:bg-gray-800/80 text-gray-300'
+                            ? 'bg-[var(--accent-soft)] border-[var(--accent)] text-[var(--accent-text)]'
+                            : 'bg-[var(--surface)] border-[var(--border-soft)] hover:bg-[var(--surface-2)] text-[var(--text-2)]'
                         }`}
                       >
                         <span className="font-medium">{profileLabel(p.name)}</span>
-                        <span className="text-[10px] text-gray-600 ml-1.5">{profileSectionLabel(p)}</span>
+                        <span className="text-[10px] text-[var(--text-3)] ml-1.5">{profileSectionLabel(p)}</span>
                       </button>
                     ))}
                   </div>
@@ -672,17 +672,17 @@ export function AgentPanel() {
             </div>
 
             {/* Modal footer */}
-            <div className="flex items-center justify-end gap-3 p-5 border-t border-gray-700/50">
+            <div className="flex items-center justify-end gap-3 p-5 border-t border-[var(--border-soft)]">
               <button
                 onClick={() => setShowSpawnModal(false)}
-                className="px-4 py-2 text-sm text-gray-400 hover:text-gray-200 transition-colors"
+                className="px-4 py-2 text-sm text-[var(--text-3)] hover:text-[var(--text)] transition-colors"
               >
                 취소
               </button>
               <button
                 onClick={handleCreate}
                 disabled={!profile.trim() || creating}
-                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors"
+                className="flex items-center gap-2 bg-[var(--accent)] hover:bg-[var(--accent)] disabled:opacity-40 text-[var(--on-accent)] text-sm font-medium px-5 py-2.5 rounded-lg transition-colors"
               >
                 <Play size={14} />
                 {creating ? '실행 중…' : '에이전트 실행'}

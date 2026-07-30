@@ -50,8 +50,13 @@ export function useUsageAccounts(active: boolean, claudeLimitsOptIn: boolean): U
     try {
       const res = await apiUsage.getAccounts({ claudeLimits: claudeLimitsOptIn })
       if (!mountedRef.current || requestId !== requestIdRef.current) return
-      setAccounts(res.accounts)
-      setScannedAt(res.scanned_at)
+      // Narrow before storing: a 200 whose body is not the expected shape (a proxy
+      // page, a different endpoint's JSON) otherwise put `undefined` into state and
+      // every consumer's `.filter(...)` threw — which took the whole 설정 tab down
+      // with it once the account list moved there. An unusable body is "no data",
+      // not a crash.
+      setAccounts(Array.isArray(res?.accounts) ? res.accounts : [])
+      setScannedAt(typeof res?.scanned_at === 'string' ? res.scanned_at : null)
       setError(null)
       setLoading(false)
     } catch {

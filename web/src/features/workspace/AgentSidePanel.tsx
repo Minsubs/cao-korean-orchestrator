@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { Clock, FileText, Loader2, Mail, MessageSquare, Plus, Square, Terminal as TermIcon, Trash2 } from 'lucide-react'
+import { AlertTriangle, Check, Clock, FileText, Loader2, Mail, MessageSquare, Plus, Square, Terminal as TermIcon, Trash2 } from 'lucide-react'
 import type { TerminalMeta } from '../../api'
 import type { UsageAccount } from '../../api.usage'
 import { StatusBadge } from '../../components/StatusBadge'
@@ -10,11 +10,12 @@ import { displaySessionName } from './displayName'
 import type { DelegationCard } from './types'
 import type { TeamRosterProfile } from './teamRoster'
 import { profileLabel, profileDetail } from '../profiles/profilePresentation'
+import { roleBadgeFor } from './roleLabel'
 import { InlineUsageBar } from '../usage/InlineUsageBar'
 import { useUsageAccounts } from '../usage/useUsageAccounts'
 import { isTeamWorking, sessionStatusMap } from './agentGrouping'
 import { instructionSummary } from './instructionSummary'
-import { workerStateFor } from './orchestrationProgress'
+import { workerStateFor, type WorkerState } from './orchestrationProgress'
 import { RoleBoard, type AgentVizItem } from './RoleBoard'
 import { DelegationHierarchy } from './DelegationHierarchy'
 
@@ -41,6 +42,22 @@ interface AgentSidePanelProps {
 }
 
 type Tab = 'agents' | 'queue' | 'session'
+
+const QUEUE_STATE_LABEL: Record<WorkerState, string> = {
+  waiting: '시작 대기',
+  working: '실행 중',
+  blocked: '입력 대기',
+  done: '완료',
+  error: '오류',
+}
+
+function QueueStateIcon({ state }: { state: WorkerState }) {
+  if (state === 'blocked') return <Clock size={15} className="mt-0.5 shrink-0 text-[var(--warning)]" />
+  if (state === 'error') return <AlertTriangle size={15} className="mt-0.5 shrink-0 text-[var(--danger)]" />
+  if (state === 'done') return <Check size={15} className="mt-0.5 shrink-0 text-[var(--text-3)]" />
+  if (state === 'waiting') return <Clock size={15} className="mt-0.5 shrink-0 text-[var(--text-3)]" />
+  return <Loader2 size={15} className="mt-0.5 shrink-0 animate-spin text-[var(--info)]" />
+}
 
 function resolveStatus(id: string, fallback: string | null, terminalStatuses: Record<string, string>): string | null {
   return terminalStatuses[id] || (fallback ? fallback.toUpperCase() : null)
@@ -117,10 +134,26 @@ export function AgentSidePanel({
   // PROCESSING/WAITING_USER_ANSWER literals, which dropped a worker that exists
   // but has not reported a status yet — it was alive and working, and the queue
   // showed 0.
-  const queueCards = cards.filter(c => {
-    const state = workerStateFor(c, scopedStatuses)
-    return state === 'working' || state === 'blocked' || state === 'waiting'
-  })
+  // 작업 큐는 "이번 세션에 배정된 작업 목록"이다 — 지금 살아 있는 워커 목록이 아니다.
+  //
+  // It used to list only in-flight workers, and looked permanently broken: the
+  // orchestrator calls delete_terminal on each worker as soon as its callback
+  // lands, so a card is `killed` (→ done) within seconds of finishing. On a run
+  // that delegated eight tasks the queue read 0 the entire time, because at no
+  // single instant was more than one worker alive.
+  //
+  // So the queue now keeps every delegated task and carries its state per row.
+  // Active work sorts to the top — that is what someone opening the tab mid-run
+  // is looking for — and finished work stays below as the turn's record.
+  const QUEUE_ORDER: Record<WorkerState, number> = { blocked: 0, working: 1, waiting: 2, error: 3, done: 4 }
+  const queueItems = cards
+    .map(card => ({ card, state: workerStateFor(card, scopedStatuses) }))
+    .sort((a, b) => {
+      const byState = QUEUE_ORDER[a.state] - QUEUE_ORDER[b.state]
+      if (byState !== 0) return byState
+      return (a.card.firstSeenAt ?? 0) - (b.card.firstSeenAt ?? 0)
+    })
+  const queueActiveCount = queueItems.filter(item => item.state === 'working' || item.state === 'blocked' || item.state === 'waiting').length
   const startedAt = terminals.reduce<string | null>((earliest, t) => {
     if (!t.created_at) return earliest
     if (!earliest) return t.created_at
@@ -156,7 +189,7 @@ export function AgentSidePanel({
                 tab === t ? 'bg-[var(--accent-soft)] text-[var(--accent-text)]' : 'bg-[var(--surface-2)] text-[var(--text-3)]'
               }`}
             >
-              {t === 'agents' ? `에이전트 ${agentCount}` : t === 'queue' ? `작업 큐 ${queueCards.length}` : '세션 정보'}
+              {t === 'agents' ? `에이전트 ${agentCount}` : t === 'queue' ? `작업 큐 ${queueItems.length}` : '세션 정보'}
             </button>
           ))}
         </div>
@@ -257,23 +290,33 @@ export function AgentSidePanel({
             ))}
           </div>
         ) : tab === 'queue' ? (
-          queueCards.length === 0 ? (
-            <p className="px-1 py-3 text-[11px] text-[var(--text-3)]">진행 중이거나 응답을 기다리는 작업이 없어요.</p>
+          queueItems.length === 0 ? (
+            <p className="px-1 py-3 text-[11px] text-[var(--text-3)]">아직 배정된 작업이 없어요. 오케스트레이터가 역할에 작업을 나누면 여기에 쌓여요.</p>
           ) : (
             <div className="space-y-2">
-              {queueCards.map(card => {
-                const status = resolveStatus(card.terminalId, card.status, terminalStatuses)
-                const waiting = status === 'WAITING_USER_ANSWER'
-                return (
-                  <div key={card.terminalId} className="flex items-start gap-2.5 rounded-xl border border-[var(--border)] px-2.5 py-2">
-                    {waiting ? <Clock size={15} className="mt-0.5 text-[var(--warning)]" /> : <Loader2 size={15} className="mt-0.5 animate-spin text-[var(--info)]" />}
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-xs font-semibold text-[var(--text)]">{instructionSummary(card.instruction).text || card.agentName || card.terminalId.slice(0, 8)}</div>
-                      <div className="text-[10.5px] text-[var(--text-3)]">{card.agentName ?? card.terminalId.slice(0, 8)} · {waiting ? '입력 대기' : '실행 중'}</div>
+              <p className="px-1 text-[10.5px] text-[var(--text-3)]" data-testid="queue-summary">
+                진행 중 {queueActiveCount} · 전체 {queueItems.length}
+              </p>
+              {queueItems.map(({ card, state }) => (
+                <div
+                  key={card.terminalId}
+                  data-testid={`queue-row-${card.terminalId}`}
+                  data-state={state}
+                  className={`flex items-start gap-2.5 rounded-xl border px-2.5 py-2 ${
+                    state === 'done' ? 'border-[var(--border-soft)] opacity-70' : 'border-[var(--border)]'
+                  }`}
+                >
+                  <QueueStateIcon state={state} />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-xs font-semibold text-[var(--text)]">
+                      {instructionSummary(card.instruction).text || profileLabel(card.agentName ?? '') || card.terminalId.slice(0, 8)}
+                    </div>
+                    <div className="text-[10.5px] text-[var(--text-3)]">
+                      {card.agentName ? profileLabel(card.agentName) : card.terminalId.slice(0, 8)} · {QUEUE_STATE_LABEL[state]}
                     </div>
                   </div>
-                )
-              })}
+                </div>
+              ))}
             </div>
           )
         ) : (
@@ -370,14 +413,19 @@ function AgentCard({
   onDelete: () => void
   actionsEnabled?: boolean
 }) {
+  // The supervisor's profile label already reads 오케스트레이터, so the role badge
+  // would print the same word twice; roleBadgeFor drops it in that case and keeps
+  // it for a custom orchestrator profile whose name differs.
+  const displayedName = agentName ? profileLabel(agentName) : terminalId.slice(0, 8)
+  const badge = roleBadgeFor(displayedName, roleLabel)
   return (
     <div className="rounded-2xl border border-[var(--border)] p-2.5">
       <div className="flex items-center gap-2">
         <AgentAvatar name={agentName} />
         <div className="min-w-0 flex-1">
           <div className="truncate text-[12.5px] font-bold text-[var(--text)]">
-            {agentName ? profileLabel(agentName) : terminalId.slice(0, 8)}
-            {roleLabel && <span className="ml-1.5 rounded bg-[var(--surface-3)] px-1 py-0.5 text-[9.5px] font-bold text-[var(--text-2)]">{roleLabel}</span>}
+            {displayedName}
+            {badge && <span className="ml-1.5 rounded bg-[var(--surface-3)] px-1 py-0.5 text-[9.5px] font-bold text-[var(--text-2)]">{badge}</span>}
           </div>
           <div className="truncate text-[10.5px] text-[var(--text-3)]">
             {provider} · {terminalId.slice(0, 8)}

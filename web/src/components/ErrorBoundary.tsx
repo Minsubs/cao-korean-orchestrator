@@ -13,12 +13,12 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
   render() {
     if (this.state.hasError) {
       return (
-        <div className="flex flex-col items-center justify-center py-12 text-gray-400">
-          <AlertTriangle size={32} className="text-amber-500 mb-3" />
+        <div className="flex flex-col items-center justify-center py-12 text-[var(--text-3)]">
+          <AlertTriangle size={32} className="text-[var(--warning)] mb-3" />
           <p className="text-sm mb-2">문제가 발생했습니다</p>
           <button
             onClick={() => this.setState({ hasError: false, error: null })}
-            className="text-xs text-emerald-400 hover:text-emerald-300"
+            className="text-xs text-[var(--accent-text)] hover:text-[var(--accent-text)]"
           >
             다시 시도
           </button>

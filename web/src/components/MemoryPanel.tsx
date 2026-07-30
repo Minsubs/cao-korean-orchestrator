@@ -25,10 +25,10 @@ const TYPE_OPTIONS = [
 ]
 
 const SCOPE_PILL: Record<string, string> = {
-  global: 'bg-blue-900/50 text-blue-400',
-  project: 'bg-emerald-900/50 text-emerald-400',
-  session: 'bg-yellow-900/50 text-yellow-400',
-  agent: 'bg-purple-900/50 text-purple-400',
+  global: 'bg-[var(--info-bg)] text-[var(--info)]',
+  project: 'bg-[var(--accent-soft)] text-[var(--accent-text)]',
+  session: 'bg-[var(--warning-bg)] text-[var(--warning)]',
+  agent: 'bg-[var(--p-lilac)] text-[var(--p-lilac-ink)]',
 }
 
 const SCOPE_LABELS: Record<string, string> = {
@@ -188,13 +188,13 @@ export function MemoryPanel() {
       {/* View-mode toggle + shared scope selector. The scope (and, in graph +
           project mode, scope_id) is shared across both views. */}
       <div className="flex items-center gap-3 flex-wrap">
-        <div className="inline-flex rounded-lg border border-gray-700 overflow-hidden" role="tablist" aria-label="메모리 보기 방식">
+        <div className="inline-flex rounded-lg border border-[var(--border)] overflow-hidden" role="tablist" aria-label="메모리 보기 방식">
           <button
             role="tab"
             aria-selected={viewMode === 'list'}
             onClick={() => setViewMode('list')}
             className={`flex items-center gap-2 px-3 py-2 text-sm font-medium transition-colors ${
-              viewMode === 'list' ? 'bg-emerald-600 text-white' : 'bg-gray-900 text-gray-400 hover:text-white hover:bg-gray-800'
+              viewMode === 'list' ? 'bg-[var(--accent)] text-[var(--on-accent)]' : 'bg-[var(--surface)] text-[var(--text-3)] hover:text-[var(--text)] hover:bg-[var(--surface-2)]'
             }`}
           >
             <List size={14} />
@@ -205,7 +205,7 @@ export function MemoryPanel() {
             aria-selected={viewMode === 'graph'}
             onClick={() => setViewMode('graph')}
             className={`flex items-center gap-2 px-3 py-2 text-sm font-medium transition-colors ${
-              viewMode === 'graph' ? 'bg-emerald-600 text-white' : 'bg-gray-900 text-gray-400 hover:text-white hover:bg-gray-800'
+              viewMode === 'graph' ? 'bg-[var(--accent)] text-[var(--on-accent)]' : 'bg-[var(--surface)] text-[var(--text-3)] hover:text-[var(--text)] hover:bg-[var(--surface-2)]'
             }`}
           >
             <Share2 size={14} />
@@ -228,7 +228,7 @@ export function MemoryPanel() {
             value={graphScopeId}
             onChange={e => setGraphScopeId(e.target.value)}
             placeholder="프로젝트 scope_id (예: github-com-…)"
-            className="bg-gray-900 border border-gray-700 text-gray-200 text-xs rounded-lg px-3 py-2 w-72 focus:border-emerald-500 focus:outline-none font-mono"
+            className="bg-[var(--surface)] border border-[var(--border)] text-[var(--text)] text-xs rounded-lg px-3 py-2 w-72 focus:border-[var(--accent)] focus:outline-none font-mono"
           />
         )}
       </div>
@@ -236,18 +236,18 @@ export function MemoryPanel() {
       {viewMode === 'graph' ? (
         <MemoryGraphView scope={scopeFilter} scopeId={graphScopeId} />
       ) : loading ? (
-        <div className="text-gray-500 text-sm py-8 text-center">메모리 불러오는 중…</div>
+        <div className="text-[var(--text-3)] text-sm py-8 text-center">메모리 불러오는 중…</div>
       ) : (
       /* Memory List */
-      <div className="bg-gray-800/60 border border-gray-700/50 rounded-xl p-5">
+      <div className="bg-[var(--surface-2)] border border-[var(--border-soft)] rounded-xl p-5">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">
+          <h3 className="text-sm font-semibold text-[var(--text-2)] uppercase tracking-wide">
             메모리 ({filtered.length})
           </h3>
           <button
             onClick={() => setPendingClear(scopeFilter)}
             disabled={!scopeFilter}
-            className="flex items-center gap-2 bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+            className="flex items-center gap-2 bg-[var(--danger)] hover:bg-[var(--danger)] disabled:opacity-40 text-[var(--on-accent)] text-sm font-medium px-4 py-2 rounded-lg transition-colors"
             title={scopeFilter ? `${scopeFilter} 범위의 모든 메모리 비우기` : '범위를 선택하면 사용할 수 있습니다'}
           >
             <Trash2 size={14} />
@@ -264,45 +264,45 @@ export function MemoryPanel() {
             className="w-40"
           />
           <div className="relative">
-            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-500" />
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-3)]" />
             <input
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="키 검색..."
-              className="bg-gray-900 border border-gray-700 text-gray-200 text-xs rounded-lg pl-8 pr-3 py-1.5 w-48 focus:border-emerald-500 focus:outline-none"
+              className="bg-[var(--surface)] border border-[var(--border)] text-[var(--text)] text-xs rounded-lg pl-8 pr-3 py-1.5 w-48 focus:border-[var(--accent)] focus:outline-none"
             />
           </div>
         </div>
 
         {filtered.length === 0 ? (
           <div className="text-center py-8">
-            <Brain size={32} className="mx-auto text-gray-600 mb-3" />
-            <p className="text-gray-500 text-sm">저장된 메모리가 없습니다.</p>
-            <p className="text-gray-600 text-xs mt-1">
-              에이전트는 작업하면서 메모리를 저장합니다. CLI에서도 확인할 수 있습니다: <code className="text-emerald-400">cao memory list</code>
+            <Brain size={32} className="mx-auto text-[var(--text-3)] mb-3" />
+            <p className="text-[var(--text-3)] text-sm">저장된 메모리가 없습니다.</p>
+            <p className="text-[var(--text-3)] text-xs mt-1">
+              에이전트는 작업하면서 메모리를 저장합니다. CLI에서도 확인할 수 있습니다: <code className="text-[var(--accent-text)]">cao memory list</code>
             </p>
           </div>
         ) : (
           <div className="space-y-2">
             {filtered.map(m => (
-              <div key={rowId(m)} className="bg-gray-900/50 border border-gray-700/30 rounded-lg">
+              <div key={rowId(m)} className="bg-[var(--surface)] border border-[var(--border-soft)] rounded-lg">
                 {/* Row header */}
                 <div
-                  className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-800/50 transition-colors"
+                  className="flex items-center justify-between p-3 cursor-pointer hover:bg-[var(--surface-2)] transition-colors"
                   onClick={() => handleExpand(m)}
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <Brain size={14} className="text-gray-400 shrink-0" />
-                    <span className="text-sm text-gray-200 font-medium truncate">{m.key}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${SCOPE_PILL[m.scope] || 'bg-gray-700 text-gray-400'}`}>
+                    <Brain size={14} className="text-[var(--text-3)] shrink-0" />
+                    <span className="text-sm text-[var(--text)] font-medium truncate">{m.key}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${SCOPE_PILL[m.scope] || 'bg-[var(--surface-3)] text-[var(--text-3)]'}`}>
                       {SCOPE_LABELS[m.scope] || m.scope}
                     </span>
-                    <span className="text-xs text-gray-500 shrink-0">{TYPE_LABELS[m.memory_type] || m.memory_type}</span>
+                    <span className="text-xs text-[var(--text-3)] shrink-0">{TYPE_LABELS[m.memory_type] || m.memory_type}</span>
                     {m.tags && (
-                      <span className="text-xs text-gray-600 truncate">{m.tags}</span>
+                      <span className="text-xs text-[var(--text-3)] truncate">{m.tags}</span>
                     )}
-                    <span className="text-xs text-gray-500 shrink-0">
+                    <span className="text-xs text-[var(--text-3)] shrink-0">
                       {new Date(m.updated_at).toLocaleString()}
                     </span>
                   </div>
@@ -311,7 +311,7 @@ export function MemoryPanel() {
                     {/* Delete */}
                     <button
                       onClick={e => { e.stopPropagation(); setPendingDelete(m) }}
-                      className="p-1.5 text-gray-500 hover:text-red-400 transition-colors rounded"
+                      className="p-1.5 text-[var(--text-3)] hover:text-[var(--danger)] transition-colors rounded"
                       title="메모리 삭제"
                     >
                       <Trash2 size={14} />
@@ -319,33 +319,33 @@ export function MemoryPanel() {
 
                     {/* Expand chevron */}
                     {expandedKey === rowId(m) ? (
-                      <ChevronDown size={14} className="text-gray-500" />
+                      <ChevronDown size={14} className="text-[var(--text-3)]" />
                     ) : (
-                      <ChevronRight size={14} className="text-gray-500" />
+                      <ChevronRight size={14} className="text-[var(--text-3)]" />
                     )}
                   </div>
                 </div>
 
                 {/* Expanded details */}
                 {expandedKey === rowId(m) && (
-                  <div className="px-3 pb-3 text-xs text-gray-400 space-y-3 border-t border-gray-700/30 pt-3">
+                  <div className="px-3 pb-3 text-xs text-[var(--text-3)] space-y-3 border-t border-[var(--border-soft)] pt-3">
                     <div className="grid grid-cols-2 gap-x-6 gap-y-1">
-                      <div>생성: <span className="text-gray-300">{new Date(m.created_at).toLocaleString('ko-KR')}</span></div>
-                      <div>수정: <span className="text-gray-300">{new Date(m.updated_at).toLocaleString('ko-KR')}</span></div>
+                      <div>생성: <span className="text-[var(--text-2)]">{new Date(m.created_at).toLocaleString('ko-KR')}</span></div>
+                      <div>수정: <span className="text-[var(--text-2)]">{new Date(m.updated_at).toLocaleString('ko-KR')}</span></div>
                       {m.scope_id && (
-                        <div className="col-span-2">범위 ID: <span className="text-gray-300 font-mono">{m.scope_id}</span></div>
+                        <div className="col-span-2">범위 ID: <span className="text-[var(--text-2)] font-mono">{m.scope_id}</span></div>
                       )}
                       {m.tags && (
-                        <div className="col-span-2">태그: <span className="text-gray-300">{m.tags}</span></div>
+                        <div className="col-span-2">태그: <span className="text-[var(--text-2)]">{m.tags}</span></div>
                       )}
                     </div>
                     {/* Plain text only — memory bodies are untrusted agent output */}
                     {detail && detail.id === rowId(m) ? (
-                      <div className="bg-gray-950/60 border border-gray-700/30 rounded-lg p-3 text-sm text-gray-300 font-mono whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
+                      <div className="bg-[var(--bg)] border border-[var(--border-soft)] rounded-lg p-3 text-sm text-[var(--text-2)] font-mono whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
                         {detail.data.content}
                       </div>
                     ) : (
-                      <div className="text-gray-500">내용 불러오는 중…</div>
+                      <div className="text-[var(--text-3)]">내용 불러오는 중…</div>
                     )}
                   </div>
                 )}

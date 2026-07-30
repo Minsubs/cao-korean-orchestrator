@@ -35,9 +35,9 @@ function formatRelativeTime(dateStr: string | null): string {
 
 function MessageStatusBadge({ status }: { status: InboxMessage['status'] }) {
   const config = {
-    delivered: { bg: 'bg-emerald-400/10', text: 'text-emerald-400', label: '전달됨' },
-    pending: { bg: 'bg-amber-400/10', text: 'text-amber-400', label: '대기 중' },
-    failed: { bg: 'bg-red-400/10', text: 'text-red-400', label: '실패' },
+    delivered: { bg: 'bg-[var(--accent-soft)]', text: 'text-[var(--accent-text)]', label: '전달됨' },
+    pending: { bg: 'bg-[var(--warning-bg)]', text: 'text-[var(--warning)]', label: '대기 중' },
+    failed: { bg: 'bg-[var(--danger-bg)]', text: 'text-[var(--danger)]', label: '실패' },
   }
   const c = config[status] || config.pending
   return (
@@ -115,7 +115,7 @@ export function InboxPanel({ terminalId, onClose, embedded = false }: InboxPanel
   const isReceiver = (msg: InboxMessage) => msg.receiver_id === terminalId
 
   const filterTabs = (
-    <div className={`shrink-0 overflow-x-auto border-b border-gray-700/30 ${embedded ? 'px-3 py-2' : 'px-5 py-3'}`}>
+    <div className={`shrink-0 overflow-x-auto border-b border-[var(--border-soft)] ${embedded ? 'px-3 py-2' : 'px-5 py-3'}`}>
       <div className="flex gap-2">
         {STATUS_FILTERS.map(f => (
           <button
@@ -123,8 +123,8 @@ export function InboxPanel({ terminalId, onClose, embedded = false }: InboxPanel
             onClick={() => setFilter(f.key)}
             className={`px-3 py-1.5 text-xs font-medium rounded-full whitespace-nowrap transition-colors ${
               filter === f.key
-                ? 'bg-emerald-600 text-white'
-                : 'bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700'
+                ? 'bg-[var(--accent)] text-[var(--on-accent)]'
+                : 'bg-[var(--surface-2)] text-[var(--text-3)] hover:text-[var(--text)] hover:bg-[var(--surface-3)]'
             }`}
           >
             {f.label}
@@ -138,13 +138,13 @@ export function InboxPanel({ terminalId, onClose, embedded = false }: InboxPanel
     <div className={`flex-1 overflow-y-auto space-y-3 min-h-[200px] ${embedded ? 'px-3 py-3' : 'px-5 py-4'}`}>
       {loading && messages.length === 0 ? (
         <div className="flex items-center justify-center py-12">
-          <Loader2 size={20} className="animate-spin text-gray-500" />
+          <Loader2 size={20} className="animate-spin text-[var(--text-3)]" />
         </div>
       ) : messages.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+        <div className="flex flex-col items-center justify-center py-12 text-[var(--text-3)]">
           <Mail size={32} className="mb-3 opacity-40" />
           <p className="text-sm">아직 메시지가 없습니다</p>
-          <p className="text-xs text-gray-600 mt-1">에이전트가 handoff, assign 또는 send_message로 통신하면 여기에 표시됩니다. 아래에서 직접 메시지를 보낼 수도 있습니다.</p>
+          <p className="text-xs text-[var(--text-3)] mt-1">에이전트가 handoff, assign 또는 send_message로 통신하면 여기에 표시됩니다. 아래에서 직접 메시지를 보낼 수도 있습니다.</p>
         </div>
       ) : (
         messages.map(msg => {
@@ -157,19 +157,19 @@ export function InboxPanel({ terminalId, onClose, embedded = false }: InboxPanel
               <div
                 className={`max-w-[85%] rounded-xl px-3.5 py-2.5 ${
                   incoming
-                    ? 'bg-gray-800 border border-gray-700/40'
-                    : 'bg-emerald-900/30 border border-emerald-700/30'
+                    ? 'bg-[var(--surface-2)] border border-[var(--border-soft)]'
+                    : 'bg-[var(--accent-soft)] border border-[var(--accent)]'
                 }`}
               >
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-[10px] font-mono text-gray-500">
+                  <span className="text-[10px] font-mono text-[var(--text-3)]">
                     {incoming ? msg.sender_id.slice(0, 8) : msg.receiver_id.slice(0, 8)}
                   </span>
                   <MessageStatusBadge status={msg.status} />
                 </div>
-                <p className="text-sm text-gray-200 whitespace-pre-wrap break-words">{msg.message}</p>
+                <p className="text-sm text-[var(--text)] whitespace-pre-wrap break-words">{msg.message}</p>
                 {msg.created_at && (
-                  <p className="text-[10px] text-gray-600 mt-1">{formatRelativeTime(msg.created_at)}</p>
+                  <p className="text-[10px] text-[var(--text-3)] mt-1">{formatRelativeTime(msg.created_at)}</p>
                 )}
               </div>
             </div>
@@ -181,7 +181,7 @@ export function InboxPanel({ terminalId, onClose, embedded = false }: InboxPanel
   )
 
   const sendForm = (
-    <div className={`shrink-0 border-t border-gray-700/50 ${embedded ? 'px-3 py-3' : 'px-5 py-4'}`}>
+    <div className={`shrink-0 border-t border-[var(--border-soft)] ${embedded ? 'px-3 py-3' : 'px-5 py-4'}`}>
       <div className="flex gap-2">
         <input
           ref={inputRef}
@@ -190,12 +190,12 @@ export function InboxPanel({ terminalId, onClose, embedded = false }: InboxPanel
           onChange={e => setSendText(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="메시지를 입력하세요..."
-          className="flex-1 bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-lg px-3 py-2.5 focus:border-emerald-500 focus:outline-none placeholder-gray-600"
+          className="flex-1 bg-[var(--surface-2)] border border-[var(--border)] text-[var(--text)] text-sm rounded-lg px-3 py-2.5 focus:border-[var(--accent)] focus:outline-none placeholder-[var(--text-3)]"
         />
         <button
           onClick={handleSend}
           disabled={!sendText.trim() || sending}
-          className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors"
+          className="flex items-center gap-2 bg-[var(--accent)] hover:bg-[var(--accent)] disabled:opacity-40 text-[var(--on-accent)] text-sm font-medium px-4 py-2.5 rounded-lg transition-colors"
         >
           {sending ? (
             <Loader2 size={14} className="animate-spin" />
@@ -212,7 +212,7 @@ export function InboxPanel({ terminalId, onClose, embedded = false }: InboxPanel
   // Workbench's own tab bar/context row already identifies this terminal.
   if (embedded) {
     return (
-      <div className="flex h-full w-full flex-col bg-gray-900">
+      <div className="flex h-full w-full flex-col bg-[var(--surface)]">
         {filterTabs}
         {messageList}
         {sendForm}
@@ -226,21 +226,21 @@ export function InboxPanel({ terminalId, onClose, embedded = false }: InboxPanel
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
 
       {/* Modal */}
-      <div className="relative bg-gray-900 border border-gray-700/50 rounded-2xl shadow-2xl w-full max-w-[600px] mx-4 flex flex-col" style={{ maxHeight: 'calc(100vh - 80px)' }}>
+      <div className="relative bg-[var(--surface)] border border-[var(--border-soft)] rounded-2xl shadow-2xl w-full max-w-[600px] mx-4 flex flex-col" style={{ maxHeight: 'calc(100vh - 80px)' }}>
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-700/50 shrink-0">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border-soft)] shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-emerald-900/50 flex items-center justify-center">
-              <Mail size={16} className="text-emerald-400" />
+            <div className="w-8 h-8 rounded-lg bg-[var(--accent-soft)] flex items-center justify-center">
+              <Mail size={16} className="text-[var(--accent-text)]" />
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-white">에이전트 받은편지함</h3>
-              <p className="text-[11px] text-gray-500">이 세션의 에이전트 간 메시지 <span className="font-mono">({terminalId})</span></p>
+              <h3 className="text-sm font-semibold text-[var(--text)]">에이전트 받은편지함</h3>
+              <p className="text-[11px] text-[var(--text-3)]">이 세션의 에이전트 간 메시지 <span className="font-mono">({terminalId})</span></p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-gray-500 hover:text-white transition-colors rounded-lg hover:bg-gray-800"
+            className="p-1.5 text-[var(--text-3)] hover:text-[var(--text)] transition-colors rounded-lg hover:bg-[var(--surface-2)]"
             title="닫기"
           >
             <X size={16} />

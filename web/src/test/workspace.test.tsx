@@ -34,7 +34,7 @@ function installMockFetch() {
     if (url.startsWith('/agents/profiles')) {
       return jsonResponse([
         { name: 'codex_orchestrator_sol', description: 'Orchestrator', source: 'local', provider: 'codex', model: 'gpt-5.6-sol' },
-        { name: 'claude_orchestrator_sonnet', description: 'Orchestrator', source: 'local', provider: 'claude_code', model: 'sonnet' },
+        { name: 'claude_orchestrator_opus', description: 'Orchestrator', source: 'local', provider: 'claude_code', model: 'opus' },
       ])
     }
     if (url.startsWith('/agents/providers')) return jsonResponse([{ name: 'codex', binary: 'codex', installed: true }, { name: 'claude_code', binary: 'claude', installed: true }])
@@ -344,7 +344,7 @@ describe('Workspace (Phase 2b render-level)', () => {
       if (url.startsWith('/agents/profiles')) {
         return jsonResponse([
           { name: 'codex_orchestrator_sol', description: 'Orchestrator', source: 'local', provider: 'codex', model: 'gpt-5.6-sol' },
-          { name: 'claude_orchestrator_sonnet', description: 'Orchestrator', source: 'local', provider: 'claude_code', model: 'sonnet' },
+          { name: 'claude_orchestrator_opus', description: 'Orchestrator', source: 'local', provider: 'claude_code', model: 'opus' },
           { name: 'claude_developer_sonnet', description: 'Worker', source: 'local', provider: 'claude_code', model: 'sonnet' },
         ])
       }
@@ -429,7 +429,7 @@ describe('Workspace (Phase 2b render-level)', () => {
     await waitFor(() => expect(mockFetch.mock.calls.some(([u]) => (u as string).startsWith('/sessions?'))).toBe(true))
     const [createUrl] = mockFetch.mock.calls.find(([u]) => (u as string).startsWith('/sessions?'))!
     expect(createUrl as string).toContain('provider=claude_code')
-    expect(createUrl as string).toContain('agent_profile=claude_orchestrator_sonnet')
+    expect(createUrl as string).toContain('agent_profile=claude_orchestrator_opus')
   })
 
   it('feedback #12: client-validates the session name against the server pattern and disables submit for invalid characters', async () => {

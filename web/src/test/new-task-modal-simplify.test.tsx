@@ -68,7 +68,7 @@ describe('NewTaskModal — 간결화된 기본 노출', () => {
     mountModal()
     await waitFor(() => expect(screen.getByRole('radio', { name: 'Codex 오케스트레이터' })).toBeTruthy())
     expect(screen.queryByText('codex_orchestrator_sol')).toBeNull()
-    expect(screen.queryByText('claude_orchestrator_sonnet')).toBeNull()
+    expect(screen.queryByText('claude_orchestrator_opus')).toBeNull()
     expect(screen.queryByText('antigravity_orchestrator_agy')).toBeNull()
   })
 

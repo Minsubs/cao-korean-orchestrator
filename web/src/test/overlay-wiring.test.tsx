@@ -43,7 +43,7 @@ describe('overlay wiring — new task create', () => {
       if (url.startsWith('/agents/profiles')) {
         return jsonResponse([
           { name: 'codex_orchestrator_sol', provider: 'codex' },
-          { name: 'claude_orchestrator_sonnet', provider: 'claude_code' },
+          { name: 'claude_orchestrator_opus', provider: 'claude_code' },
           { name: 'antigravity_orchestrator_agy', provider: 'antigravity_cli' },
         ])
       }

@@ -2,7 +2,7 @@
 
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 PermissionMode = Literal[
     "default",
@@ -92,6 +92,27 @@ class AgentProfile(BaseModel):
     # opt into a no-prompt but sandboxed worker, or an approval-gated read-only
     # orchestrator, without requiring a named ~/.codex profile.
     codexApprovalPolicy: Optional[CodexApprovalPolicy] = None
+
+    @field_validator("tools", "allowedTools", "resources", "skills", mode="before")
+    @classmethod
+    def _accept_comma_separated(cls, value: Any) -> Any:
+        """Accept a comma-separated string where a list is expected.
+
+        Claude Code's own agent format writes these as one line —
+        ``tools: Read, Grep, Glob`` — which is what every agent under
+        ``~/.claude/agents/`` looks like. Without this coercion the model raised
+        ``Input should be a valid list`` and the assignment failed *before the
+        worker launched*, so no natively-discovered Claude agent could ever be
+        delegated to. Observed live: assigning ``documentation-writer`` failed
+        with ``input_value='Read, Grep, Glob', input_type=str``.
+
+        Empty and whitespace-only strings become ``[]`` rather than ``None``:
+        the author wrote the key, and for a scope list "present but empty" means
+        "nothing allowed", which is not the same as "unset".
+        """
+        if isinstance(value, str):
+            return [item.strip() for item in value.split(",") if item.strip()]
+        return value
     codexSandbox: Optional[CodexSandbox] = None
 
     # Codex-only. Inline Codex config overrides passed as `-c key=value` at

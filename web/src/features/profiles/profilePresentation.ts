@@ -21,7 +21,7 @@ type ProfilePresentation = {
 
 export const ORCHESTRATOR_PROFILES = {
   codex: 'codex_orchestrator_sol',
-  claude_code: 'claude_orchestrator_sonnet',
+  claude_code: 'claude_orchestrator_opus',
   antigravity_cli: 'antigravity_orchestrator_agy',
 } as const
 
@@ -38,10 +38,10 @@ const PRESENTATION: Record<string, ProfilePresentation> = {
     section: 'team',
     order: 0,
   },
-  claude_orchestrator_sonnet: {
+  claude_orchestrator_opus: {
     label: '오케스트레이터',
     description: '작업을 나누고 Codex·Claude 팀의 결과를 종합해요.',
-    detail: 'Claude · Sonnet',
+    detail: 'Claude · Opus',
     section: 'team',
     order: 1,
   },

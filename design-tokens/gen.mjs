@@ -91,6 +91,11 @@ function themeColorVars() {
   pair("--surface", app.surface);
   pair("--surface-2", app.surface2);
   pair("--surface-3", app.surface3);
+  // One step past --surface-3 for hover on a raised control. Without it, a button
+  // whose base is --surface-3 had no darker/lighter step available and its hover
+  // silently did nothing (both bg-gray-700 and hover:bg-gray-600 mapped to
+  // --surface-3). Moves the same direction in both themes.
+  pair("--surface-hover", app.surfaceHover);
   // borders
   pair("--border", c.border.primary);
   pair("--border-soft", app.borderSoft);
