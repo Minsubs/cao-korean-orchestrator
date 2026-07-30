@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { Workspace } from '../features/workspace/Workspace'
 import type { UiConnectionStatus } from '../features/workspace/eventsClient'
@@ -86,9 +86,21 @@ function TestWorkspace({
   )
 }
 
+// Reset ambient state on BOTH sides. Vitest isolates modules per file, but
+// localStorage written by an earlier file was still visible here — a leaked
+// `cao:*` entry changed how Workspace booted and the initial prompt was never
+// delivered, which surfaced only under --no-file-parallelism (and on CI, whose
+// core count schedules files differently). Clearing before the test as well as
+// after makes this file independent of whatever ran first.
+beforeEach(() => {
+  window.localStorage.clear()
+  window.sessionStorage.clear()
+})
+
 afterEach(() => {
   vi.unstubAllGlobals()
   window.localStorage.clear()
+  window.sessionStorage.clear()
 })
 
 describe('first turn of a brand-new session', () => {

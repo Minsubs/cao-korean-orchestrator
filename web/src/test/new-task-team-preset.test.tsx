@@ -35,7 +35,10 @@ function mountModal() {
   return render(<NewTaskModal projects={PROJECTS} onClose={() => {}} onCreated={() => {}} />)
 }
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  window.localStorage.clear()
+})
 
 describe('NewTaskModal team preset + size hint', () => {
   it('shows the preset controls without expanding 고급', async () => {
