@@ -55,10 +55,26 @@ interface WorkspaceProps {
   /** Also owned by AppShell for the same reason: a plain local state here would reset to null every time this component remounts on rail navigation. */
   selectedSessionId: string | null
   setSelectedSessionId: (id: string | null) => void
+  /**
+   * First prompt of a session the New Task modal just created. The modal used to
+   * POST this itself, which bypassed useWorkspaceSession — so the turn was never
+   * registered and the thread showed nothing at all while the orchestrator's
+   * first delegate worked. Routing it through sendMessage here is what captures
+   * the baseline/generation snapshot the completion check needs.
+   */
+  pendingFirstTurn?: { sessionId: string; prompt: string } | null
+  onFirstTurnConsumed?: () => void
 }
 
 /** Top-level Orchestration Workspace (spec Phase 2b): project/group sidebar + Thread + Composer + Agent panel + Workbench, receiving the one shared `/ui/events` stream (and the selected session) as props from AppShell. */
-export function Workspace({ events, status: streamStatus, selectedSessionId, setSelectedSessionId }: WorkspaceProps) {
+export function Workspace({
+  events,
+  status: streamStatus,
+  selectedSessionId,
+  setSelectedSessionId,
+  pendingFirstTurn = null,
+  onFirstTurnConsumed,
+}: WorkspaceProps) {
   const sessions = useStore(s => s.sessions)
   const fetchSessions = useStore(s => s.fetchSessions)
   const showSnackbar = useStore(s => s.showSnackbar)
@@ -70,6 +86,9 @@ export function Workspace({ events, status: streamStatus, selectedSessionId, set
   const [rpanelCollapsed, setRpanelCollapsed] = useState(() => loadBool(RPANEL_KEY, false))
 
   const [newTaskState, setNewTaskState] = useState<{ projects: ProjectsData; prefill?: { targetPath?: string; targetLabel?: string } } | null>(null)
+  // A session created from this component's own New Task modal. The prop of the
+  // same shape covers a session created before this mounted (AppShell path).
+  const [ownFirstTurn, setOwnFirstTurn] = useState<{ sessionId: string; prompt: string } | null>(null)
 
   // Command Palette / NotificationCenter seam (AppShell dispatches; Workspace
   // owns the state): 'cao:open-new-task' opens the New Task modal,
@@ -112,6 +131,28 @@ export function Workspace({ events, status: streamStatus, selectedSessionId, set
 
   const workspaceSession = useWorkspaceSession(selectedSessionId, events)
   useWorkspaceAlerts(workspaceSession.cards, workspaceSession.terminalStatuses, selectedSessionId)
+
+  // Deliver the new session's first prompt through the normal chat path once its
+  // orchestrator terminal exists. Guarded by a ref keyed on the session so the 4s
+  // terminal poll cannot resend it.
+  const firstTurnSentRef = useRef<string | null>(null)
+  const firstTurn = ownFirstTurn ?? pendingFirstTurn
+  useEffect(() => {
+    if (!firstTurn) return
+    if (firstTurn.sessionId !== selectedSessionId) return
+    if (firstTurnSentRef.current === firstTurn.sessionId) return
+    if (!workspaceSession.supervisorTerminalId) return
+    firstTurnSentRef.current = firstTurn.sessionId
+    void workspaceSession.sendMessage(firstTurn.prompt)
+    setOwnFirstTurn(null)
+    onFirstTurnConsumed?.()
+  }, [
+    firstTurn,
+    selectedSessionId,
+    workspaceSession.supervisorTerminalId,
+    workspaceSession.sendMessage,
+    onFirstTurnConsumed,
+  ])
 
   // Phase 2d (spec §2d): one gauge-poll owner per session, shared by the
   // Workbench header and every AgentSidePanel row (see useContextGauges.ts).
@@ -405,7 +446,10 @@ export function Workspace({ events, status: streamStatus, selectedSessionId, set
           projects={newTaskState.projects}
           defaultTarget={newTaskState.prefill}
           onClose={() => setNewTaskState(null)}
-          onCreated={sessionId => setSelectedSessionId(sessionId)}
+          onCreated={(sessionId, firstPrompt) => {
+            setSelectedSessionId(sessionId)
+            setOwnFirstTurn({ sessionId, prompt: firstPrompt })
+          }}
         />
       )}
 

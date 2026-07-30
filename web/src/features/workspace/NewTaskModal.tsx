@@ -25,7 +25,10 @@ interface NewTaskModalProps {
   projects: ProjectsData
   defaultTarget?: { targetPath?: string; targetLabel?: string }
   onClose: () => void
-  onCreated: (sessionId: string) => void
+  /** Hands the session and its first prompt to the Workspace, which sends it through
+   * the normal chat path so the turn is tracked (progress card, completion summary).
+   * This modal deliberately does NOT POST the prompt itself. */
+  onCreated: (sessionId: string, firstPrompt: string) => void
 }
 
 const DIRECT_KEY = '__direct__'
@@ -208,10 +211,9 @@ export function NewTaskModal({ projects, defaultTarget, onClose, onCreated }: Ne
         const profile = delegatableCandidates.find(candidate => candidate.name === name)
         return { name, provider: profile?.provider ?? null }
       }))
-      await api.sendInput(terminal.id, `${contextPrefix}${instruction.trim()}`)
       showSnackbar({ type: 'success', message: '작업을 시작했어요' })
       await fetchSessions()
-      onCreated(terminal.session_name)
+      onCreated(terminal.session_name, `${contextPrefix}${instruction.trim()}`)
       onClose()
     } catch (error: unknown) {
       const err = error as { detail?: string; message?: string }

@@ -350,10 +350,31 @@ describe('Workspace (Phase 2b render-level)', () => {
       }
       if (url.startsWith('/sessions?')) return jsonResponse({ id: 'term-1', session_name: 'auto-1' })
       // Post-creation, Workspace switches to the new session and
-      // useWorkspaceSession immediately polls its detail — give it a
-      // well-formed (if empty) response rather than falling through to the
-      // catch-all `[]`, which isn't shaped like {session, terminals}.
-      if (url.startsWith('/sessions/auto-1')) return jsonResponse({ session: { id: 'auto-1', name: 'auto-1', status: 'active' }, terminals: [] })
+      // useWorkspaceSession immediately polls its detail. This used to answer
+      // with an empty terminal list, which no real server does right after
+      // creating one — and it stopped mattering only because the modal POSTed
+      // the first prompt directly. The first prompt now goes through the
+      // workspace's own sendMessage (so the turn is tracked), which needs the
+      // orchestrator terminal to actually show up here.
+      if (url.startsWith('/sessions/auto-1')) {
+        return jsonResponse({
+          session: { id: 'auto-1', name: 'auto-1', status: 'active' },
+          terminals: [{
+            id: 'term-1',
+            tmux_session: 'auto-1',
+            tmux_window: '1',
+            provider: 'codex',
+            agent_profile: 'codex_orchestrator_sol',
+            created_at: '2026-07-30T00:00:00Z',
+            last_active: null,
+          }],
+        })
+      }
+      if (url === '/terminals/term-1') {
+        return jsonResponse({ id: 'term-1', name: 'sol', session_name: 'auto-1', tmux_session: 'auto-1', tmux_window: '1', provider: 'codex', agent_profile: 'codex_orchestrator_sol', caller_id: null, status: 'idle', last_output_at: null, created_at: '2026-07-30T00:00:00Z', last_active: null })
+      }
+      if (url.startsWith('/terminals/term-1/output')) return jsonResponse({ output: '', mode: 'last' })
+      if (url.startsWith('/terminals/term-1/working-directory')) return jsonResponse({ working_directory: '~/work/x' })
       if (url.startsWith('/terminals/term-1/input')) return jsonResponse({ success: true })
       if (url.startsWith('/ui/events/history')) return jsonResponse({ events: [] })
       return jsonResponse([])
