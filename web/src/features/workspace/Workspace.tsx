@@ -139,6 +139,7 @@ export function Workspace({ events, status: streamStatus, selectedSessionId, set
   // collapsed dock open on its own.
   const restoredWorkbenchSessionRef = useRef<string | null>(null)
   const workbenchSessionRef = useRef<string | null>(null)
+  const workbenchRefetchedSessionRef = useRef<string | null>(null)
   useEffect(() => {
     // `useWorkspaceSession` starts its new-session poll in an effect too, so
     // this effect can briefly observe the previous session's terminal list (or
@@ -148,6 +149,7 @@ export function Workspace({ events, status: streamStatus, selectedSessionId, set
     if (workbenchSessionRef.current !== selectedSessionId) {
       workbenchSessionRef.current = selectedSessionId
       restoredWorkbenchSessionRef.current = null
+      workbenchRefetchedSessionRef.current = null
       setWorkbenchRequest(current => ({ ...current, terminalId: '' }))
     }
     if (!selectedSessionId || workspaceSession.loading) return
@@ -157,14 +159,32 @@ export function Workspace({ events, status: streamStatus, selectedSessionId, set
     const stored = loadWorkbenchContext(selectedSessionId)
     const storedStillPresent = !!stored && sessionTerminals.some(t => t.id === stored.terminalId)
     const resolvedId = storedStillPresent ? stored!.terminalId : sessionTerminals[0]?.id
-    if (!resolvedId) return
+    if (!resolvedId) {
+      // `loading` is already false, yet nothing here belongs to the selected
+      // session — the list we are looking at predates the switch. Falling
+      // through to the periodic poll would leave the dock blank for up to
+      // SESSION_POLL_MS (4s), so ask for the list now. Once per session switch:
+      // a session that genuinely has no terminals must not spin, and the
+      // arriving list re-runs this effect on its own.
+      if (workbenchRefetchedSessionRef.current !== selectedSessionId) {
+        workbenchRefetchedSessionRef.current = selectedSessionId
+        void workspaceSession.refreshTerminals()
+      }
+      return
+    }
     restoredWorkbenchSessionRef.current = selectedSessionId
     setWorkbenchRequest(current => ({
       ...current,
       terminalId: resolvedId,
       tab: storedStillPresent ? stored!.tab : current.tab,
     }))
-  }, [selectedSessionId, workspaceSession.loading, workspaceSession.terminals, workspaceSession.supervisorTerminalId])
+  }, [
+    selectedSessionId,
+    workspaceSession.loading,
+    workspaceSession.terminals,
+    workspaceSession.supervisorTerminalId,
+    workspaceSession.refreshTerminals,
+  ])
 
   const composerTargets: ComposerTarget[] = useMemo(
     () =>
