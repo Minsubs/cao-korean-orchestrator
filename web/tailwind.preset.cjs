@@ -22,6 +22,7 @@ module.exports = {
           "surface": "var(--surface)",
           "surface-2": "var(--surface-2)",
           "surface-3": "var(--surface-3)",
+          "surface-hover": "var(--surface-hover)",
           "border": "var(--border)",
           "border-soft": "var(--border-soft)",
           "text": "var(--text)",

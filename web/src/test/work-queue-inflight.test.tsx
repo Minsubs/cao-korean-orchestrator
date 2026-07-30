@@ -67,7 +67,16 @@ function renderPanel(cards: DelegationCard[], terminalStatuses: Record<string, s
 
 afterEach(() => window.localStorage.clear())
 
-describe('작업 큐 counts what is actually in flight', () => {
+describe('작업 큐 lists the turn\'s delegated work', () => {
+  // Contract change (사용자 재보고: "작업큐 저건 왜 동작안해"). The badge used to
+  // count only in-flight workers, and the tab looked permanently broken: the
+  // orchestrator calls delete_terminal the moment a worker's callback lands, so a
+  // card is killed → done within seconds. On a run that delegated eight tasks the
+  // queue read 0 the whole time, because no two workers were ever alive together.
+  //
+  // The queue is now the turn's work list: every delegated task, each row carrying
+  // its own state, active states sorted first. The in-flight number moved to a
+  // summary line where it can be 0 without the tab looking empty.
   it('counts a worker whose status has not arrived yet', () => {
     renderPanel([card({ terminalId: 'w1' })], {})
     expect(screen.getByRole('tab', { name: '작업 큐 1' })).toBeTruthy()
@@ -83,7 +92,9 @@ describe('작업 큐 counts what is actually in flight', () => {
     expect(screen.getByRole('tab', { name: '작업 큐 1' })).toBeTruthy()
   })
 
-  it('excludes finished and errored workers', () => {
+  it('keeps finished work in the list instead of emptying the queue', () => {
+    // This is the reported defect, pinned: three delegated tasks, none still
+    // running, and the queue must still show what the turn did.
     renderPanel(
       [
         card({ terminalId: 'w1', killed: true, status: 'completed' }),
@@ -92,12 +103,34 @@ describe('작업 큐 counts what is actually in flight', () => {
       ],
       { w2: 'COMPLETED', w3: 'ERROR' },
     )
-    expect(screen.getByRole('tab', { name: '작업 큐 0' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('tab', { name: '작업 큐 3' }))
+    expect(screen.getByTestId('queue-summary').textContent).toContain('진행 중 0')
+    expect(screen.getByTestId('queue-summary').textContent).toContain('전체 3')
+    expect(screen.getByTestId('queue-row-w1').getAttribute('data-state')).toBe('done')
+    expect(screen.getByTestId('queue-row-w2').getAttribute('data-state')).toBe('done')
+    expect(screen.getByTestId('queue-row-w3').getAttribute('data-state')).toBe('error')
   })
 
-  it('says so plainly when nothing is in flight', () => {
-    renderPanel([card({ terminalId: 'w1', killed: true, status: 'completed' })], {})
+  it('sorts work that needs attention above work that is finished', () => {
+    renderPanel(
+      [
+        card({ terminalId: 'done1', killed: true, status: 'completed', firstSeenAt: 1 }),
+        card({ terminalId: 'run1', firstSeenAt: 2 }),
+        card({ terminalId: 'block1', firstSeenAt: 3 }),
+      ],
+      { run1: 'PROCESSING', block1: 'WAITING_USER_ANSWER' },
+    )
+    fireEvent.click(screen.getByRole('tab', { name: '작업 큐 3' }))
+    const order = Array.from(document.querySelectorAll('[data-testid^="queue-row-"]')).map(el =>
+      el.getAttribute('data-testid'),
+    )
+    // 입력 대기 first — it is the only row that cannot progress without the user.
+    expect(order).toEqual(['queue-row-block1', 'queue-row-run1', 'queue-row-done1'])
+  })
+
+  it('says so plainly when nothing has been delegated at all', () => {
+    renderPanel([], {})
     fireEvent.click(screen.getByRole('tab', { name: '작업 큐 0' }))
-    expect(screen.getByText('진행 중이거나 응답을 기다리는 작업이 없어요.')).toBeTruthy()
+    expect(screen.getByText(/아직 배정된 작업이 없어요/)).toBeTruthy()
   })
 })

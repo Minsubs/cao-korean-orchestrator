@@ -59,7 +59,7 @@ CASES = (
     Case(
         name="claude-to-codex-qa",
         supervisor_provider="claude_code",
-        supervisor_profile="claude_orchestrator_sonnet",
+        supervisor_profile="claude_orchestrator_opus",
         worker_provider="codex",
         worker_profile="codex_qa_terra",
         callback_marker="CLAUDE_TO_CODEX_CALLBACK_OK",

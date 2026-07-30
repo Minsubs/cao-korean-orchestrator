@@ -27,7 +27,7 @@ import { LoadingOverlay } from '../components/LoadingOverlay'
 import { Workspace } from '../features/workspace/Workspace'
 import { useUiEventStream } from '../features/workspace/useUiEventStream'
 import { PENDING_SELECT_KEY } from '../features/workspace/constants'
-import { UsageButton } from '../features/usage/UsageButton'
+import { HeaderUsageBars } from '../features/usage/HeaderUsageBars'
 
 // Phase 1b App Shell: left icon rail + top bar + a single content region that
 // swaps between views. Replaces the old 5-tab top bar (App.tsx). FlowsPanel/
@@ -94,11 +94,11 @@ function ConnectionChip({ connected }: { connected: boolean }) {
   return (
     <div className="flex items-center gap-1.5" title={connected ? '연결됨' : '연결 끊김'}>
       {connected ? (
-        <Wifi size={14} className="text-emerald-400" />
+        <Wifi size={14} className="text-[var(--accent-text)]" />
       ) : (
-        <WifiOff size={14} className="text-red-400" />
+        <WifiOff size={14} className="text-[var(--danger)]" />
       )}
-      <span className={`text-xs ${connected ? 'text-emerald-400' : 'text-red-400'}`}>
+      <span className={`text-xs ${connected ? 'text-[var(--accent-text)]' : 'text-[var(--danger)]'}`}>
         {connected ? '연결됨' : '오프라인'}
       </span>
     </div>
@@ -272,7 +272,7 @@ export function AppShell() {
           </div>
           <div className="flex items-center gap-3">
             <NotificationCenter sessions={sessions} />
-            <UsageButton />
+            <HeaderUsageBars />
             <span className="text-xs text-[var(--text-3)]">세션 {sessions.length}개</span>
             <ConnectionChip connected={connected} />
             <button

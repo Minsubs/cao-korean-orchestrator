@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, ChevronRight, Eye, FileText, Loader2, MessageSquare, Square, Terminal as TermIcon, WifiOff } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ChevronRight, Eye, FileText, Loader2, MessageSquare, Square, Terminal as TermIcon, WifiOff } from 'lucide-react'
 import { StatusBadge } from '../../components/StatusBadge'
 import { AgentAvatar } from './AgentAvatar'
 import { ProgressCard } from './ProgressCard'
@@ -7,6 +7,7 @@ import { formatElapsed } from './orchestrationProgress'
 import { instructionSummary, stripInstructionPlumbing } from './instructionSummary'
 import { computeStall, stallMinutes } from './stall'
 import { useNowTick } from './useNowTick'
+import { useStickToBottom } from './useStickToBottom'
 import type { UiConnectionStatus } from './eventsClient'
 import type { ChatEntry, DelegationCard, ThreadItem } from './types'
 import { profileLabel } from '../profiles/profilePresentation'
@@ -250,8 +251,27 @@ export function Thread(props: ThreadProps) {
   } = props
   const now = useNowTick()
 
+  // Follow new content only while the user is at the bottom. The signature is
+  // what "new content" means here: one more item, the pending placeholder
+  // appearing or clearing, or the newest message's text growing as the reply is
+  // cleaned and re-rendered. It deliberately excludes `now` — the 1s clock tick
+  // must not scroll anything.
+  const lastItem = threadItems[threadItems.length - 1]
+  const lastLength =
+    lastItem?.kind === 'chat'
+      ? lastItem.entry.content.length
+      : lastItem?.kind === 'system'
+        ? lastItem.text.length
+        : lastItem?.kind === 'inner-group'
+          ? lastItem.messages.length
+          : 0
+  const scroll = useStickToBottom<HTMLDivElement>(
+    `${threadItems.length}|${lastItem?.id ?? ''}|${lastLength}|${pendingMessageId ?? ''}`,
+    sessionName,
+  )
+
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="relative flex min-h-0 flex-1 flex-col">
       {/* Phase 5: `connecting` means the client is already retrying (eventsClient
           backs off 1s→30s on its own), so it must not read as a dead stream —
           and the user must not be told to refresh. Only a true `disconnected`
@@ -268,7 +288,7 @@ export function Thread(props: ThreadProps) {
         </div>
       ) : null}
 
-      <div className="flex-1 overflow-y-auto px-5 py-5">
+      <div ref={scroll.ref} className="flex-1 overflow-y-auto px-5 py-5">
         <div className="mx-auto flex max-w-[780px] flex-col gap-3.5">
           {!sessionName ? (
             <p className="mt-16 text-center text-xs text-[var(--text-3)]">왼쪽에서 세션을 선택하거나 새 세션을 시작하세요.</p>
@@ -340,6 +360,22 @@ export function Thread(props: ThreadProps) {
           )}
         </div>
       </div>
+
+      {/* Only while scrolled up: following is automatic at the bottom, so the
+          button would be a no-op there. Placed over the thread rather than in the
+          header so it sits next to the content it jumps to. */}
+      {!scroll.atBottom && threadItems.length > 0 && (
+        <button
+          type="button"
+          onClick={() => scroll.scrollToBottom('smooth')}
+          aria-label="맨 아래로"
+          title="맨 아래로"
+          className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-[11px] font-semibold text-[var(--text-2)] shadow-lg transition-colors hover:border-[var(--accent)] hover:text-[var(--text)]"
+        >
+          <ArrowDown size={12} />
+          맨 아래로
+        </button>
+      )}
     </div>
   )
 }

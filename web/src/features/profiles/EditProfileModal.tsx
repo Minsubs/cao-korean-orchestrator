@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
-import { AlertTriangle, Check, Loader2, Pencil, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { AlertTriangle, Check, Loader2, Pencil, RefreshCw, X } from 'lucide-react'
 import type { AgentProfileInfo } from '../../api'
-import { apiProfiles, type AgentProfileFullDetail } from '../../api.profiles'
+import { apiProfiles, fetchModelCatalog, type AgentProfileFullDetail, type ModelCatalogEntry } from '../../api.profiles'
 import { useStore } from '../../store'
+import { CUSTOM_OPTION } from './roleData'
 import { yamlScalar } from './profileTemplate'
 
 interface EditProfileModalProps {
@@ -47,9 +48,37 @@ export function EditProfileModal({ profile, onClose, onSaved }: EditProfileModal
   const [detail, setDetail] = useState<AgentProfileFullDetail | null>(null)
 
   const [description, setDescription] = useState(profile.description ?? '')
+  // `model` mirrors AddAgentModal's split: either a real catalog model name or
+  // the CUSTOM_OPTION sentinel, with the free-text fallback held separately in
+  // `modelCustom` (see AddAgentModal.tsx for the reference pattern).
   const [model, setModel] = useState('')
+  const [modelCustom, setModelCustom] = useState('')
   const [prompt, setPrompt] = useState('')
   const [saving, setSaving] = useState(false)
+
+  const [catalog, setCatalog] = useState<ModelCatalogEntry[] | null>(null)
+  const [catalogError, setCatalogError] = useState<string | null>(null)
+  const [catalogLoading, setCatalogLoading] = useState(true)
+
+  const loadCatalog = () => {
+    setCatalogLoading(true)
+    setCatalogError(null)
+    fetchModelCatalog()
+      .then(entries => {
+        setCatalog(entries)
+        setCatalogError(null)
+      })
+      .catch(() => {
+        setCatalog(null)
+        setCatalogError('모델 목록을 조회할 수 없어요 — 직접 입력하세요')
+      })
+      .finally(() => setCatalogLoading(false))
+  }
+
+  useEffect(() => {
+    loadCatalog()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -61,7 +90,6 @@ export function EditProfileModal({ profile, onClose, onSaved }: EditProfileModal
         if (cancelled) return
         setDetail(data)
         setDescription(data.description ?? profile.description ?? '')
-        setModel(data.model ?? '')
         setPrompt(data.system_prompt ?? '')
       })
       .catch(() => {
@@ -77,6 +105,31 @@ export function EditProfileModal({ profile, onClose, onSaved }: EditProfileModal
   }, [profile.name, profile.description])
 
   const detailProvider = detail?.provider ?? null
+  const catalogEntry = useMemo(() => catalog?.find(e => e.provider === detailProvider) ?? null, [catalog, detailProvider])
+
+  // Prefill the model select exactly once — after both the profile detail and
+  // the (possibly failed) catalog fetch have settled — so a stored model that
+  // isn't in the catalog lands in CUSTOM_OPTION mode with its value intact,
+  // instead of silently being dropped or overwritten by a later catalog
+  // refresh (guarded by the ref, not just the effect deps).
+  const modelInitialized = useRef(false)
+  useEffect(() => {
+    if (modelInitialized.current) return
+    if (!detail || catalogLoading) return
+    const initial = (detail.model ?? '').trim()
+    if (initial && catalogEntry && catalogEntry.models.some(m => m.name === initial)) {
+      setModel(initial)
+      setModelCustom('')
+    } else {
+      setModel(CUSTOM_OPTION)
+      setModelCustom(initial)
+    }
+    modelInitialized.current = true
+  }, [detail, catalogLoading, catalogEntry])
+
+  const isCustomModel = model === CUSTOM_OPTION
+  const effectiveModel = (isCustomModel ? modelCustom : model).trim()
+
   const canSave = !loading && !loadError && !saving && detail !== null && description.trim().length > 0
 
   async function handleSave() {
@@ -87,7 +140,7 @@ export function EditProfileModal({ profile, onClose, onSaved }: EditProfileModal
       fm.push(`name: ${profile.name}`)
       fm.push(`description: ${yamlScalar(description.trim())}`)
       if (detailProvider) fm.push(`provider: ${detailProvider}`)
-      if (model.trim()) fm.push(`model: ${yamlScalar(model.trim())}`)
+      if (effectiveModel) fm.push(`model: ${yamlScalar(effectiveModel)}`)
       // Re-emit every remaining frontmatter field the server returned so a
       // save never strips settings the form doesn't edit (mcpServers,
       // allowedTools, role, permissionMode, ...).
@@ -163,16 +216,63 @@ export function EditProfileModal({ profile, onClose, onSaved }: EditProfileModal
                 />
               </div>
               <div>
-                <label htmlFor="ep-model" className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-[var(--text-3)]">
-                  모델
-                </label>
-                <input
-                  id="ep-model"
-                  value={model}
-                  onChange={e => setModel(e.target.value)}
-                  placeholder="예: sonnet"
-                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-2 font-mono text-xs text-[var(--text)] outline-none focus:border-[var(--accent)]"
-                />
+                <div className="mb-1.5 flex items-center gap-2">
+                  <label htmlFor="ep-model" className="text-[11px] font-bold uppercase tracking-wide text-[var(--text-3)]">
+                    모델
+                  </label>
+                  <button
+                    type="button"
+                    onClick={loadCatalog}
+                    className="ml-auto flex items-center gap-1 rounded-full border border-[var(--border)] px-2 py-0.5 text-[10.5px] font-semibold text-[var(--text-2)] hover:bg-[var(--surface-2)]"
+                  >
+                    <RefreshCw size={11} className={catalogLoading ? 'animate-spin' : ''} />
+                    목록 새로고침
+                  </button>
+                </div>
+                {catalogEntry ? (
+                  <>
+                    <select
+                      id="ep-model"
+                      value={model}
+                      onChange={e => setModel(e.target.value)}
+                      className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-2 font-mono text-xs text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                    >
+                      {catalogEntry.models.map(m => (
+                        <option key={m.name} value={m.name}>
+                          {m.name}
+                        </option>
+                      ))}
+                      <option value={CUSTOM_OPTION}>직접 입력…</option>
+                    </select>
+                    {isCustomModel && (
+                      <input
+                        value={modelCustom}
+                        onChange={e => setModelCustom(e.target.value)}
+                        placeholder="모델 문자열 직접 입력 — CLI에 그대로 전달돼요"
+                        className="mt-2 w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-2 font-mono text-xs text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                      />
+                    )}
+                    <div className="mt-1 text-[10.5px] text-[var(--text-3)]">
+                      모델 출처: {catalogEntry.source === 'known' ? '알려진 모델 별칭 목록 + 직접 입력' : `실시간 조회됨${catalogEntry.probed_at ? ` · ${new Date(catalogEntry.probed_at).toLocaleString('ko-KR')}` : ''}`}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <input
+                      id="ep-model"
+                      value={modelCustom}
+                      onChange={e => setModelCustom(e.target.value)}
+                      placeholder="예: sonnet"
+                      className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-2 font-mono text-xs text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                    />
+                    {catalogError && (
+                      <div className="mt-1.5 flex items-center gap-1.5 text-[10.5px] text-[var(--warning)]">
+                        <AlertTriangle size={12} />
+                        {catalogError}
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
               <div>
                 <label htmlFor="ep-prompt" className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-[var(--text-3)]">

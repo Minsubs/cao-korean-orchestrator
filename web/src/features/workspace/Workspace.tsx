@@ -17,6 +17,7 @@ import { useContextGauges } from './useContextGauges'
 import { useFleetSummaries } from './useFleetSummaries'
 import { loadProjectsData } from './projects'
 import { displaySessionName } from './displayName'
+import { composerTargetLabel } from './roleLabel'
 import { loadWorkbenchContext, saveWorkbenchContext } from './workbenchContext'
 import { PENDING_SELECT_KEY } from './constants'
 import type { ProjectsData, UiEvent } from './types'
@@ -231,7 +232,7 @@ export function Workspace({
     () =>
       workspaceSession.terminals.map((t, index) => ({
         id: t.id,
-        label: index === 0 ? `${t.agent_profile ?? '오케스트레이터'} · 오케스트레이터` : t.agent_profile ?? t.id.slice(0, 8),
+        label: composerTargetLabel(t.agent_profile, t.id, index === 0),
         provider: t.provider,
       })),
     [workspaceSession.terminals],

@@ -46,15 +46,21 @@ const STATUS_LABELS: Record<string, string> = {
 const STATUS_META: Record<string, { label: string; dot: string; text: string; pulse?: boolean }> = Object.fromEntries(
   Object.entries(STATUS_CONFIG).map(([k, v]) => [k, { label: STATUS_LABELS[k] || v.label, dot: v.dotClass, text: v.textClass, pulse: v.pulse }])
 )
-STATUS_META['UNKNOWN'] = { label: STATUS_LABELS.UNKNOWN, dot: 'bg-gray-500', text: 'text-gray-500' }
+STATUS_META['UNKNOWN'] = { label: STATUS_LABELS.UNKNOWN, dot: 'bg-[var(--text-3)]', text: 'text-[var(--text-3)]' }
 
 const STATUS_ACTIVE_BG: Record<string, string> = {
-  PROCESSING: 'bg-blue-900/40 border-blue-500/50 text-blue-300',
-  IDLE: 'bg-emerald-900/40 border-emerald-500/50 text-emerald-300',
-  WAITING_USER_ANSWER: 'bg-amber-900/40 border-amber-500/50 text-amber-300',
-  ERROR: 'bg-red-900/40 border-red-500/50 text-red-300',
-  COMPLETED: 'bg-purple-900/40 border-purple-500/50 text-purple-300',
-  UNKNOWN: 'bg-gray-800/40 border-gray-500/50 text-gray-300',
+  PROCESSING: 'bg-[var(--info-bg)] border-[var(--info)] text-[var(--info)]',
+  IDLE: 'bg-[var(--accent-soft)] border-[var(--accent)] text-[var(--accent-text)]',
+  WAITING_USER_ANSWER: 'bg-[var(--warning-bg)] border-[var(--warning)] text-[var(--warning)]',
+  ERROR: 'bg-[var(--danger-bg)] border-[var(--danger)] text-[var(--danger)]',
+  // --neutral rather than --accent: status.generated.ts calls COMPLETED an accent
+  // status, but this map already spends accent on IDLE, and two accent-coloured
+  // chips side by side are indistinguishable. Neutral also reads correctly for a
+  // finished, no-longer-running agent. (The IDLE/COMPLETED split here diverges
+  // from the generated canon — left as-is; changing it moves a colour's meaning,
+  // which is a separate decision from removing hardcoded palette values.)
+  COMPLETED: 'bg-[var(--neutral-bg)] border-[var(--neutral)] text-[var(--neutral)]',
+  UNKNOWN: 'bg-[var(--surface-2)] border-[var(--border)] text-[var(--text-2)]',
 }
 
 const agentTypeLabel = (value: string) => value === 'default' ? '기본값' : value
@@ -68,7 +74,7 @@ function StatusSummary({ counts }: { counts: Record<string, number> }) {
           <span key={s} className="flex items-center gap-1 text-xs">
             <span className={`w-1.5 h-1.5 rounded-full ${meta.dot} ${meta.pulse ? 'animate-pulse' : ''}`} />
             <span className={meta.text}>{counts[s]}</span>
-            <span className="text-gray-500">{meta.label}</span>
+            <span className="text-[var(--text-3)]">{meta.label}</span>
           </span>
         )
       })}
@@ -269,36 +275,38 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
     <div className="space-y-6">
       {/* Stats Row */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-gradient-to-br from-gray-800/80 to-gray-900/80 rounded-xl p-5 border border-gray-700/50">
+        <div className="bg-gradient-to-br from-[var(--surface-2)] to-[var(--surface)] rounded-xl p-5 border border-[var(--border-soft)]">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-emerald-900/50 flex items-center justify-center">
-              <Users size={20} className="text-emerald-400" />
+            <div className="w-10 h-10 rounded-lg bg-[var(--accent-soft)] flex items-center justify-center">
+              <Users size={20} className="text-[var(--accent-text)]" />
             </div>
             <div>
-              <div className="text-2xl font-bold text-white">{sessions.length}</div>
-              <div className="text-xs text-gray-400 uppercase tracking-wide">세션</div>
+              <div className="text-2xl font-bold text-[var(--text)]">{sessions.length}</div>
+              <div className="text-xs text-[var(--text-3)] uppercase tracking-wide">세션</div>
             </div>
           </div>
         </div>
-        <div className="bg-gradient-to-br from-gray-800/80 to-gray-900/80 rounded-xl p-5 border border-gray-700/50">
+        <div className="bg-gradient-to-br from-[var(--surface-2)] to-[var(--surface)] rounded-xl p-5 border border-[var(--border-soft)]">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-cyan-900/50 flex items-center justify-center">
-              <TermIcon size={20} className="text-cyan-400" />
+            {/* Decorative stat tile — the pastel token pairs exist for exactly this
+                and carry a light-mode value, unlike the cyan-900/cyan-400 it replaces. */}
+            <div className="w-10 h-10 rounded-lg bg-[var(--p-sky)] flex items-center justify-center">
+              <TermIcon size={20} className="text-[var(--p-sky-ink)]" />
             </div>
             <div>
-              <div className="text-2xl font-bold text-white">{totalTerminals}</div>
-              <div className="text-xs text-gray-400 uppercase tracking-wide">실행 중인 에이전트</div>
+              <div className="text-2xl font-bold text-[var(--text)]">{totalTerminals}</div>
+              <div className="text-xs text-[var(--text-3)] uppercase tracking-wide">실행 중인 에이전트</div>
             </div>
           </div>
         </div>
-        <div className="bg-gradient-to-br from-gray-800/80 to-gray-900/80 rounded-xl p-5 border border-gray-700/50">
+        <div className="bg-gradient-to-br from-[var(--surface-2)] to-[var(--surface)] rounded-xl p-5 border border-[var(--border-soft)]">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-blue-900/50 flex items-center justify-center">
-              <Package size={20} className="text-blue-400" />
+            <div className="w-10 h-10 rounded-lg bg-[var(--info-bg)] flex items-center justify-center">
+              <Package size={20} className="text-[var(--info)]" />
             </div>
             <div>
-              <div className="text-2xl font-bold text-white">{profileCount}</div>
-              <div className="text-xs text-gray-400 uppercase tracking-wide">프로필</div>
+              <div className="text-2xl font-bold text-[var(--text)]">{profileCount}</div>
+              <div className="text-xs text-[var(--text-3)] uppercase tracking-wide">프로필</div>
             </div>
           </div>
         </div>
@@ -306,10 +314,10 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
 
       {/* Quick Actions */}
       <div className="flex gap-3 flex-wrap">
-        <button onClick={() => onNavigate('agents')} className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors">
+        <button onClick={() => onNavigate('agents')} className="flex items-center gap-2 bg-[var(--accent)] hover:bg-[var(--accent)] text-[var(--on-accent)] text-sm font-medium px-4 py-2.5 rounded-lg transition-colors">
           <Bot size={16} /> 에이전트 실행
         </button>
-        <button onClick={() => onNavigate('flows')} className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium px-4 py-2.5 rounded-lg transition-colors">
+        <button onClick={() => onNavigate('flows')} className="flex items-center gap-2 bg-[var(--surface-3)] hover:bg-[var(--surface-hover)] text-[var(--text)] text-sm font-medium px-4 py-2.5 rounded-lg transition-colors">
           <Zap size={16} /> 자동화 관리
         </button>
       </div>
@@ -318,12 +326,12 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
       <div className="mb-1">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-semibold text-gray-300 uppercase tracking-wide">활성 세션</h3>
-            <p className="text-xs text-gray-500 mt-1">
+            <h3 className="text-sm font-semibold text-[var(--text-2)] uppercase tracking-wide">활성 세션</h3>
+            <p className="text-xs text-[var(--text-3)] mt-1">
               각 세션은 하나 이상의 AI 에이전트가 실행되고 협업하는 작업 공간입니다.
             </p>
           </div>
-          <button onClick={() => setSortOrder(o => o === 'desc' ? 'asc' : 'desc')} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-200 bg-gray-800 hover:bg-gray-700 px-3 py-1.5 rounded-lg transition-colors">
+          <button onClick={() => setSortOrder(o => o === 'desc' ? 'asc' : 'desc')} className="flex items-center gap-1.5 text-xs text-[var(--text-3)] hover:text-[var(--text)] bg-[var(--surface-3)] hover:bg-[var(--surface-hover)] px-3 py-1.5 rounded-lg transition-colors">
             <ArrowDownUp size={12} />
             {sortOrder === 'desc' ? '최신순' : '오래된순'}
           </button>
@@ -333,22 +341,22 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
       {/* Agent type filter */}
       {allAgentTypes.length > 0 && (
         <div className="flex items-center gap-2 flex-wrap">
-          <Filter size={12} className="text-gray-500" />
-          <button onClick={() => setAgentTypeFilter(null)} className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${!agentTypeFilter ? 'bg-emerald-900/40 border-emerald-500/50 text-emerald-300' : 'border-gray-700 text-gray-400 hover:text-gray-200'}`}>전체</button>
+          <Filter size={12} className="text-[var(--text-3)]" />
+          <button onClick={() => setAgentTypeFilter(null)} className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${!agentTypeFilter ? 'bg-[var(--accent-soft)] border-[var(--accent)] text-[var(--accent-text)]' : 'border-[var(--border)] text-[var(--text-3)] hover:text-[var(--text)]'}`}>전체</button>
           {allAgentTypes.map(t => (
-            <button key={t} onClick={() => setAgentTypeFilter(agentTypeFilter === t ? null : t)} className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${agentTypeFilter === t ? 'bg-emerald-900/40 border-emerald-500/50 text-emerald-300' : 'border-gray-700 text-gray-400 hover:text-gray-200'}`}>{agentTypeLabel(t)}</button>
+            <button key={t} onClick={() => setAgentTypeFilter(agentTypeFilter === t ? null : t)} className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${agentTypeFilter === t ? 'bg-[var(--accent-soft)] border-[var(--accent)] text-[var(--accent-text)]' : 'border-[var(--border)] text-[var(--text-3)] hover:text-[var(--text)]'}`}>{agentTypeLabel(t)}</button>
           ))}
         </div>
       )}
 
       {/* Status filter */}
       <div className="flex items-center gap-2 flex-wrap -mt-3">
-        <Filter size={12} className="text-gray-500" />
-        <button onClick={() => setStatusFilter(null)} className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${!statusFilter ? 'bg-gray-700 border-gray-500/50 text-gray-200' : 'border-gray-700 text-gray-400 hover:text-gray-200'}`}>모든 상태</button>
+        <Filter size={12} className="text-[var(--text-3)]" />
+        <button onClick={() => setStatusFilter(null)} className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${!statusFilter ? 'bg-[var(--surface-3)] border-[var(--border)] text-[var(--text)]' : 'border-[var(--border)] text-[var(--text-3)] hover:text-[var(--text)]'}`}>모든 상태</button>
         {STATUS_ORDER.map(s => {
           const meta = STATUS_META[s]
           return (
-            <button key={s} onClick={() => setStatusFilter(statusFilter === s ? null : s)} className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors ${statusFilter === s ? STATUS_ACTIVE_BG[s] : 'border-gray-700 text-gray-400 hover:text-gray-200'}`}>
+            <button key={s} onClick={() => setStatusFilter(statusFilter === s ? null : s)} className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border transition-colors ${statusFilter === s ? STATUS_ACTIVE_BG[s] : 'border-[var(--border)] text-[var(--text-3)] hover:text-[var(--text)]'}`}>
               <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
               {meta.label}
             </button>
@@ -358,15 +366,15 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
 
       {/* Sessions */}
       {filteredSessions.length === 0 ? (
-        <div className="bg-gray-800/60 border border-gray-700/50 rounded-xl p-8 text-center">
-          <Bot size={32} className="mx-auto text-gray-600 mb-3" />
+        <div className="bg-[var(--surface-2)] border border-[var(--border-soft)] rounded-xl p-8 text-center">
+          <Bot size={32} className="mx-auto text-[var(--text-3)] mb-3" />
           {sessionData.length === 0 ? (
             <>
-              <p className="text-gray-400 text-sm">활성 세션이 없습니다.</p>
-              <p className="text-gray-600 text-xs mt-1"><span className="text-emerald-400 cursor-pointer" onClick={() => onNavigate('agents')}>에이전트 탭</span>에서 첫 에이전트를 실행하세요.</p>
+              <p className="text-[var(--text-3)] text-sm">활성 세션이 없습니다.</p>
+              <p className="text-[var(--text-3)] text-xs mt-1"><span className="text-[var(--accent-text)] cursor-pointer" onClick={() => onNavigate('agents')}>에이전트 탭</span>에서 첫 에이전트를 실행하세요.</p>
             </>
           ) : (
-            <p className="text-gray-400 text-sm">현재 필터와 일치하는 세션이 없습니다.</p>
+            <p className="text-[var(--text-3)] text-sm">현재 필터와 일치하는 세션이 없습니다.</p>
           )}
         </div>
       ) : (
@@ -407,12 +415,12 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
             }, null)
 
             return (
-              <div key={session.name} className="bg-gray-800/60 border border-gray-700/50 rounded-xl overflow-hidden relative">
+              <div key={session.name} className="bg-[var(--surface-2)] border border-[var(--border-soft)] rounded-xl overflow-hidden relative">
                 {/* Orchestrator chat — available without expanding the session */}
                 <button
                   onClick={(e) => { e.stopPropagation(); void openSessionChat(session.name) }}
                   disabled={openingChat === session.name}
-                  className="absolute top-3 right-11 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-emerald-400 hover:text-white bg-emerald-950/50 hover:bg-emerald-700/70 disabled:opacity-40 border border-emerald-800/50 rounded-lg transition-colors z-10"
+                  className="absolute top-3 right-11 flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-[var(--accent-text)] hover:text-[var(--on-accent)] bg-[var(--accent-soft)] hover:bg-[var(--accent)] disabled:opacity-40 border border-[var(--accent)] rounded-lg transition-colors z-10"
                   title={`${session.name} 오케스트레이터에게 프롬프트 보내기`}
                   aria-label={`${session.name} 오케스트레이터 채팅`}
                 >
@@ -423,28 +431,28 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
                 {/* Delete session button */}
                 <button
                   onClick={(e) => { e.stopPropagation(); setPendingDeleteSession(session.name) }}
-                  className="absolute top-3 right-3 p-1.5 text-gray-600 hover:text-red-400 bg-gray-800/80 hover:bg-gray-700 rounded-lg transition-colors z-10"
+                  className="absolute top-3 right-3 p-1.5 text-[var(--text-3)] hover:text-[var(--danger)] bg-[var(--surface-3)] hover:bg-[var(--surface-hover)] rounded-lg transition-colors z-10"
                   title="세션 삭제"
                 >
                   <Trash2 size={12} />
                 </button>
 
                 {/* Session header */}
-                <button onClick={() => toggleSession(session.name)} className="w-full text-left p-4 pr-36 hover:bg-gray-800/40 transition-colors">
+                <button onClick={() => toggleSession(session.name)} className="w-full text-left p-4 pr-36 hover:bg-[var(--surface-2)] transition-colors">
                   <div className="flex items-center gap-3">
-                    {expandedSessions.has(session.name) ? <ChevronDown size={14} className="text-gray-500" /> : <ChevronRight size={14} className="text-gray-500" />}
-                    <Users size={14} className="text-emerald-400" />
-                    <span className="text-sm font-mono text-gray-200">{session.name}</span>
-                    <span className="text-xs text-gray-500">에이전트 {session.terminals.length}개</span>
+                    {expandedSessions.has(session.name) ? <ChevronDown size={14} className="text-[var(--text-3)]" /> : <ChevronRight size={14} className="text-[var(--text-3)]" />}
+                    <Users size={14} className="text-[var(--accent-text)]" />
+                    <span className="text-sm font-mono text-[var(--text)]">{session.name}</span>
+                    <span className="text-xs text-[var(--text-3)]">에이전트 {session.terminals.length}개</span>
                   </div>
                   <div className="ml-8 mt-1.5 flex flex-col gap-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       {typeSummary.map(([type, count]) => (
-                        <span key={type} className="text-[10px] bg-gray-700/60 text-gray-400 px-1.5 py-0.5 rounded">{agentTypeLabel(type)}{count > 1 ? ` ×${count}` : ''}</span>
+                        <span key={type} className="text-[10px] bg-[var(--surface-3)] text-[var(--text-3)] px-1.5 py-0.5 rounded">{agentTypeLabel(type)}{count > 1 ? ` ×${count}` : ''}</span>
                       ))}
                     </div>
                     <StatusSummary counts={statusCounts} />
-                    <div className="flex items-center gap-3 text-[10px] text-gray-600">
+                    <div className="flex items-center gap-3 text-[10px] text-[var(--text-3)]">
                       {sessionStart && <span title={fmtAbs(sessionStart) || ''}>시작 {fmtRel(sessionStart)}</span>}
                       {sessionLastActive && <span title={fmtAbs(sessionLastActive) || ''}>활동 {fmtRel(sessionLastActive)}</span>}
                     </div>
@@ -453,13 +461,13 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
 
                 {/* Terminals grouped by agent type */}
                 {expandedSessions.has(session.name) && (
-                  <div className="border-t border-gray-700/30 px-4 pb-4 space-y-3 pt-3">
+                  <div className="border-t border-[var(--border-soft)] px-4 pb-4 space-y-3 pt-3">
                     {Object.entries(grouped).map(([agentType, terminals]) => (
                       <div key={agentType}>
                         <div className="flex items-center gap-2 mb-2">
-                          <Bot size={11} className="text-gray-500" />
-                          <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">{agentTypeLabel(agentType)}</span>
-                          <span className="text-[10px] text-gray-600">({terminals.length})</span>
+                          <Bot size={11} className="text-[var(--text-3)]" />
+                          <span className="text-[10px] font-semibold text-[var(--text-3)] uppercase tracking-wider">{agentTypeLabel(agentType)}</span>
+                          <span className="text-[10px] text-[var(--text-3)]">({terminals.length})</span>
                         </div>
                         <div className="space-y-1.5">
                           {terminals.map(t => {
@@ -467,35 +475,35 @@ export function DashboardHome({ onNavigate }: { onNavigate: (tab: string) => voi
                             const relActive = fmtRel(t.last_active)
                             const showActive = relActive && relActive !== relCreated
                             return (
-                              <div key={t.id} className="bg-gray-900/50 border border-gray-700/30 rounded-lg px-3 py-2 space-y-1.5">
+                              <div key={t.id} className="bg-[var(--surface)] border border-[var(--border-soft)] rounded-lg px-3 py-2 space-y-1.5">
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center gap-2 min-w-0">
-                                    <TermIcon size={12} className="text-gray-500 shrink-0" />
-                                    <span className="text-xs font-medium text-gray-300 truncate">{t.agent_profile || '기본값'}</span>
-                                    <span className="text-[10px] font-mono text-gray-600">{t.id.slice(0, 8)}</span>
+                                    <TermIcon size={12} className="text-[var(--text-3)] shrink-0" />
+                                    <span className="text-xs font-medium text-[var(--text-2)] truncate">{t.agent_profile || '기본값'}</span>
+                                    <span className="text-[10px] font-mono text-[var(--text-3)]">{t.id.slice(0, 8)}</span>
                                     <StatusBadge status={terminalStatuses[t.id] || null} />
-                                    <span className="text-[10px] text-gray-600">{t.provider}</span>
+                                    <span className="text-[10px] text-[var(--text-3)]">{t.provider}</span>
                                   </div>
                                   <div className="flex items-center gap-1 shrink-0">
-                                    <button onClick={() => setInboxTerminalId(t.id)} className="p-1 text-gray-500 hover:text-white bg-gray-800 hover:bg-gray-700 rounded transition-colors" title="받은편지함"><Mail size={12} /></button>
-                                    <button onClick={() => setOutputTerminalId(t.id)} className="p-1 text-gray-500 hover:text-white bg-gray-800 hover:bg-gray-700 rounded transition-colors" title="출력"><FileText size={12} /></button>
-                                    <button onClick={() => setLiveTerminal({ id: t.id, provider: t.provider, agentProfile: t.agent_profile })} className="flex items-center gap-1 px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-medium rounded transition-colors"><Monitor size={12} />터미널</button>
-                                    <button onClick={() => setPendingExit(t)} disabled={exitingTerminal === t.id} className="p-1 text-gray-500 hover:text-amber-400 bg-gray-800 hover:bg-gray-700 rounded transition-colors" title="정상 종료"><LogOut size={12} /></button>
-                                    <button onClick={() => setPendingClose(t)} disabled={closingTerminal === t.id} className="p-1 text-gray-500 hover:text-red-400 bg-gray-800 hover:bg-gray-700 rounded transition-colors" title="닫기"><Trash2 size={12} /></button>
+                                    <button onClick={() => setInboxTerminalId(t.id)} className="p-1 text-[var(--text-3)] hover:text-[var(--text)] bg-[var(--surface-3)] hover:bg-[var(--surface-hover)] rounded transition-colors" title="받은편지함"><Mail size={12} /></button>
+                                    <button onClick={() => setOutputTerminalId(t.id)} className="p-1 text-[var(--text-3)] hover:text-[var(--text)] bg-[var(--surface-3)] hover:bg-[var(--surface-hover)] rounded transition-colors" title="출력"><FileText size={12} /></button>
+                                    <button onClick={() => setLiveTerminal({ id: t.id, provider: t.provider, agentProfile: t.agent_profile })} className="flex items-center gap-1 px-2 py-1 bg-[var(--accent)] hover:bg-[var(--accent)] text-[var(--on-accent)] text-[10px] font-medium rounded transition-colors"><Monitor size={12} />터미널</button>
+                                    <button onClick={() => setPendingExit(t)} disabled={exitingTerminal === t.id} className="p-1 text-[var(--text-3)] hover:text-[var(--warning)] bg-[var(--surface-3)] hover:bg-[var(--surface-hover)] rounded transition-colors" title="정상 종료"><LogOut size={12} /></button>
+                                    <button onClick={() => setPendingClose(t)} disabled={closingTerminal === t.id} className="p-1 text-[var(--text-3)] hover:text-[var(--danger)] bg-[var(--surface-3)] hover:bg-[var(--surface-hover)] rounded transition-colors" title="닫기"><Trash2 size={12} /></button>
                                   </div>
                                 </div>
                                 {/* Timestamps */}
-                                <div className="flex items-center gap-3 text-[10px] text-gray-600">
+                                <div className="flex items-center gap-3 text-[10px] text-[var(--text-3)]">
                                   {relCreated && <span title={fmtAbs(t.created_at) || ''}>{relCreated}</span>}
                                   {showActive && <span title={fmtAbs(t.last_active) || ''}>↻ {relActive}</span>}
                                 </div>
                                 {/* Quick Send */}
                                 {!sendInputOpen[t.id] ? (
-                                  <button onClick={() => setSendInputOpen(prev => ({ ...prev, [t.id]: true }))} className="text-[10px] text-gray-600 hover:text-gray-300 transition-colors">에이전트에게 메시지...</button>
+                                  <button onClick={() => setSendInputOpen(prev => ({ ...prev, [t.id]: true }))} className="text-[10px] text-[var(--text-3)] hover:text-[var(--text-2)] transition-colors">에이전트에게 메시지...</button>
                                 ) : (
                                   <div className="flex items-center gap-1.5">
-                                    <input type="text" value={sendInputValues[t.id] || ''} onChange={e => setSendInputValues(prev => ({ ...prev, [t.id]: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') handleSendInput(t.id) }} placeholder="메시지를 입력하세요..." className="flex-1 bg-gray-900 border border-gray-700 text-gray-200 text-[11px] font-mono rounded px-2 py-1 focus:border-emerald-500 focus:outline-none" autoFocus />
-                                    <button onClick={() => handleSendInput(t.id)} disabled={sendingInput === t.id || !(sendInputValues[t.id] || '').trim()} className="flex items-center gap-1 px-2 py-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-[10px] font-medium rounded transition-colors"><Send size={10} /></button>
+                                    <input type="text" value={sendInputValues[t.id] || ''} onChange={e => setSendInputValues(prev => ({ ...prev, [t.id]: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') handleSendInput(t.id) }} placeholder="메시지를 입력하세요..." className="flex-1 bg-[var(--surface)] border border-[var(--border)] text-[var(--text)] text-[11px] font-mono rounded px-2 py-1 focus:border-[var(--accent)] focus:outline-none" autoFocus />
+                                    <button onClick={() => handleSendInput(t.id)} disabled={sendingInput === t.id || !(sendInputValues[t.id] || '').trim()} className="flex items-center gap-1 px-2 py-1 bg-[var(--accent)] hover:bg-[var(--accent)] disabled:opacity-40 text-[var(--on-accent)] text-[10px] font-medium rounded transition-colors"><Send size={10} /></button>
                                   </div>
                                 )}
                               </div>

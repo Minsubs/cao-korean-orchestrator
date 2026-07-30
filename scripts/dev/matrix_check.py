@@ -8,7 +8,7 @@ generations settle, and the supervisor emits its post-callback final marker.
 Prereqs: source cao-server on 127.0.0.1:9889 with CAO_HOME on ext4; codex/claude/
 agy installed and signed in; these profiles resolvable by the server:
   codex:           codex_orchestrator_sol / codex_qa_terra
-  claude_code:     claude_orchestrator_sonnet / claude_scout_haiku
+  claude_code:     claude_orchestrator_opus / claude_scout_haiku
   antigravity_cli: antigravity_orchestrator_agy / antigravity_qa_agy
 
 Run::
@@ -28,7 +28,7 @@ from fixed_orchestrator_check import Case, CheckFailure, request, run_case
 # provider-key -> (provider, orchestrator_profile, worker_profile)
 PROVIDERS = {
     "CX": ("codex", "codex_orchestrator_sol", "codex_qa_terra"),
-    "CL": ("claude_code", "claude_orchestrator_sonnet", "claude_scout_haiku"),
+    "CL": ("claude_code", "claude_orchestrator_opus", "claude_scout_haiku"),
     "AG": ("antigravity_cli", "antigravity_orchestrator_agy", "antigravity_qa_agy"),
 }
 
