@@ -67,6 +67,13 @@ export function AddAgentModal({ onClose, onInstalled }: AddAgentModalProps) {
   const [result, setResult] = useState<BuiltProfile | null>(null)
   const [copied, setCopied] = useState(false)
 
+  // Real install directory (settings-backed, CAO_HOME_DIR-aware) shown next to
+  // the name field — must never be a hardcoded `~/.aws/...` guess, since
+  // CAO_HOME_DIR can be overridden (see settings_service.get_agent_dirs).
+  // `codex` is the settings key for the shared CAO agent-store that
+  // install_agent_content() actually writes new profiles into.
+  const [installDir, setInstallDir] = useState<string | null>(null)
+
   const loadCatalog = () => {
     setCatalogLoading(true)
     setCatalogError(null)
@@ -97,6 +104,10 @@ export function AddAgentModal({ onClose, onInstalled }: AddAgentModalProps) {
       })
       .catch(() => setProvidersError('실행 AI 목록을 불러오지 못했어요 — 기본값(Claude Code)으로 진행해요'))
     loadCatalog()
+    api
+      .getAgentDirs()
+      .then(settings => setInstallDir(settings.agent_dirs.codex ?? settings.agent_dirs.cao_installed ?? null))
+      .catch(() => setInstallDir(null))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -250,7 +261,10 @@ export function AddAgentModal({ onClose, onInstalled }: AddAgentModalProps) {
                     className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5 py-2 text-xs text-[var(--text)] outline-none focus:border-[var(--accent)]"
                   />
                   <div className="mt-1 text-[10.5px] text-[var(--text-3)]">
-                    설치 위치: <span className="font-mono">~/.aws/cli-agent-orchestrator/agent-store/{name.trim() || '<이름>'}.md</span>
+                    설치 위치:{' '}
+                    <span className="font-mono">
+                      {installDir ? `${installDir}/${name.trim() || '<이름>'}.md` : '불러오는 중…'}
+                    </span>
                     {!nameValid && name.length > 0 && (
                       <span className="ml-1 text-[var(--danger)]">영문/숫자/-/_ 1~64자만 사용할 수 있어요</span>
                     )}

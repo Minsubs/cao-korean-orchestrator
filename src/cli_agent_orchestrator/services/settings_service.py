@@ -6,23 +6,35 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-from cli_agent_orchestrator.constants import CAO_HOME_DIR
+from cli_agent_orchestrator.constants import AGENT_CONTEXT_DIR, CAO_HOME_DIR, LOCAL_AGENT_STORE_DIR
 from cli_agent_orchestrator.utils.paths import normalized_path
 
 logger = logging.getLogger(__name__)
 
 SETTINGS_FILE = CAO_HOME_DIR / "settings.json"
 
-# Default agent directories per provider
-_DEFAULTS = {
-    "kiro_cli": str(Path.home() / ".kiro" / "agents"),
-    # Claude Code's native subagents live here. CAO's own cross-provider
-    # profiles are scanned separately from LOCAL_AGENT_STORE_DIR, so pointing
-    # this provider at that same CAO store hid the user's native role roster.
-    "claude_code": str(Path.home() / ".claude" / "agents"),
-    "codex": str(Path.home() / ".aws" / "cli-agent-orchestrator" / "agent-store"),
-    "cao_installed": str(Path.home() / ".aws" / "cli-agent-orchestrator" / "agent-context"),
-}
+
+def _defaults() -> Dict[str, str]:
+    """Default agent directories per provider, computed at read time.
+
+    Deliberately a function rather than a frozen module-level dict: `codex`
+    and `cao_installed` read ``LOCAL_AGENT_STORE_DIR`` / ``AGENT_CONTEXT_DIR``
+    directly (the single source of truth in constants.py, itself derived from
+    CAO_HOME_DIR) instead of re-deriving the same path here — a second
+    derivation is exactly what let this drift from CAO_HOME_DIR in the first
+    place. Reading them inside the function (not baked into a module-level
+    dict) means a CAO_HOME_DIR override — the env var, or these names patched
+    in tests — is picked up on every call rather than frozen at import time.
+    """
+    return {
+        "kiro_cli": str(Path.home() / ".kiro" / "agents"),
+        # Claude Code's native subagents live here. CAO's own cross-provider
+        # profiles are scanned separately from LOCAL_AGENT_STORE_DIR, so pointing
+        # this provider at that same CAO store hid the user's native role roster.
+        "claude_code": str(Path.home() / ".claude" / "agents"),
+        "codex": str(LOCAL_AGENT_STORE_DIR),
+        "cao_installed": str(AGENT_CONTEXT_DIR),
+    }
 
 
 def _load() -> Dict[str, Any]:
@@ -61,7 +73,7 @@ def get_agent_dirs() -> Dict[str, str]:
         # Legacy flat format: {"agent_dirs": {...}}
         saved = settings.get("agent_dirs", {})
     # Merge defaults with saved — saved overrides defaults
-    result = dict(_DEFAULTS)
+    result = _defaults()
     result.update(saved)
     return result
 
@@ -80,8 +92,9 @@ def set_agent_dirs(dirs: Dict[str, str]) -> Dict[str, str]:
         current = nested["dirs"]
     else:
         current = settings.get("agent_dirs", {})
+    known_providers = _defaults()
     for provider, path in dirs.items():
-        if provider in _DEFAULTS:
+        if provider in known_providers:
             current[provider] = path
     # Write nested format
     agents_section = settings.get("agents", {})
