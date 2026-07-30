@@ -42,14 +42,14 @@ const CARD: DelegationCard = {
   hasSignal: true,
 }
 
-function renderPanel(terminalStatuses: Record<string, string>) {
+function renderPanel(terminalStatuses: Record<string, string>, cards = [CARD]) {
   const noop = () => {}
   return render(
     <AgentSidePanel
       collapsed={false}
       sessionName="sess-a"
       terminals={[SUPERVISOR]}
-      cards={[CARD]}
+      cards={cards}
       terminalStatuses={terminalStatuses}
       sessionWorkingDirectory="/home/user/project"
       onMessageTarget={noop}
@@ -67,8 +67,18 @@ function renderPanel(terminalStatuses: Record<string, string>) {
 describe('AgentSidePanel agent-viz A/B switch (Phase 4-C Task 4)', () => {
   afterEach(() => window.localStorage.clear())
 
-  it('shows the board (A) when the whole team is idle', () => {
+  // Contract change: auto used to require a worker to be actively PROCESSING, so
+  // a session whose workers had finished dropped back to the flat board — which
+  // shows who exists but not who delegated to whom, exactly when the user wants
+  // to see how the run flowed. The hierarchy is now the auto view as soon as this
+  // session has delegated at all.
+  it('keeps the hierarchy (B) once the session has delegated, even when idle', () => {
     renderPanel({ bbbbbbbb: 'idle' })
+    expect(screen.getByTestId('agent-viz')).toHaveAttribute('data-view', 'hier')
+  })
+
+  it('shows the board (A) for a session that has not delegated yet', () => {
+    renderPanel({}, [])
     expect(screen.getByTestId('agent-viz')).toHaveAttribute('data-view', 'board')
   })
 

@@ -200,6 +200,21 @@ export function Composer({
       submit()
       return
     }
+    // A plain Enter sends; Shift+Enter is the newline — which is what the
+    // placeholder has always advertised while only ⌘/Ctrl+Enter actually sent.
+    //
+    // The IME guard is not optional here: this UI is Korean-first, and Enter is
+    // the key that commits an in-flight Hangul composition. Sending on that
+    // keystroke would fire off a half-typed sentence almost every time. Some
+    // IMEs report the commit with `isComposing`, others only as keyCode 229, so
+    // both are checked.
+    if (e.key === 'Enter' && !e.shiftKey && !e.altKey) {
+      const native = e.nativeEvent as unknown as { isComposing?: boolean; keyCode?: number }
+      if (native.isComposing || native.keyCode === 229) return
+      e.preventDefault()
+      submit()
+      return
+    }
     if (e.key === 'ArrowUp' && text.length === 0 && historyRef.current.length > 0) {
       e.preventDefault()
       historyIndexRef.current = Math.min(historyIndexRef.current + 1, historyRef.current.length - 1)
@@ -313,7 +328,7 @@ export function Composer({
           />
 
           <div className="mt-1.5 flex items-center gap-2">
-            <span className="text-[10.5px] text-[var(--text-3)]">↑ 입력 이력 · ⌘⏎ 전송</span>
+            <span className="text-[10.5px] text-[var(--text-3)]">↑ 입력 이력 · ⏎ 전송 · Shift+⏎ 줄바꿈</span>
             {streamStatus === 'connecting' && (
               <span className="flex items-center gap-1 text-[10.5px] text-[var(--info)]">
                 <Loader2 size={11} className="animate-spin" />

@@ -4,6 +4,7 @@ import { StatusBadge } from '../../components/StatusBadge'
 import { AgentAvatar } from './AgentAvatar'
 import { ProgressCard } from './ProgressCard'
 import { formatElapsed } from './orchestrationProgress'
+import { instructionSummary, stripInstructionPlumbing } from './instructionSummary'
 import { computeStall, stallMinutes } from './stall'
 import { useNowTick } from './useNowTick'
 import type { UiConnectionStatus } from './eventsClient'
@@ -110,6 +111,10 @@ function DelegationCardBlock({
   onRequestStatusCheck: (id: string, agentName: string | null) => Promise<void>
 }) {
   const [checkRequested, setCheckRequested] = useState(false)
+  const [showFullInstruction, setShowFullInstruction] = useState(false)
+  // The raw instruction carries orchestration plumbing and runs for hundreds of
+  // characters; show a cleaned summary and let the user expand it.
+  const instruction = instructionSummary(card.instruction)
   const status = resolveStatus(card, terminalStatuses)
   const stall = computeStall({ ...card, status: status?.toLowerCase() ?? card.status }, now)
   const isError = (status ?? '').toUpperCase() === 'ERROR'
@@ -142,10 +147,19 @@ function DelegationCardBlock({
         {status && <StatusBadge status={status} />}
       </div>
 
-      {card.instruction && (
+      {instruction.text && (
         <p className="mt-2 text-xs leading-relaxed text-[var(--text-2)]">
           <span className="font-semibold text-[var(--text-3)]">{INSTRUCTION_TYPE_LABEL[card.instructionType ?? ''] ?? '지시'}: </span>
-          {card.instruction}
+          {showFullInstruction ? stripInstructionPlumbing(card.instruction) : instruction.text}
+          {instruction.truncated && (
+            <button
+              type="button"
+              onClick={() => setShowFullInstruction(v => !v)}
+              className="ml-1 align-baseline text-[10px] font-semibold text-[var(--text-3)] hover:text-[var(--text)]"
+            >
+              {showFullInstruction ? '접기' : '전체 보기'}
+            </button>
+          )}
         </p>
       )}
 

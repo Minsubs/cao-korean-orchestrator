@@ -13,6 +13,12 @@ import {
 import { applyUiEvents, buildThreadItems, filterUiEventsForSession, mergeSeededCard, seedCardFromTerminalMeta, withCallerNames } from './threadReducer'
 import { computeOrchestrationProgress, summarizeOrchestration, type OrchestrationSummary } from './orchestrationProgress'
 import { classifyOrchestrationError, pendingTimeoutMessage, type ClassifiedError } from './orchestrationError'
+import {
+  isTurnQuiet,
+  PENDING_POLL_MS,
+  PENDING_QUIET_POLL_MS,
+  progressFingerprint,
+} from './pendingProgress'
 import type { UiConnectionStatus } from './eventsClient'
 import type { ChatEntry, DelegationCard, ThreadItem, UiEvent } from './types'
 import { orchestrationReplyFingerprint, snapshotInputGenerations } from './sessionCompletion'
@@ -20,7 +26,6 @@ import { loadDelegationHistory, saveDelegationHistory } from './delegationHistor
 import { inferTeamRosterFromOutput, loadTeamRoster, saveTeamRoster, type TeamRosterProfile } from './teamRoster'
 
 const SESSION_POLL_MS = 4000
-const PENDING_TIMEOUT_MS = 180000
 
 export interface WorkspaceSessionState {
   loading: boolean
@@ -379,7 +384,14 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
     if (!pendingReply || !sessionName) return
     let cancelled = false
     let timer: ReturnType<typeof setTimeout> | undefined
-    let timeoutTimer: ReturnType<typeof setTimeout> | undefined
+    // Inactivity, not a stopwatch: a multi-agent turn can legitimately run for
+    // many minutes, so the clock resets whenever anything moves. Nothing is
+    // discarded when it does go quiet — polling just slows down, so a late
+    // answer still lands (the old flat 180s cleared pendingReply and the reply
+    // could never be shown at all).
+    let lastProgressAt = Date.now()
+    let lastFingerprint = ''
+    let announcedQuiet = false
 
     const poll = async () => {
       try {
@@ -422,6 +434,20 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
         )
         if (beforeFingerprint !== afterFingerprint) throw new Error('Orchestration state changed during output read')
 
+        // Any movement re-arms the wait — computed from the detail this round
+        // already fetched, so watching for progress costs no extra request.
+        const fingerprint = progressFingerprint({
+          output: outputResult.output || '',
+          generations: snapshotInputGenerations(sessionAfter.terminals),
+          latestInboxId: inboxAfter.reduce((max, m) => Math.max(max, m.id), 0),
+          statuses: terminalStatusesRef.current,
+        })
+        if (fingerprint !== lastFingerprint) {
+          lastFingerprint = fingerprint
+          lastProgressAt = Date.now()
+          announcedQuiet = false
+        }
+
         const clean = formatOrchestratorOutput(outputResult.output || '')
         if (clean && clean !== pendingReply.baseline) {
           // Freeze what this turn actually delegated, so the collapsed
@@ -445,21 +471,22 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
       } catch {
         // Transient poll failure — keep the sent prompt visible and keep retrying.
       }
-      if (!cancelled) timer = setTimeout(poll, 2000)
+      if (cancelled) return
+
+      const quiet = isTurnQuiet(lastProgressAt, Date.now())
+      if (quiet && !announcedQuiet) {
+        announcedQuiet = true
+        // Say so, but keep the turn alive so the answer can still replace this.
+        replaceChatEntry(pendingReply.messageId, pendingTimeoutMessage())
+      }
+      if (!cancelled) timer = setTimeout(poll, quiet ? PENDING_QUIET_POLL_MS : PENDING_POLL_MS)
     }
 
     void poll()
-    timeoutTimer = setTimeout(() => {
-      if (cancelled) return
-      replaceChatEntry(pendingReply.messageId, pendingTimeoutMessage())
-      setPendingReply(null)
-      setSending(false)
-    }, PENDING_TIMEOUT_MS)
 
     return () => {
       cancelled = true
       if (timer) clearTimeout(timer)
-      if (timeoutTimer) clearTimeout(timeoutTimer)
     }
   }, [pendingReply, replaceChatEntry, sessionName, supervisorTerminalId])
 
