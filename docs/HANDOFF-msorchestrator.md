@@ -437,9 +437,10 @@ CAO fork를 "채팅 중심 멀티 에이전트 오케스트레이션 작업대 +
 6. ✅ **UX Phase 1~6 + 6b 프런트 전부 완료·머지** — Phase 1(§0.14), Phase 4·5·6b(§0.14.1, PR #5·#6), Phase 2(PR #7)·Phase 3(PR #8)(§0.15), Phase 5/6 잔여·알림 초기화·문구 통일(PR #11~#13), 라이브 결함 3라운드(PR #14·#15·#16, §0.16). **2026-08-03 기준 열린 PR 0건, `main` = `4ae4f42`.**
 7. 🔄 **Phase 7 Electron 진행 중(§0.19)** — 백엔드 시임(#23), `electron/` + server-manager(#24), `caoNative` 브리지
    + 웹 감지(#25), WSL·셸 감지 + builder 설정(#26) 머지 완료. Tauri 2 검토 결론은 **Electron 유지**.
-   **남은 것**: `shellConfig` 브리지·설정 화면 셸 카드, spawn 에 선택 셸/배포판 실제 반영, mac 실기동+dmg,
-   Windows nsis 실검증(사용자 수행), 트레이 아이콘 실물. **GUI 는 아직 한 번도 안 띄웠다** — 검증된 것은 순수
-   로직과 웹 폴백뿐이다.
+   `shellConfig` 브리지·설정 카드·spawn 반영·서버 로그·CSP·아이콘까지 완료(§0.20).
+   **Windows 실기동 검증 완료** — attach/spawn, WSL·셸 감지, 메뉴 6개, nsis 패키징, 종료 시 서버 정리.
+   그 과정에서 유닛이 놓친 결함 3건(preload 샌드박스, Windows 바이너리 조회, POSIX 모양 spawn/kill)을 잡았다.
+   **남은 것**: mac(사용자 지시로 제외 — dmg·로그인 셸 감지), 인스톨러 설치→실행 경로.
 8. **잔여 폴리시(작은 것들)** — 습니다체 54곳, mypy 27건(CI 허용), `MemoryGraphView` Sigma 캔버스 hex paint 4개(테마 비반응 — mount 시점 CSS 변수 읽기 필요), 새 작업 모달 첫 턴과 채팅 경로 통일 여부(§0.15 미결), §0.14.1 후속 폴리시 잔여분.
 9. ✅ **미머지 `tooling-wsl-fix`(`1486bf4`) 처리 완료** — `cache.cached_which()` 계열만 PR #18 로 이식했고, 병렬화는
    의도적으로 제외했다(§0.17). 원 브랜치는 `archive/tooling-wsl-fix` 태그로만 남기고 삭제했다(§0.18).
@@ -710,6 +711,54 @@ CI 에 `Desktop Shell` job 추가(typecheck + 단위만, `ELECTRON_SKIP_BINARY_D
 이 세션은 **GUI 를 한 번도 띄우지 않았다.** 디스플레이 없는 WSL 이라 Electron 창·폴더 대화상자·트레이·부트 화면은
 코드로만 존재한다. 검증된 것은 순수 로직(server-manager·WSL 파싱·셸 검증·브리지 가드)과 웹 측 폴백 동작뿐이다.
 패키징도 실행하지 않았다(설정만).
+
+### 0.20. 2026-08-03 Windows 실기동 검증 — 유닛 110개가 놓친 결함 3건 (Claude Opus, 백그라운드 잡)
+
+§0.19 는 "GUI 를 한 번도 안 띄웠다"로 끝났다. 이 절은 그 검증을 실제로 한 기록이다. **결론부터: 유닛 테스트
+110개가 전부 통과하는 상태에서 앱은 반쯤 죽어 있었다.**
+
+#### 검증 환경 (재현 가능)
+
+이 저장소가 도는 WSL 이 곧 Windows 호스트 위에 있어서, mac 없이도 Windows 경로 전체를 여기서 검증할 수 있다.
+
+1. WSL 에서 서버 기동(attach 검증용): `CAO_HOME_DIR=… PYTHONPATH=src .venv/bin/cao-server --host 127.0.0.1 --port 9889`
+   → Windows 에서 `Invoke-WebRequest http://127.0.0.1:9889/health` 로 도달 확인(WSL2 localhost 포워딩).
+2. `npm run build` 후 `dist/ boot.html assets/ package.json` 을 `C:\Users\<user>\cao-desktop-test\` 로 복사,
+   그 폴더에서 `npm install electron@43` → `npx electron .`.
+3. spawn 검증에는 로그인 셸 PATH 에 `cao-server` 가 있어야 한다. 검증용으로 `~/.local/bin/cao-server` 래퍼
+   스크립트를 두었다(저장소 코드 아님, 지워도 무방).
+4. 창 캡처는 `webContents.capturePage()`. **창이 가려져 있으면 Chromium 이 리페인트를 스로틀링해 stale 프레임이
+   찍힌다** — 메뉴 3개가 같은 바이트로 나와서 알았다. `setAlwaysOnTop(true)+focus()` 후 캡처할 것.
+
+#### 실기동에서만 드러난 결함 3건
+
+| 결함 | 왜 유닛이 못 잡았나 | 수정 |
+|---|---|---|
+| **브리지가 통째로 미로딩** — 샌드박스 preload 는 상대경로 `require` 를 못 한다. `module not found: ./bridge-contract` → preload 사망 → `window.caoNative` 부재. 앱은 "그냥 브라우저"처럼 보이고 **메인 로그엔 아무 것도 안 남는다** | 테스트는 모듈을 직접 import 하므로 샌드박스 제약을 재현할 수 없다 | preload 를 자기완결형으로. 채널명은 계약의 `as const` 타입에 고정(드리프트=컴파일 에러) + **소스를 읽어** 런타임 import 가 `electron` 뿐인지 검사하는 테스트 |
+| **Windows 바이너리 조회가 엉뚱한 머신** — Windows PATH 와 `C:\Users\<u>/.local/bin`(존재 불가)을 뒤졌다. 서버는 WSL 안에 있다 | 유닛은 `which` 를 스텁했으니 "찾음"만 검증했다 | `wsl.exe -- bash -lc 'command -v cao-server'` 로 distro 에 질의, bare name 반환(로그인 셸이 해석) |
+| **spawn/kill 이 POSIX 모양** — `detached: true` 가 Windows 에선 별도 콘솔을 만들어 파이프가 비고 **로그가 0바이트**. `process.kill(-pid)` 는 POSIX 전용이라 예외 → **앱을 닫아도 서버가 살아 포트를 점유** | 스텁 핸들은 실제 프로세스 트리를 흉내내지 않는다 | Windows 는 `detached:false + windowsHide`, 종료는 `taskkill /pid <pid> /T [/F]` |
+
+부수로 빌드 경로 결함도 나왔다: 루트 tsconfig(테스트 포함)로 emit 하니 `dist/src/main.js` 가 되어
+`join(__dirname,'..')` 의 `boot.html`·트레이 아이콘 경로가 전부 깨졌다 → build 전용 tsconfig 로 `rootDir: src` 고정.
+
+#### 실측 결과
+
+- **attach**: `serverMode: attached`, 헤더 칩 `Windows · 실행 중인 서버에 연결됨`.
+- **spawn**: `serverMode: spawned` — 앱이 `wsl.exe` 로 WSL 안에 서버를 띄우고 실제 PID 확인. 로그 파일에 서버 출력
+  기록(887 bytes). **창을 닫으면 `cao-server` 프로세스 0개** — taskkill 트리 종료 확인.
+- **WSL/셸 감지(실데이터)**: `wsl:Ubuntu` 사용가능, `wsl:docker-desktop` 사유와 함께 차단,
+  `Windows PowerShell 5.1` + tmux 주의문구, `autoResolvesTo: WSL · Ubuntu`. 설정 카드가 그대로 렌더.
+- **메뉴 6개 전수**(작업공간/자동화/도구 및 확장/Agent 프로필/메모리/설정): 전부 실데이터로 로드, **신규 콘솔 에러 0**.
+- **CSP**: 서버가 CSP 를 안 보내서 셸이 주입한다(`script-src 'self'`, style 만 `unsafe-inline`). 적용 후에도 6개 메뉴
+  에러 0이고, 유일하게 남아 있던 Electron insecure-CSP 경고가 사라졌다.
+- **패키징**: `npx electron-builder --win --x64` 로 `MS Orchestrator Setup 0.1.0.exe`(약 95MB) 생성. `win-unpacked`
+  실행본이 창을 띄우고 WSL 서버를 spawn 하는 것까지 확인. 트레이/앱 아이콘은 UI 액센트색 "M" 마크로 교체.
+
+#### 남은 것
+
+- **mac**: 사용자 지시로 이번 범위에서 제외(dmg·로그인 셸 감지 미검증).
+- 인스톨러로 **설치→실행**까지는 안 했다(unpacked 실행본만 확인).
+- 검증용 로컬 자산: `C:\Users\User\cao-desktop-test\`, `~/.local/bin/cao-server` 래퍼. 지워도 저장소 영향 없음.
 
 ## 7. 데이터/저장 규약 (프런트 로컬)
 `cao:theme`(라이트 기본), `cao:projects:v1`, `cao:hidden-providers:v1`(기본 [kiro_cli,kimi_cli,cursor_cli,hermes]), `cao:workbench:v1:<session>`, `cao:workspace:team-roster:v1:<session>`, `cao:workspace:delegation-history:v1:<session>`, `cao:env-profiles:v1`, `cao:usage:claude-limits-optin:v1`, `cao:pending-select-session`(sessionStorage). 세션명은 서버 규칙 `^[A-Za-z0-9_][A-Za-z0-9_-]{0,59}$`(cao- 프리픽스는 표시에서만 숨김 — displayName.ts).
