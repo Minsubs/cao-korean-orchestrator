@@ -62,3 +62,20 @@ export function withCspHeader(
   merged['Content-Security-Policy'] = [contentSecurityPolicy()]
   return merged
 }
+
+/**
+ * Whether this response should carry our policy.
+ *
+ * **Only the server's own http origin.** The header is a blunt instrument: it
+ * also lands on `file://` responses, and our boot/diagnostics screen is a local
+ * file whose inline script is what swaps in the current state. Injecting there
+ * blocked that script, so a failed start sat forever on "서버를 확인하는 중이에요"
+ * with the real diagnosis never rendering — the app looked hung when it had
+ * actually finished and failed in under two seconds.
+ *
+ * The boot page ships its own restrictive meta CSP, so leaving it alone does
+ * not leave it unprotected.
+ */
+export function shouldInjectCsp(url: string): boolean {
+  return /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//.test(url)
+}

@@ -25,6 +25,9 @@
       <p id="detail">이미 실행 중인 서버가 있으면 새로 띄우지 않고 연결합니다.</p>
     </main>
     <script>
+      const params0 = new URLSearchParams(location.search)
+      const isWindows = params0.get('platform') === 'win32'
+
       // No progress bar: every state here reflects a real health check result,
       // never a timer pretending to be one.
       const STATES = {
@@ -38,9 +41,18 @@
         },
         'failed:binary-not-found': {
           title: 'cao-server 를 찾지 못했어요',
-          detail:
-            'PATH 와 <code>~/.local/bin</code>, uv tool 설치 위치를 확인했지만 실행 파일이 없습니다. ' +
-            '터미널에서 <code>cao-server --help</code> 가 동작하는지 확인해 주세요.',
+          // Where to look differs by platform, and pointing a Windows user at a
+          // POSIX PATH sends them to the wrong machine entirely: on Windows the
+          // server runs inside WSL, so the Windows PATH says nothing about it.
+          detail: isWindows
+            ? 'WSL 안에서 <code>cao-server</code> 를 찾지 못했습니다. WSL 터미널에서 ' +
+              '<code>cao-server --help</code> 가 동작하는지 확인해 주세요. 아직 설치 전이라면 ' +
+              // Deliberately not `uv tool install cli-agent-orchestrator`: that pulls
+              // upstream CAO from PyPI, not this fork. Install from the checkout.
+              '저장소 체크아웃에서 <code>uv tool install .</code> 로 설치하거나, ' +
+              '<code>PYTHONPATH=src uv run cao-server</code> 로 직접 띄우면 앱이 연결합니다.'
+            : 'PATH 와 <code>~/.local/bin</code>, uv tool 설치 위치를 확인했지만 실행 파일이 없습니다. ' +
+              '터미널에서 <code>cao-server --help</code> 가 동작하는지 확인해 주세요.',
         },
         'failed:no-free-port': {
           title: '사용할 수 있는 포트가 없어요',
@@ -54,7 +66,7 @@
         },
       }
 
-      const state = new URLSearchParams(location.search).get('state') || 'checking'
+      const state = params0.get('state') || 'checking'
       const copy = STATES[state] || STATES.checking
       document.getElementById('title').innerHTML = '<span class="dot"></span>' + copy.title
       document.getElementById('detail').innerHTML = copy.detail
