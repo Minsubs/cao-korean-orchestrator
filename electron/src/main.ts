@@ -17,15 +17,20 @@ import { join } from 'node:path'
 
 import { CHANNELS, type AppInfo, type ShellSettings } from './bridge-contract'
 import { buildCaoHomeProbePlan, needsSafeCaoHome, parseCaoHomeProbe, safeCaoHome } from './cao-home'
+import {
+  buildDrivePathPlan,
+  isDrivePath,
+  isPosixPath,
+  parseUncWslPath,
+  toUncPath,
+} from './wsl-paths'
 import { isSafeExternalUrl, normalizeInitialPath } from './bridge-guards'
 import { shouldInjectCsp, withCspHeader } from './csp'
 import {
   buildInstallPlan,
   buildNpmLookupPlan,
   buildUvLookupPlan,
-  buildWslPathPlan,
   parseBinaryPath,
-  parseUncWslPath,
   summarizeInstall,
   verifyCheckout,
 } from './install-server'
@@ -124,6 +129,43 @@ function createWindow(): BrowserWindow {
   })
 
   return window
+}
+
+/** The distro paths should be expressed against — the configured one, or WSL's default. */
+function distroForPaths(): string {
+  return config.distro ?? 'Ubuntu'
+}
+
+/**
+ * Convert a folder-dialog result into something the server can use.
+ *
+ * The server runs inside WSL and only understands POSIX paths, but the dialog
+ * is a Windows dialog. Handing its result straight through produced, from live
+ * use:
+ *
+ *     Failed to create session: Working directory does not exist:
+ *     \\wsl.localhost\ubuntu\home\me\project
+ *
+ * A path inside the distro is parsed directly (wslpath mangles UNC paths); a
+ * drive path goes to `wslpath -u` so `C:\src` becomes `/mnt/c/src`. Anything
+ * already POSIX — every non-Windows platform — passes through untouched.
+ */
+async function toServerPath(picked: string): Promise<string> {
+  if (deps.platform !== 'win32' || isPosixPath(picked)) return picked
+
+  const unc = parseUncWslPath(picked)
+  if (unc) return unc.path
+
+  if (isDrivePath(picked)) {
+    const plan = buildDrivePathPlan(picked, config.distro)
+    const converted = await runCapturing(plan.command, plan.args)
+    const path = converted.output.trim()
+    // Returning the unconverted Windows path would fail later with a confusing
+    // "directory does not exist"; better to hand back what we have and let the
+    // caller's own validation speak.
+    if (converted.code === 0 && path.length > 0) return path
+  }
+  return picked
 }
 
 /** Read a file, or null when it is not there — used for checkout verification. */
@@ -246,13 +288,17 @@ async function restart(): Promise<void> {
  */
 function registerBridge(): void {
   ipcMain.handle(CHANNELS.pickDirectory, async (_event, initialPath: unknown) => {
+    const hint = normalizeInitialPath(initialPath)
     const result = await dialog.showOpenDialog({
       properties: ['openDirectory', 'createDirectory'],
-      defaultPath: normalizeInitialPath(initialPath),
+      // The renderer thinks in POSIX paths because that is what the server
+      // speaks; a Windows dialog opens nothing useful when handed one.
+      defaultPath: hint && deps.platform === 'win32' && isPosixPath(hint) ? toUncPath(hint, distroForPaths()) : hint,
     })
     // Cancelling is a normal outcome, not an error: the caller keeps whatever
     // path it already had.
-    return result.canceled ? null : (result.filePaths[0] ?? null)
+    if (result.canceled || !result.filePaths[0]) return null
+    return await toServerPath(result.filePaths[0])
   })
 
   ipcMain.handle(CHANNELS.openExternal, (_event, url: unknown) => {
@@ -312,7 +358,7 @@ function registerBridge(): void {
     const distro = unc?.distro ?? config.distro
 
     if (!unc) {
-      const pathPlan = buildWslPathPlan(folder, distro)
+      const pathPlan = buildDrivePathPlan(folder, distro)
       const converted = await runCapturing(pathPlan.command, pathPlan.args)
       wslPath = converted.output.trim()
       if (converted.code !== 0 || wslPath.length === 0) {
