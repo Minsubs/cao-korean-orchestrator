@@ -116,7 +116,11 @@ from cli_agent_orchestrator.services.install_service import (
 from cli_agent_orchestrator.services.log_writer import log_writer
 from cli_agent_orchestrator.services.status_monitor import status_monitor
 from cli_agent_orchestrator.services.step_output_store import _validate_key_part
-from cli_agent_orchestrator.services.terminal_service import OutputMode, TerminalInputBlockedError
+from cli_agent_orchestrator.services.terminal_service import (
+    OutputMode,
+    TerminalInputBlockedError,
+    TerminalWindowGoneError,
+)
 from cli_agent_orchestrator.services.ui_event_service import RING_CAPACITY as UI_RING_CAPACITY
 from cli_agent_orchestrator.services.ui_event_service import (
     UI_EVENT_TYPES,
@@ -1669,6 +1673,11 @@ async def send_terminal_input(
         return {"success": success}
     except TerminalInputBlockedError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except TerminalWindowGoneError as e:
+        # 410, not 500: the terminal is gone, which is a fact about the target
+        # rather than a server fault. The UI can then say so instead of
+        # "서버에서 요청을 처리하지 못했어요" over a raw tmux command line.
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except Exception as e:

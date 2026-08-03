@@ -123,3 +123,20 @@ describe('pendingTimeoutMessage', () => {
     )
   })
 })
+
+describe('410 — the terminal is gone', () => {
+  it('says the terminal ended instead of blaming the server', () => {
+    // The CLI exiting takes its tmux window with it while the terminal record
+    // lives on, so a valid id can point at nothing. This used to arrive as a
+    // 500 carrying a raw tmux command line.
+    const classified = classifyOrchestrationError(apiError(410))
+    expect(classified.kind).toBe('gone')
+    expect(classified.userMessage).toContain('터미널은 종료됐어요')
+  })
+
+  it('still keeps the server detail out of the user message', () => {
+    const classified = classifyOrchestrationError({ status: 410, detail: "can't find window: codex_orchestrator_sol-04cb" })
+    expect(classified.userMessage).not.toContain('window')
+    expect(classified.raw).toContain("can't find window")
+  })
+})

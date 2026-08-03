@@ -4,7 +4,7 @@
 // 않는다. 원문은 `raw` 로만 실어 보내고 화면에서는 Phase 1 의 "원문 보기"
 // 토글 뒤에 둔다. 분류는 HTTP status 와 AbortError 만 보고 결정한다.
 
-export type OrchestrationErrorKind = 'network' | 'timeout' | 'auth' | 'notfound' | 'server' | 'unknown'
+export type OrchestrationErrorKind = 'network' | 'timeout' | 'auth' | 'notfound' | 'gone' | 'server' | 'unknown'
 
 export interface ClassifiedError {
   kind: OrchestrationErrorKind
@@ -19,6 +19,9 @@ const MESSAGE: Record<OrchestrationErrorKind, string> = {
   network: '서버에 연결할 수 없어요. 서버가 실행 중인지 확인해 주세요.',
   auth: '이 작업을 수행할 권한이 없어요. CLI 로그인 상태를 확인해 주세요.',
   notfound: '대상 에이전트를 찾을 수 없어요. 이미 정리되었을 수 있어요.',
+  // 410: 터미널 레코드는 남아 있지만 CLI 가 종료돼 창이 사라진 상태. 이전에는
+  // 원시 tmux 명령이 실린 500 이라 "서버 장애"처럼 보였다.
+  gone: '이 터미널은 종료됐어요. 새 작업을 시작하거나 다른 에이전트를 선택해 주세요.',
   server: '서버에서 요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.',
   unknown: '메시지를 보내지 못했어요.',
 }
@@ -30,6 +33,7 @@ function kindOf(error: { name?: string; status?: number } | null): Orchestration
   if (typeof status !== 'number') return 'network'
   if (status === 401 || status === 403) return 'auth'
   if (status === 404) return 'notfound'
+  if (status === 410) return 'gone'
   if (status >= 500) return 'server'
   return 'unknown'
 }
