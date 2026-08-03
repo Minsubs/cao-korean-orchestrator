@@ -4,7 +4,8 @@ The provider *list* is derived from :class:`ProviderType` so a newly added
 provider appears automatically. This module only supplies presentation metadata
 (display name + binary name) and performs a read-only ``--version`` probe:
 
-* ``path`` comes from :func:`shutil.which`.
+* ``path`` comes from :func:`cache.cached_which` (``shutil.which`` behind a TTL
+  cache, so a repeated miss does not re-walk the PATH).
 * When installed, the version is read via a bounded argv probe (shell disabled,
   5-second timeout). The first numeric token on the first non-empty output line
   is the version; the raw line is preserved as ``version_raw``.
@@ -16,7 +17,6 @@ Nothing here installs or downloads anything. Results are TTL-cached.
 from __future__ import annotations
 
 import re
-import shutil
 from datetime import datetime, timezone
 from typing import Any, Dict, List, cast
 
@@ -84,14 +84,17 @@ def _extract_version(result: probe.ProbeResult) -> tuple[str | None, str | None,
 
 
 def _probe_provider(name: str, display_name: str, binary: str) -> Dict[str, Any]:
-    path = shutil.which(binary)
+    path = cache.cached_which(binary)
     installed = path is not None
 
     version_value: str | None = None
     version_raw: str | None = None
     version_error: str | None = None
-    if installed:
-        result = probe.run([binary, "--version"], timeout=PROBE_TIMEOUT_SECONDS)
+    if path is not None:
+        # Probe the already-resolved absolute path rather than the bare binary
+        # name, so the subprocess's own execvp does not walk the (WSL-bloated)
+        # PATH a second time.
+        result = probe.run([path, "--version"], timeout=PROBE_TIMEOUT_SECONDS)
         version_value, version_raw, version_error = _extract_version(result)
 
     return {
