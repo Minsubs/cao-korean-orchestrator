@@ -435,7 +435,7 @@ CAO fork를 "채팅 중심 멀티 에이전트 오케스트레이션 작업대 +
 4. ✅ **크로스 검증 마지막 다리 완료** — Claude→Codex와 Codex→Claude에서 caller/inbox delivered/generation/final output까지 확인. 상세는 §0.3과 `.omo/evidence/orchestration-full-2026-07-18/report.md`.
 5. ✅ **기본 팀 프리셋 무인 권한 수정 완료** — Codex는 `never/read-only` + CAO MCP 전용 auto-approve, Claude scout/architect는 `bypassPermissions`로 수정. `scripts/dev/fixed_orchestrator_check.py`가 Codex→Claude scout와 Claude→Codex QA의 caller/inbox/generation/final output을 모두 검증한다. 상세는 §0.4.
 6. ✅ **UX Phase 1~6 + 6b 프런트 전부 완료·머지** — Phase 1(§0.14), Phase 4·5·6b(§0.14.1, PR #5·#6), Phase 2(PR #7)·Phase 3(PR #8)(§0.15), Phase 5/6 잔여·알림 초기화·문구 통일(PR #11~#13), 라이브 결함 3라운드(PR #14·#15·#16, §0.16). **2026-08-03 기준 열린 PR 0건, `main` = `4ae4f42`.**
-7. 🔄 **Phase 7 Electron 진행 중(§0.19)** — 백엔드 시임(#23), `electron/` + server-manager(#24), `caoNative` 브리지
+7. 🔄 **Phase 7 Electron 진행 중(§0.19 · §0.20 · §0.21)** — 백엔드 시임(#23), `electron/` + server-manager(#24), `caoNative` 브리지
    + 웹 감지(#25), WSL·셸 감지 + builder 설정(#26) 머지 완료. Tauri 2 검토 결론은 **Electron 유지**.
    `shellConfig` 브리지·설정 카드·spawn 반영·서버 로그·CSP·아이콘까지 완료(§0.20).
    **Windows 실기동 검증 완료** — attach/spawn, WSL·셸 감지, 메뉴 6개, nsis 패키징, 종료 시 서버 정리.
@@ -759,6 +759,80 @@ CI 에 `Desktop Shell` job 추가(typecheck + 단위만, `ELECTRON_SKIP_BINARY_D
 - **mac**: 사용자 지시로 이번 범위에서 제외(dmg·로그인 셸 감지 미검증).
 - 인스톨러로 **설치→실행**까지는 안 했다(unpacked 실행본만 확인).
 - 검증용 로컬 자산: `C:\Users\User\cao-desktop-test\`, `~/.local/bin/cao-server` 래퍼. 지워도 저장소 영향 없음.
+
+### 0.21. 2026-08-03 라이브 사용 라운드 — 데스크톱 결함 3건 + 프로젝트 CRUD (Claude Opus, 백그라운드 잡)
+
+사용자가 인스톨러로 앱을 깔아 쓰기 시작하면서 나온 보고를 하나씩 원인까지 확인해 고쳤다. **세 건 모두 "앱은 정상으로
+보이는데 실제로는 안 되는" 형태**였고, 앞 절들과 같은 계열이다.
+
+#### 머지된 PR
+
+| PR | 내용 |
+|---|---|
+| #31 | CSP 주입 범위 오류로 부트 화면이 얼던 문제 |
+| #32 | 진단 화면에서 서버 설치(폴더 선택 → 웹 빌드 → `uv tool install --reinstall`) |
+| #33 | 서버 홈이 Windows 마운트일 때 세션 생성 실패 |
+| #34 | 폴더 대화상자 경로를 서버 경로로 변환 |
+| #35 | 프로젝트·그룹 편집/삭제 |
+| #36 | 편집·삭제 버튼을 hover 없이도 보이게 |
+
+#### 1. 부트 화면이 "서버를 확인하는 중"에서 멈춤 (#31)
+
+멈춘 게 아니었다. 계측하니 **1.9초 만에 `binary-not-found` 로 끝나 있었다.** 직전에 넣은 CSP 를 모든 응답에
+주입해서, 상태 문구를 인라인 스크립트로 바꾸는 `file://` 부트 페이지가 갱신되지 못한 것이다. **모든 실패가 똑같이
+"멈춤"으로 보였다** — 진단 화면이 고장 나는 최악의 형태. 주입을 서버 http 오리진으로 한정.
+
+#### 2. 작업 시작만 실패 (#33)
+
+```
+500 {"detail":"Failed to create session: [Errno 95] Operation not supported"}
+```
+
+서버는 FIFO 를 `~/.aws/cli-agent-orchestrator` 에 만드는데 이 PC 는 `~/.aws` → `/mnt/c/...`(9p) 심볼릭 링크다.
+**세션 생성 전에는 FIFO 를 건드리는 코드가 없어 기동·`/health`·UI 렌더가 전부 통과**한다. 앱이 홈의 파일시스템을
+확인해 Windows 마운트일 때만 `~/.local/share/cao-home` 로 돌린다.
+
+#### 3. 폴더를 골라 세션 시작 시 실패 (#34)
+
+```
+Working directory does not exist: \\wsl.localhost\ubuntu\home\...\i-oneNGS
+```
+
+네이티브 대화상자는 Windows 대화상자라 UNC/드라이브 경로를 준다. 서버는 WSL 안이라 POSIX 만 안다 — **서버 응답이
+옳았다.** UNC 는 직접 파싱(`wslpath` 가 UNC 를 뭉갠다), 드라이브 경로는 `wslpath -u`, 대화상자 시작 폴더는 역변환.
+
+#### wsl.exe 로 명령을 보낼 때의 함정 4가지 (전부 실측)
+
+`install-server.ts`/`cao-home.ts` 주석에 근거가 남아 있다. 다시 밟기 쉬우니 요약한다.
+
+1. **큰따옴표가 뭉개진다** — Node 의 Windows 커맨드라인 인용을 지나며 깨져 exit 1 + 빈 출력.
+2. **변수 할당이 사라진다** — `p=$HOME/.aws; echo [$p]` → `[]`.
+3. **`command -v` 가 Windows 바이너리를 답한다** — WSL 이 Windows PATH 를 얹기 때문(`/mnt/c/Program Files/nodejs/npm`).
+   `||` 로 단락시키면 진짜 리눅스 npm 은 영영 안 쓰인다. `/mnt/` 결과는 폐기해야 한다.
+4. **`export PATH=…:$PATH` 는 문법 오류가 된다** — 확장된 interop 경로의 `Program Files (x86)` 괄호에서 bash 사망.
+   고정·따옴표 PATH 를 쓴다.
+
+#### 설치가 성공처럼 보이는데 앱이 깨지던 2건 (#32)
+
+- **웹 번들이 gitignore 대상**이라 새 클론엔 없음 → 서버는 뜨지만 `/` 가 `{"detail":"Not Found"}`. 설치 시 UI 를 먼저 빌드한다.
+- **`uv tool install .` 은 같은 버전이면 아무 것도 안 한다** → 새로 빌드한 UI 가 반영되지 않음. `--reinstall` 필수.
+
+#### 프로젝트 CRUD (#35, #36)
+
+`removeProject`/`removeGroup` 은 기능 도입 때부터 데이터 계층에 있었고 **UI 가 한 번도 호출하지 않았다.** 이름 변경은
+함수 자체가 없었다. 행마다 편집·삭제를 붙였고, 그룹 편집은 **하위 경로를 유지**한다(하위가 루트 밖일 수 있어 파생시키면
+그 경우가 깨진다). 삭제는 확인창에서 남는 것(폴더·세션)과 하위 개수를 말한다. 버튼은 `role="button"` span 이다 —
+그룹 행 자체가 `<button>` 이라 중첩은 유효하지 않은 HTML 이다. 처음엔 `opacity-0` hover-only 로 만들었다가
+**"있는 기능이 안 보이면 없는 것"**이라 상시 표시로 바꿨다(#36).
+
+#### 이 시점 상태
+
+`origin/main` = `4ca3415`. 웹 **700 tests**, electron **196 tests**, tsc 0, build ✓.
+`release/MS Orchestrator Setup 0.1.0.exe`(95MB)는 #36 까지 반영해 재빌드했고, 이 PC 의 WSL 서버도
+`uv tool install --reinstall` 로 같은 커밋으로 맞췄다.
+
+**남은 것**: 코드 서명 없음(다른 PC 에서 SmartScreen 경고), macOS 미검증, 세션 생성 시 관측된
+`Claude Code initialization timed out after 60s`(FIFO 와 무관한 CLI 초기화 단계 — 미조사).
 
 ## 7. 데이터/저장 규약 (프런트 로컬)
 `cao:theme`(라이트 기본), `cao:projects:v1`, `cao:hidden-providers:v1`(기본 [kiro_cli,kimi_cli,cursor_cli,hermes]), `cao:workbench:v1:<session>`, `cao:workspace:team-roster:v1:<session>`, `cao:workspace:delegation-history:v1:<session>`, `cao:env-profiles:v1`, `cao:usage:claude-limits-optin:v1`, `cao:pending-select-session`(sessionStorage). 세션명은 서버 규칙 `^[A-Za-z0-9_][A-Za-z0-9_-]{0,59}$`(cao- 프리픽스는 표시에서만 숨김 — displayName.ts).
