@@ -267,6 +267,55 @@ class TestCreateWindow:
         call_kwargs = mock_session.new_window.call_args[1]
         assert call_kwargs["window_shell"] == "cat /tmp/x; exec bash -l"
 
+    def test_create_window_applies_the_operator_default_shell(self, tmux, tmp_path, monkeypatch):
+        """CAO_DEFAULT_SHELL reaches tmux through the existing window_shell seam."""
+        shell = tmp_path / "zsh"
+        shell.write_text("#!/bin/sh\n")
+        shell.chmod(0o755)
+        monkeypatch.setenv("CAO_DEFAULT_SHELL", str(shell))
+
+        mock_window = MagicMock()
+        mock_window.name = "w"
+        mock_session = MagicMock()
+        mock_session.new_window.return_value = mock_window
+        tmux.server.sessions.get.return_value = mock_session
+
+        tmux.create_window("ses", "w", "tid2", str(tmp_path))
+
+        assert mock_session.new_window.call_args[1]["window_shell"] == f"exec {shell} -l"
+
+    def test_explicit_window_shell_wins_over_the_default(self, tmux, tmp_path, monkeypatch):
+        """The restore path already encodes its shell; it must not be overridden."""
+        shell = tmp_path / "zsh"
+        shell.write_text("#!/bin/sh\n")
+        shell.chmod(0o755)
+        monkeypatch.setenv("CAO_DEFAULT_SHELL", str(shell))
+
+        mock_window = MagicMock()
+        mock_window.name = "restored-window"
+        mock_session = MagicMock()
+        mock_session.new_window.return_value = mock_window
+        tmux.server.sessions.get.return_value = mock_session
+
+        tmux.create_window(
+            "ses", "restored-window", "tid2", str(tmp_path), window_shell="cat /tmp/x; exec bash -l"
+        )
+
+        assert mock_session.new_window.call_args[1]["window_shell"] == "cat /tmp/x; exec bash -l"
+
+    def test_create_window_without_the_env_var_leaves_tmux_alone(self, tmux, tmp_path, monkeypatch):
+        monkeypatch.delenv("CAO_DEFAULT_SHELL", raising=False)
+
+        mock_window = MagicMock()
+        mock_window.name = "w"
+        mock_session = MagicMock()
+        mock_session.new_window.return_value = mock_window
+        tmux.server.sessions.get.return_value = mock_session
+
+        tmux.create_window("ses", "w", "tid2", str(tmp_path))
+
+        assert "window_shell" not in mock_session.new_window.call_args[1]
+
 
 # ── send_keys ────────────────────────────────────────────────────────
 
