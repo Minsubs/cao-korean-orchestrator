@@ -9,12 +9,60 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "build": "tsc",
-    "start": "npm run build && electron ."
+    "start": "npm run build && electron .",
+    "pack:mac": "npm run build && electron-builder --mac --arm64",
+    "pack:win": "npm run build && electron-builder --win --x64"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",
     "electron": "^43.2.0",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
+  },
+  "build": {
+    "appId": "com.hunesion.ms-orchestrator",
+    "productName": "MS Orchestrator",
+    "directories": {
+      "output": "release",
+      "buildResources": "assets"
+    },
+    "files": [
+      "dist/**/*",
+      "boot.html",
+      "assets/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.developer-tools",
+      "identity": null
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }
