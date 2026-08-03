@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ArrowUp, Check, FolderOpen, Folder, RefreshCw, X } from 'lucide-react'
 import { apiUi, type FsEntry } from '../../api.ui'
+import { hasNative, pickDirectoryNative } from '../../native'
 
 interface DirectoryPickerProps {
   /** Path to open first; defaults to the server user's home (`~`). */
@@ -21,6 +22,11 @@ export function DirectoryPicker({ initialPath, onClose, onSelect }: DirectoryPic
   const [entries, setEntries] = useState<FsEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // In the desktop app the OS dialog replaces this modal entirely: it browses
+  // the whole filesystem (not just the server's home) and looks like every
+  // other folder picker on the machine. Decided once on mount so the modal
+  // cannot flash on screen before the native dialog opens.
+  const [useNative, setUseNative] = useState(() => hasNative('pickDirectory'))
 
   const load = async (target: string) => {
     if (!target.trim()) return
@@ -46,7 +52,24 @@ export function DirectoryPicker({ initialPath, onClose, onSelect }: DirectoryPic
   }
 
   useEffect(() => {
-    void load(input)
+    if (!useNative) {
+      void load(input)
+      return
+    }
+    // Native path: open the OS dialog instead of this modal. A cancel closes
+    // without selecting, same as dismissing the modal would.
+    void (async () => {
+      const result = await pickDirectoryNative(initialPath)
+      if (!result.supported) {
+        // The bridge disappeared or threw between the mount check and here —
+        // fall back rather than leaving an empty modal on screen.
+        setUseNative(false)
+        void load(input)
+        return
+      }
+      if (result.path) onSelect(result.path)
+      else onClose()
+    })()
     // eslint 없음: 마운트 시 1회만 초기 경로를 연다
   }, [])
 
@@ -55,6 +78,10 @@ export function DirectoryPicker({ initialPath, onClose, onSelect }: DirectoryPic
     const parent = resolved.replace(/\/+$/, '').split('/').slice(0, -1).join('/') || '/'
     void load(parent)
   }
+
+  // The OS dialog is the UI in the desktop app; rendering the modal behind it
+  // would show two pickers at once.
+  if (useNative) return null
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center" role="dialog" aria-modal="true" aria-label="폴더 선택">

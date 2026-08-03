@@ -10,9 +10,11 @@
  * has no preload at all, which is the safest possible default.
  */
 
-import { app, BrowserWindow, Menu, Tray, dialog, shell } from 'electron'
+import { app, BrowserWindow, Menu, Tray, dialog, ipcMain, shell } from 'electron'
 import { join } from 'node:path'
 
+import { CHANNELS, type AppInfo } from './bridge-contract'
+import { isSafeExternalUrl, normalizeInitialPath } from './bridge-guards'
 import { createRuntimeDeps } from './runtime-deps'
 import {
   DEFAULT_CONFIG,
@@ -45,6 +47,7 @@ function createWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      preload: join(__dirname, 'preload.js'),
     },
   })
 
@@ -132,7 +135,49 @@ async function restart(): Promise<void> {
   await boot()
 }
 
+/**
+ * Serve the `window.caoNative` contract.
+ *
+ * Every handler validates its arguments (see bridge-guards): the page is ours,
+ * but the strings flowing through it — chat content, agent output, catalog
+ * entries — are not.
+ */
+function registerBridge(): void {
+  ipcMain.handle(CHANNELS.pickDirectory, async (_event, initialPath: unknown) => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory', 'createDirectory'],
+      defaultPath: normalizeInitialPath(initialPath),
+    })
+    // Cancelling is a normal outcome, not an error: the caller keeps whatever
+    // path it already had.
+    return result.canceled ? null : (result.filePaths[0] ?? null)
+  })
+
+  ipcMain.handle(CHANNELS.openExternal, (_event, url: unknown) => {
+    if (!isSafeExternalUrl(url)) return
+    void shell.openExternal(url)
+  })
+
+  ipcMain.handle(CHANNELS.appInfo, (): AppInfo => {
+    return {
+      platform: process.platform,
+      version: app.getVersion(),
+      serverMode: server?.mode ?? 'attached',
+      port: server?.port ?? config.basePort,
+      ...(config.distro ? { distro: config.distro } : {}),
+    }
+  })
+
+  ipcMain.handle(CHANNELS.restartServer, async () => {
+    // Restarting something we merely attached to would kill a process we do
+    // not own — usually the developer's own terminal session.
+    if (server?.mode !== 'spawned') return
+    await restart()
+  })
+}
+
 app.whenReady().then(async () => {
+  registerBridge()
   tray = new Tray(join(__dirname, '..', 'assets', 'tray.png'))
   updateTray()
   await boot()

@@ -27,6 +27,7 @@ import { LoadingOverlay } from '../components/LoadingOverlay'
 import { Workspace } from '../features/workspace/Workspace'
 import { useUiEventStream } from '../features/workspace/useUiEventStream'
 import { PENDING_SELECT_KEY } from '../features/workspace/constants'
+import { DesktopChip } from '../features/desktop/DesktopChip'
 import { HeaderUsageBars } from '../features/usage/HeaderUsageBars'
 
 // Phase 1b App Shell: left icon rail + top bar + a single content region that
@@ -273,6 +274,7 @@ export function AppShell() {
           <div className="flex items-center gap-3">
             <NotificationCenter sessions={sessions} />
             <HeaderUsageBars />
+            <DesktopChip />
             <span className="text-xs text-[var(--text-3)]">세션 {sessions.length}개</span>
             <ConnectionChip connected={connected} />
             <button
