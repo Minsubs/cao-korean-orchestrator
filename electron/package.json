@@ -1,0 +1,20 @@
+{
+  "name": "cao-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MS Orchestrator desktop shell — server lifecycle + native bridge only",
+  "main": "dist/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "tsc",
+    "start": "npm run build && electron ."
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "electron": "^43.2.0",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}
