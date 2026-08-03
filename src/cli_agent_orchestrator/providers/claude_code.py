@@ -113,6 +113,21 @@ BYPASS_PROMPT_PATTERN = r"Yes, I accept"  # Bypass permissions confirmation dial
 # under a workspace whose parent CLAUDE.md imports shared rules). The default
 # cursor is already on "1. Yes, allow external imports", so Enter accepts it.
 EXTERNAL_IMPORT_PROMPT_PATTERN = r"Allow external CLAUDE\.md file imports\?"
+# First-run onboarding: theme selection, then login method. Deliberately NOT auto-answered
+# — the login step needs a human (and possibly a browser), and picking a theme on
+# the user's behalf writes to their config behind their back. Detected only so the
+# failure says what to do instead of timing out.
+#
+# Measured: with `hasCompletedOnboarding: false` in ~/.claude.json (claude 2.1.220
+# after a 2.1.141 onboarding), every spawned terminal sat on this screen and
+# session creation died with the useless "Claude Code initialization timed out
+# after 60s" — while `claude -p` worked fine, so the CLI was installed and signed
+# in the whole time.
+ONBOARDING_PROMPT_PATTERNS = (
+    r"Choose the text style that looks best",
+    r"Select login method",
+    r"Let's get started\.",
+)
 IDLE_PROMPT_PATTERN_LOG = r"[>❯][\s\xa0]"  # Same pattern for log files
 # New Claude Code TUI completion summary, e.g. "✻ Sautéed for 1s" /
 # "✶ Cultivated for 12s". Unlike the active spinner (PROCESSING_PATTERN, which
@@ -205,6 +220,14 @@ CONTEXT_LEFT_PATTERNS = [
     re.compile(r"(\d{1,3})\s*%\s*(?:left\s*)?until auto-compact"),
     re.compile(r"[Cc]ontext low\b[^\n]*?(\d{1,3})\s*%"),
 ]
+
+
+class ClaudeCodeOnboardingRequiredError(RuntimeError):
+    """Raised when the CLI is stuck on its first-run onboarding screen.
+
+    Actionable on purpose: the previous behaviour was a 60-second timeout whose
+    message pointed at CAO, not at the one thing that fixes it.
+    """
 
 
 class ClaudeCodeProvider(BaseProvider):
@@ -521,6 +544,15 @@ class ClaudeCodeProvider(BaseProvider):
                 last_prompt_time = time.monotonic()  # reset idle timer — more prompts may follow
                 time.sleep(1.0)
                 continue
+
+            # 1.7) First-run onboarding — cannot be auto-answered, so stop
+            #      waiting and say exactly what to do.
+            if any(re.search(pattern, clean_output) for pattern in ONBOARDING_PROMPT_PATTERNS):
+                raise ClaudeCodeOnboardingRequiredError(
+                    "Claude Code is waiting on its first-run setup (theme/login) and cannot "
+                    "be started unattended. Run `claude` once in a terminal, finish the "
+                    "onboarding, then retry. (~/.claude.json: hasCompletedOnboarding)"
+                )
 
             # 2) Handle workspace trust prompt
             if re.search(TRUST_PROMPT_PATTERN, clean_output):
