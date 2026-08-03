@@ -1,0 +1,24 @@
+# The repository had no EOL policy at all: nothing declared here, and
+# core.autocrlf unset. A checkout produced by a CRLF-writing tool therefore
+# leaves `git status` reporting ~973 files as modified when only their line
+# endings differ (211814 insertions == 211814 deletions, no content change).
+# See docs/HANDOFF-msorchestrator.md §3-5.
+#
+# `text=auto` lets git detect text vs binary and store text as LF in the index;
+# `eol=lf` checks it back out as LF on every platform, which is what the shell
+# scripts, the Python entry points and the WSL tooling all expect.
+* text=auto eol=lf
+
+# Binary assets: byte-for-byte, never normalised or diffed as text.
+*.png binary
+*.gif binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.webm binary
+*.mp4 binary
+*.woff binary
+*.woff2 binary
+*.pdf binary
+*.zip binary
+*.gz binary
