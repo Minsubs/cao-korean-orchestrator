@@ -113,6 +113,7 @@ class AgentProfile(BaseModel):
         if isinstance(value, str):
             return [item.strip() for item in value.split(",") if item.strip()]
         return value
+
     codexSandbox: Optional[CodexSandbox] = None
 
     # Codex-only. Inline Codex config overrides passed as `-c key=value` at
