@@ -437,16 +437,20 @@ CAO fork를 "채팅 중심 멀티 에이전트 오케스트레이션 작업대 +
 6. ✅ **UX Phase 1~6 + 6b 프런트 전부 완료·머지** — Phase 1(§0.14), Phase 4·5·6b(§0.14.1, PR #5·#6), Phase 2(PR #7)·Phase 3(PR #8)(§0.15), Phase 5/6 잔여·알림 초기화·문구 통일(PR #11~#13), 라이브 결함 3라운드(PR #14·#15·#16, §0.16). **2026-08-03 기준 열린 PR 0건, `main` = `4ae4f42`.**
 7. **Phase 7 Electron** — `docs/electron-plan.md`대로 7a(셸+서버매니저)→7b(preload+웹 감지)→7c(WSL+패키징). Tauri 2 대안 검토는 `03d278c`. 셸 기본값 설정(§4)의 백엔드 시임(CAO_DEFAULT_SHELL→create_window window_shell)은 소형 선행 작업. **다음 큰 단계.**
 8. **잔여 폴리시(작은 것들)** — 습니다체 54곳, mypy 27건(CI 허용), `MemoryGraphView` Sigma 캔버스 hex paint 4개(테마 비반응 — mount 시점 CSS 변수 읽기 필요), 새 작업 모달 첫 턴과 채팅 경로 통일 여부(§0.15 미결), §0.14.1 후속 폴리시 잔여분.
-9. **미머지 `tooling-wsl-fix`(`1486bf4`) 처리 결정** — §0.17 참조. `cache.cached_which()`만 체리픽하거나 브랜치를 폐기한다.
+9. ✅ **미머지 `tooling-wsl-fix`(`1486bf4`) 처리 완료** — `cache.cached_which()` 계열만 PR #18 로 이식했고, 병렬화는
+   의도적으로 제외했다(§0.17). PR #18 머지 후 원 브랜치는 폐기 가능.
+10. **draft PR 3건 리뷰·머지 대기** — #17(문서) / #18(tooling perf) / #19(`.gitattributes`). 서로 독립이라 순서 무관.
 
 ## 6. 미해결/사용자 확인 대기
 - 기본 팀 권한 blocker는 §0.4에서 해결했다. 향후 Codex CLI에서 MCP approval config schema가 바뀌면 `scripts/dev/fixed_orchestrator_check.py`로 재검증한다.
 - 도구및확장 "소스" 탭의 마켓플레이스 **추가/삭제 실행**(현재 명령 복사 안내만) — 사용자 요청 시 operations queue로.
 - 미이식 클래식 기능 3건(프로필 카운트 칩·대시보드 필터/정렬·tmux 세션 배지) — 사용자 확인 대기.
 - e2e용 임시 프로필 4개(agent-store) 정리 여부.
-- 원본 체크아웃(`/home/minsub57/hunesion_workspace/cao-korean-orchestrator`)의 CRLF 973파일 정리 — **사용자 승인 대기**(§3-5).
-- 스테일 워크트리 4개 삭제 여부 — **사용자 승인 대기**(§0.17).
-- `tooling-wsl-fix` 브랜치 처리(체리픽 vs 폐기) — **사용자 결정 대기**(§0.17).
+- CRLF 재발 방지는 PR #19(`.gitattributes`)로 처리. 남은 것은 **최상위 체크아웃의 `core.bare=true` 플래그를
+  해제할지**(해제해야 그 체크아웃의 973파일이 실제로 정리 가능) — **사용자 결정 대기**(§0.17).
+- 스테일 워크트리 4개 삭제 — 아카이브는 끝났고 명령만 남았다. `git worktree remove` 가 하네스에 차단돼
+  **사용자가 직접 실행해야 한다**(§0.17에 명령 있음).
+- ~~`tooling-wsl-fix` 브랜치 처리~~ → PR #18 로 이식 완료(§0.17).
 - ~~push/PR: 사용자 지시 없음 — 로컬 머지만 완료된 상태.~~ **해소** — 2026-08-03 기준 PR #1~#16 전부 origin 머지, 열린 PR 0건(§0.17).
 
 ### 0.16. 2026-07-30 라이브 사용 결함 8건 + 다크 팔레트 하드코딩 제거 (Claude Opus, 백그라운드 잡)
@@ -523,10 +527,23 @@ CAO fork를 "채팅 중심 멀티 에이전트 오케스트레이션 작업대 +
 - 워크트리 5개(`pr6-ci`, `coldstart-phase4d`, `handoff-linux-wsl`, `agent-a21c969f07d3bfb02`, `agent-a5714d1cc250b4f0d`)의
   브랜치는 **전부 `main` 대비 0 commits ahead** → 커밋 유실 위험 없음. 미추적물은 위 플랜 3건 외에는 SDD 스크래치
   (`.superpowers/`의 리뷰 diff·태스크 리포트)와 라이브 캡처 png 4장뿐이었다.
-- **스테일 워크트리 4개(`coldstart-phase4d`, `handoff-linux-wsl`, `agent-*` 2개)는 이 세션에서 제거했다.** 제거 전
-  버전관리되지 않는 참고물을 `.omo/salvage-2026-08-03/` 로 복사해 두었다(SDD 렛저 2벌 + 캡처 4장, 73파일 2.6MB).
-  HANDOFF 본문이 `.superpowers/sdd/progress.md` 를 참조하는 대목은 이제 그 아카이브에서 읽는다.
-  `pr6-ci`(= `main` 체크아웃)는 최상위가 bare 취급이라 실질적인 main 작업본이므로 남겨 두었다.
+- **스테일 워크트리 4개(`coldstart-phase4d`, `handoff-linux-wsl`, `agent-*` 2개)는 아직 남아 있다.**
+  `git worktree remove --force` 가 하네스 auto-mode classifier 에 차단됐다(AI 우회 금지 — 사용자가 직접
+  실행하거나 Bash 권한 규칙을 추가해야 한다). **다만 버전관리 안 되는 참고물은 이미 안전한 곳으로 복사해 두었으므로
+  지금 지워도 잃을 것이 없다**: `.omo/salvage-2026-08-03/`(SDD 렛저 2벌 + 라이브 캡처 4장, 73파일 2.6MB).
+  HANDOFF 본문이 `.superpowers/sdd/progress.md` 를 참조하는 대목은 그 아카이브에서 읽으면 된다.
+  제거 명령:
+
+  ```bash
+  cd /home/minsub57/hunesion_workspace/cao-korean-orchestrator
+  for w in coldstart-phase4d handoff-linux-wsl agent-a21c969f07d3bfb02 agent-a5714d1cc250b4f0d; do
+    git worktree remove --force .claude/worktrees/$w
+  done
+  ```
+
+  `pr6-ci`(= `main` 체크아웃)는 최상위가 bare 라 실질적인 main 작업본이므로 남긴다.
+- **최상위 체크아웃은 `core.bare=true` 다**(작업 파일이 함께 있는데도). 이것 때문에 `git status` 가 실패한다.
+  플래그 해제 여부는 사용자 결정 사항 — 해제하면 07-20 스냅샷 파일들과 CRLF 차이가 한꺼번에 보인다.
 - 서버는 **미기동**이었다(9889 무응답, tmux 세션 없음).
 
 #### §0.16의 "미완" 항목 철회
@@ -544,7 +561,11 @@ CAO fork를 "채팅 중심 멀티 에이전트 오케스트레이션 작업대 +
 
 **`cached_which` 잔여가치의 실제 크기**: 프리웜은 서버 기동 시 1회뿐이라 TTL 300초가 만료되면 그다음 첫 요청이
 콜드 프로브 비용을 전부 다시 낸다(WSL 실측 extensions cold 17.2s). 60s 프런트 타임아웃 안이라 실패하지는 않고
-느려질 뿐이다. 급하지 않으므로 §5-9로 남긴다.
+느려질 뿐이다. → **이번 세션에서 PR #18 로 이식했다**(`cache.cached_which` + resolved-path probe +
+`rescan()` 이 extensions 까지 갱신). 원 브랜치의 `ThreadPoolExecutor` 병렬화는 일부러 제외했다 — 프리웜이 콜드
+경로를 이미 가리고, 부분 실패가 없는 collector 의 실패 의미론을 바꾸기 때문이다. 게이트: 백엔드 전체
+`4814 passed / 14 skipped`, `test/tooling 277 passed`, black/isort/mypy(변경 2파일) 통과.
+`tooling-wsl-fix` 브랜치는 PR #18 머지 후 폐기해도 된다.
 
 #### 이번에 고친 문서
 
@@ -554,10 +575,29 @@ CAO fork를 "채팅 중심 멀티 에이전트 오케스트레이션 작업대 +
   올바른 명령이 §0.15 본문 안에만 묻혀 있던 것을 §3 정본으로 끌어올렸다.
 - **§5 재작성 / §6 갱신** — 완료된 Phase 항목 정리, 다음 큰 단계 = Phase 7 Electron, 승인 대기 항목 명시.
 
+#### 이 세션이 만든 PR (전부 draft)
+
+| PR | 브랜치 | 내용 | 게이트 |
+|---|---|---|---|
+| #17 | `worktree-handoff-salvage` | 문서 — §0.14.1 복원, §3-1 `CAO_HOME_DIR`, §0.17, 미커밋 플랜 3건 | 문서 전용(코드 게이트 해당 없음) |
+| #18 | `fix-tooling-cached-which` | `cache.cached_which` + resolved-path probe + `rescan()` extensions | 백엔드 `4814 passed / 14 skipped`, tooling `277`, black/isort/mypy |
+| #19 | `chore-eol-normalize` | `.gitattributes` `* text=auto eol=lf` + 바이너리 명시 | `git add --renormalize .` 스테이징 0건(정책만 변경) |
+
+#### CRLF 정리 결론
+
+`.gitattributes` 를 넣으면 인덱스 LF 정규화가 강제돼 유령 diff 가 다시 생기지 않는다(PR #19). 다만
+**최상위 체크아웃은 `core.bare=true` 라 애초에 `git status` 가 돌지 않으므로**, 그 973파일이 이 PR 로 즉시
+정리되는 것은 아니다. 실제로 정리하려면 bare 플래그를 해제하고 재체크아웃하거나, 그 체크아웃을 버리고
+워크트리만 쓰면 된다 — 사용자 결정 사항.
+
 #### 검증
 
-문서 전용 변경이라 코드 게이트는 돌리지 않았다(`.md` 외 수정 0건). `git diff --check` 통과, 링크·절 번호는
-문서 내에서 상호 참조 확인. **테스트/빌드/라이브 서버 검증은 수행하지 않았다.**
+- PR #18: 백엔드 전체 `4814 passed / 14 skipped`(3분 50초), `test/tooling 277 passed`,
+  `black --check`·`isort --check-only`·`mypy`(변경 2파일) 통과.
+- PR #19: `git add --renormalize .` 결과 스테이징 0건, `git check-attr` 로 text/binary 판정 실측.
+- PR #17: 문서 전용이라 코드 게이트 없음. `git diff --check` 통과, UTF-8(BOM 없음)·LF 확인.
+- **하지 않은 것**: 프런트 게이트(`tsc`/`vitest`/`build`) — 프런트 변경 0건이라 생략. 라이브 서버 검증 — 이 세션에서
+  서버를 띄우지 않았다. `tooling-wsl-fix` 의 WSL 실측 수치(`providers cold 1.6s·warm 0.001s`)는 2026-07-20 원 기록이다.
 
 ## 7. 데이터/저장 규약 (프런트 로컬)
 `cao:theme`(라이트 기본), `cao:projects:v1`, `cao:hidden-providers:v1`(기본 [kiro_cli,kimi_cli,cursor_cli,hermes]), `cao:workbench:v1:<session>`, `cao:workspace:team-roster:v1:<session>`, `cao:workspace:delegation-history:v1:<session>`, `cao:env-profiles:v1`, `cao:usage:claude-limits-optin:v1`, `cao:pending-select-session`(sessionStorage). 세션명은 서버 규칙 `^[A-Za-z0-9_][A-Za-z0-9_-]{0,59}$`(cao- 프리픽스는 표시에서만 숨김 — displayName.ts).
