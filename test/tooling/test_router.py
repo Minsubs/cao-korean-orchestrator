@@ -62,7 +62,7 @@ _DIAGNOSTIC_KEYS = {
 def client(monkeypatch):
     # Hermetic: no provider installed -> no real subprocess probing; profiles
     # stubbed so extension/diagnostic content does not depend on the host store.
-    monkeypatch.setattr(providers.shutil, "which", lambda binary: None)
+    monkeypatch.setattr(providers.cache, "cached_which", lambda binary: None)
     monkeypatch.setattr(extensions, "list_agent_profiles", lambda: [])
     app = FastAPI()
     app.include_router(tooling_router.router)
@@ -111,7 +111,7 @@ def test_scan_forces_cache_refresh(client, monkeypatch):
     assert all(p["installed"] is False for p in first)
 
     # Flip the environment to "installed"; a cached read must not reflect it yet.
-    monkeypatch.setattr(providers.shutil, "which", lambda binary: f"/usr/bin/{binary}")
+    monkeypatch.setattr(providers.cache, "cached_which", lambda binary: f"/usr/bin/{binary}")
     monkeypatch.setattr(
         providers.probe,
         "run",
