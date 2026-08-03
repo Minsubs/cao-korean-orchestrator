@@ -183,14 +183,19 @@ def run_case(case: Case) -> None:
             flush=True,
         )
 
+        # Ready-generation equality is deliberately NOT required here. A turn that
+        # both starts and ends while the terminal is already latched on a ready
+        # status records no ready generation at all (StatusMonitor only advances it
+        # on a PROCESSING -> ready edge), so a worker that answers fast would hang
+        # this step forever. The worker's real proof is the next step: its exact
+        # callback marker arriving in the supervisor's inbox.
         worker_settled = wait_until(
             "worker-settled",
             480,
             lambda: (
                 (term := terminal_in_session(actual_session, worker_id)) is not None
                 and term.get("status") in {"idle", "completed"}
-                and (term.get("input_generation") or 0) > 0
-                and term.get("input_generation") == term.get("ready_generation"),
+                and (term.get("input_generation") or 0) > 0,
                 (
                     "missing"
                     if term is None
@@ -215,14 +220,25 @@ def run_case(case: Case) -> None:
 
         callback = wait_until("callback-delivered", 360, find_callback)
 
+        # Same reasoning as worker-settled, plus a content proof of its own: the
+        # supervisor's post-callback turn is accepted when the final marker is
+        # present AND the output is byte-identical to the previous probe (the TUI
+        # finished repainting). Measured on CL-to-AG: the marker was in the pane
+        # and in the FIFO log while the status stream stayed silent for 6 minutes,
+        # so ready_generation never caught up to input_generation. This mirrors
+        # the web chat's rule (sessionCompletion.ts ReplyReadyOptions).
+        previous_output: list[str] = []
+
         def find_final():
             term = terminal_in_session(actual_session, supervisor_id)
             latest_output = output(supervisor_id)
+            stable = bool(previous_output) and previous_output[0] == latest_output
+            previous_output[:] = [latest_output]
             settled = (
                 term is not None
                 and term.get("status") in {"idle", "completed"}
                 and (term.get("input_generation") or 0) >= 2
-                and term.get("input_generation") == term.get("ready_generation")
+                and (term.get("input_generation") == term.get("ready_generation") or stable)
             )
             has_final = case.final_marker in latest_output
             summary = (

@@ -27,6 +27,34 @@ export interface CallbackMessageInput {
 const BLOCKING_STATUSES = new Set(['processing', 'waiting_user_answer'])
 const SETTLED_STATUSES = new Set(['completed', 'idle'])
 const REPLY_OUTCOMES = new Set(['completed', 'idle', 'waiting_user_answer', 'error'])
+// Outcomes that mean "the agent produced something", as opposed to `idle`,
+// which only means the terminal is quiet. Used by the relaxed acceptance path
+// below, where a state this weak must never stand in for an answer.
+const RESPONSE_OUTCOMES = new Set(['completed', 'waiting_user_answer', 'error'])
+
+export interface ReplyReadyOptions {
+  /**
+   * Accept the target's turn even when StatusMonitor never recorded a ready
+   * generation for it.
+   *
+   * Measured (matrix case CL-to-AG, 2026-08-03): a turn that both starts and
+   * ends while the terminal is already latched on a ready status can never
+   * record one. The monitor only advances ready_generation on a
+   * PROCESSING -> ready edge, and a fast turn — a supervisor answering a worker
+   * callback with one line — can finish without a single PROCESSING frame ever
+   * being sampled. The terminal log proved the answer arrived (final marker in
+   * the FIFO bytes) while the status stream stayed silent, so
+   * ready_generation stayed one behind input_generation forever and the reply
+   * was never shown.
+   *
+   * The monitor is right to report only what it observed, so the missing proof
+   * is supplied here instead: the caller passes true only once the output text
+   * has settled (identical on two consecutive polls) and differs from the
+   * pre-prompt baseline. That is a content proof of a new response, which is
+   * strictly stronger than a sampled spinner frame.
+   */
+  allowUnobservedTargetTurn?: boolean
+}
 
 export type AggregateSessionStatus = 'unknown' | 'processing' | 'waiting_user_answer' | 'error' | 'completed' | 'idle'
 
@@ -80,6 +108,7 @@ export function isOrchestrationReplyReady(
   baselineGenerations: Record<string, number>,
   callbacks: CallbackMessageInput[],
   baselineInboxMessageId: number,
+  options: ReplyReadyOptions = {},
 ): boolean {
   const branch = branchForTarget(items.filter(item => !item.killed), targetId)
   const target = branch.find(item => item.id === targetId)
@@ -111,7 +140,13 @@ export function isOrchestrationReplyReady(
   const requiredGeneration = baselineTarget + 1 + directChildren.length
   const inputGeneration = target.input_generation ?? 0
   const readyGeneration = target.ready_generation ?? 0
-  return inputGeneration >= requiredGeneration && readyGeneration === inputGeneration
+  if (inputGeneration < requiredGeneration) return false
+  if (readyGeneration === inputGeneration) return true
+  // No observed ready generation for this turn. Accept only when the caller has
+  // its own proof (settled, changed output) and the target is in a state that
+  // carries a response — see ReplyReadyOptions.
+  if (!options.allowUnobservedTargetTurn) return false
+  return RESPONSE_OUTCOMES.has((target.status || '').toLowerCase())
 }
 
 /**
@@ -125,8 +160,9 @@ export function orchestrationReplyFingerprint(
   baselineGenerations: Record<string, number>,
   callbacks: CallbackMessageInput[],
   baselineInboxMessageId: number,
+  options: ReplyReadyOptions = {},
 ): string | null {
-  if (!isOrchestrationReplyReady(items, targetId, baselineGenerations, callbacks, baselineInboxMessageId)) {
+  if (!isOrchestrationReplyReady(items, targetId, baselineGenerations, callbacks, baselineInboxMessageId, options)) {
     return null
   }
   const terminals = items

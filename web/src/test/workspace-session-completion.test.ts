@@ -124,6 +124,64 @@ describe('isOrchestrationReplyReady', () => {
   })
 })
 
+describe('isOrchestrationReplyReady — turns the monitor never observed', () => {
+  // Live shape from matrix case CL-to-AG (2026-08-03): the claude supervisor
+  // answered its worker's callback, the answer is in the FIFO bytes, and the
+  // status stream recorded nothing at all for that turn — so input_generation
+  // sat one ahead of ready_generation for good and the reply was never shown.
+  const stalled = [
+    { id: 'supervisor', status: 'completed', input_generation: 3, ready_generation: 2 },
+    { id: 'worker', caller_id: 'supervisor', status: 'completed', input_generation: 2, ready_generation: 2 },
+  ]
+  const baseline = { supervisor: 1, worker: 0 }
+  const callbacks = [{ id: 76, sender_id: 'worker', status: 'delivered' }]
+
+  it('stays pending by default — a missing ready generation is still missing', () => {
+    expect(isOrchestrationReplyReady(stalled, 'supervisor', baseline, callbacks, 70)).toBe(false)
+  })
+
+  it('accepts the reply once the caller proves the output settled', () => {
+    expect(isOrchestrationReplyReady(stalled, 'supervisor', baseline, callbacks, 70, {
+      allowUnobservedTargetTurn: true,
+    })).toBe(true)
+  })
+
+  it('refuses an idle target even with settled output — quiet is not an answer', () => {
+    const idleTarget = [{ ...stalled[0], status: 'idle' }, stalled[1]]
+    expect(isOrchestrationReplyReady(idleTarget, 'supervisor', baseline, callbacks, 70, {
+      allowUnobservedTargetTurn: true,
+    })).toBe(false)
+  })
+
+  it('still requires the callback-triggered input cycle to have happened', () => {
+    // input_generation 2 = prompt only; the callback never reached the
+    // supervisor, so no amount of output proof makes this a finished turn.
+    const tooEarly = [{ ...stalled[0], input_generation: 2, ready_generation: 1 }, stalled[1]]
+    expect(isOrchestrationReplyReady(tooEarly, 'supervisor', baseline, callbacks, 70, {
+      allowUnobservedTargetTurn: true,
+    })).toBe(false)
+  })
+
+  it('does not relax the rule for delegated workers', () => {
+    // A worker's own turn is proven by its callback; letting a lagging worker
+    // through here would accept a reply while the worker is mid-answer.
+    const laggingWorker = [
+      { id: 'supervisor', status: 'completed', input_generation: 3, ready_generation: 3 },
+      { id: 'worker', caller_id: 'supervisor', status: 'completed', input_generation: 2, ready_generation: 1 },
+    ]
+    expect(isOrchestrationReplyReady(laggingWorker, 'supervisor', baseline, callbacks, 70, {
+      allowUnobservedTargetTurn: true,
+    })).toBe(false)
+  })
+
+  it('keeps rejecting a target that is still processing', () => {
+    const busy = [{ ...stalled[0], status: 'processing' }, stalled[1]]
+    expect(isOrchestrationReplyReady(busy, 'supervisor', baseline, callbacks, 70, {
+      allowUnobservedTargetTurn: true,
+    })).toBe(false)
+  })
+})
+
 describe('aggregateSessionStatus', () => {
   it('reports processing instead of completed while a delegated worker is active', () => {
     expect(aggregateSessionStatus([{ status: 'completed' }, { status: 'processing' }])).toBe('processing')

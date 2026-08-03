@@ -392,6 +392,10 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
     let lastProgressAt = Date.now()
     let lastFingerprint = ''
     let announcedQuiet = false
+    // Previous round's cleaned output. Two identical reads mean the render has
+    // settled, which is what licenses accepting a turn the StatusMonitor never
+    // observed going PROCESSING (see ReplyReadyOptions).
+    let lastCleanOutput: string | null = null
 
     const poll = async () => {
       try {
@@ -405,15 +409,10 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
           ),
         ])
         if (cancelled) return
-        const beforeFingerprint = orchestrationReplyFingerprint(
-          sessionBefore.terminals,
-          pendingReply.terminalId,
-          pendingReply.baselineGenerations,
-          inboxBefore,
-          pendingReply.baselineInboxMessageId,
-        )
-        if (!beforeFingerprint) throw new Error('Orchestration is still running')
-
+        // The output read comes before the readiness gate on purpose. The reply's
+        // real proof is that the text changed, and reading it every round is also
+        // what keeps the inactivity clock honest — when the gate ran first, a
+        // long turn produced no reads at all, so nothing could count as progress.
         const outputResult = await api.getTerminalOutput(pendingReply.terminalId, 'last')
         const [sessionAfter, inboxAfter] = await Promise.all([
           api.getSession(sessionName),
@@ -425,14 +424,6 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
           ),
         ])
         if (cancelled) return
-        const afterFingerprint = orchestrationReplyFingerprint(
-          sessionAfter.terminals,
-          pendingReply.terminalId,
-          pendingReply.baselineGenerations,
-          inboxAfter,
-          pendingReply.baselineInboxMessageId,
-        )
-        if (beforeFingerprint !== afterFingerprint) throw new Error('Orchestration state changed during output read')
 
         // Any movement re-arms the wait — computed from the detail this round
         // already fetched, so watching for progress costs no extra request.
@@ -449,7 +440,34 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
         }
 
         const clean = formatOrchestratorOutput(outputResult.output || '')
-        if (clean && clean !== pendingReply.baseline) {
+        const changed = !!clean && clean !== pendingReply.baseline
+        // The same text twice in a row means the TUI finished repainting, so
+        // this is the whole answer and not a half-rendered one. That is the
+        // proof that stands in for a ready generation the monitor never saw.
+        const renderSettled = changed && clean === lastCleanOutput
+        lastCleanOutput = clean
+        const readyOptions = { allowUnobservedTargetTurn: renderSettled }
+        const beforeFingerprint = orchestrationReplyFingerprint(
+          sessionBefore.terminals,
+          pendingReply.terminalId,
+          pendingReply.baselineGenerations,
+          inboxBefore,
+          pendingReply.baselineInboxMessageId,
+          readyOptions,
+        )
+        const afterFingerprint = orchestrationReplyFingerprint(
+          sessionAfter.terminals,
+          pendingReply.terminalId,
+          pendingReply.baselineGenerations,
+          inboxAfter,
+          pendingReply.baselineInboxMessageId,
+          readyOptions,
+        )
+        // Both snapshots must agree, so an interim orchestration state can
+        // never be paired with this output read.
+        const bracketed = !!beforeFingerprint && beforeFingerprint === afterFingerprint
+
+        if (bracketed && changed) {
           // Freeze what this turn actually delegated, so the collapsed
           // "✓ 완료 · 워커 N · 소요 M" summary survives reload.
           const summary = summarizeOrchestration(
