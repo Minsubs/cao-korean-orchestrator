@@ -448,8 +448,8 @@ CAO fork를 "채팅 중심 멀티 에이전트 오케스트레이션 작업대 +
 - e2e용 임시 프로필 4개(agent-store) 정리 여부.
 - CRLF 재발 방지는 PR #19(`.gitattributes`)로 처리. 남은 것은 **최상위 체크아웃의 `core.bare=true` 플래그를
   해제할지**(해제해야 그 체크아웃의 973파일이 실제로 정리 가능) — **사용자 결정 대기**(§0.17).
-- 스테일 워크트리 4개 삭제 — 아카이브는 끝났고 명령만 남았다. `git worktree remove` 가 하네스에 차단돼
-  **사용자가 직접 실행해야 한다**(§0.17에 명령 있음).
+- ~~스테일 워크트리 4개 삭제~~ → 사용자가 직접 실행해 제거 완료. 남은 워크트리는 `pr6-ci` 뿐이다(§0.17).
+- 제거된 워크트리의 로컬 브랜치 4개(전부 `main` 에 머지됨) 삭제 여부 — **사용자 결정 대기**.
 - ~~`tooling-wsl-fix` 브랜치 처리~~ → PR #18 로 이식 완료(§0.17).
 - ~~push/PR: 사용자 지시 없음 — 로컬 머지만 완료된 상태.~~ **해소** — 2026-08-03 기준 PR #1~#16 전부 origin 머지, 열린 PR 0건(§0.17).
 
@@ -527,21 +527,13 @@ CAO fork를 "채팅 중심 멀티 에이전트 오케스트레이션 작업대 +
 - 워크트리 5개(`pr6-ci`, `coldstart-phase4d`, `handoff-linux-wsl`, `agent-a21c969f07d3bfb02`, `agent-a5714d1cc250b4f0d`)의
   브랜치는 **전부 `main` 대비 0 commits ahead** → 커밋 유실 위험 없음. 미추적물은 위 플랜 3건 외에는 SDD 스크래치
   (`.superpowers/`의 리뷰 diff·태스크 리포트)와 라이브 캡처 png 4장뿐이었다.
-- **스테일 워크트리 4개(`coldstart-phase4d`, `handoff-linux-wsl`, `agent-*` 2개)는 아직 남아 있다.**
-  `git worktree remove --force` 가 하네스 auto-mode classifier 에 차단됐다(AI 우회 금지 — 사용자가 직접
-  실행하거나 Bash 권한 규칙을 추가해야 한다). **다만 버전관리 안 되는 참고물은 이미 안전한 곳으로 복사해 두었으므로
-  지금 지워도 잃을 것이 없다**: `.omo/salvage-2026-08-03/`(SDD 렛저 2벌 + 라이브 캡처 4장, 73파일 2.6MB).
-  HANDOFF 본문이 `.superpowers/sdd/progress.md` 를 참조하는 대목은 그 아카이브에서 읽으면 된다.
-  제거 명령:
-
-  ```bash
-  cd /home/minsub57/hunesion_workspace/cao-korean-orchestrator
-  for w in coldstart-phase4d handoff-linux-wsl agent-a21c969f07d3bfb02 agent-a5714d1cc250b4f0d; do
-    git worktree remove --force .claude/worktrees/$w
-  done
-  ```
-
-  `pr6-ci`(= `main` 체크아웃)는 최상위가 bare 라 실질적인 main 작업본이므로 남긴다.
+- **스테일 워크트리 4개(`coldstart-phase4d`, `handoff-linux-wsl`, `agent-*` 2개)는 제거했다.**
+  `git worktree remove --force` 는 하네스 auto-mode classifier 가 AI 실행을 막아서 사용자가 직접 돌렸다.
+  제거 전 버전관리되지 않는 참고물은 `.omo/salvage-2026-08-03/` 로 복사해 뒀다(SDD 렛저 2벌 + 라이브 캡처 4장,
+  73파일 2.6MB). HANDOFF 본문이 `.superpowers/sdd/progress.md` 를 참조하는 대목은 이제 그 아카이브에서 읽는다.
+  남은 워크트리는 `pr6-ci`(= `main` 체크아웃, 최상위가 bare 라 실질적인 main 작업본)와 이 세션의 작업본뿐이다.
+- 제거된 워크트리가 쓰던 로컬 브랜치(`worktree-coldstart-phase4d`, `phase3-error-cost`,
+  `wsl-3ai-orchestration`, `worktree-agent-*`)는 전부 `main` 에 머지된 상태로 남아 있다. 정리하려면 별도 판단.
 - **최상위 체크아웃은 `core.bare=true` 다**(작업 파일이 함께 있는데도). 이것 때문에 `git status` 가 실패한다.
   플래그 해제 여부는 사용자 결정 사항 — 해제하면 07-20 스냅샷 파일들과 CRLF 차이가 한꺼번에 보인다.
 - 서버는 **미기동**이었다(9889 무응답, tmux 세션 없음).
