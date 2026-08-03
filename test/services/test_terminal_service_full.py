@@ -1118,6 +1118,58 @@ class TestSendInput:
     @patch("cli_agent_orchestrator.services.terminal_service.provider_manager")
     @patch("cli_agent_orchestrator.backends.registry._backend")
     @patch("cli_agent_orchestrator.services.terminal_service.get_terminal_metadata")
+    def test_send_input_refuses_when_the_provider_says_input_is_discarded(
+        self, mock_get_metadata, mock_tmux, mock_pm, mock_update, mock_status_monitor
+    ):
+        """A CLI that looks ready and throws pasted input away gets to say so.
+
+        Live case: agy parked on its account-eligibility banner. The paste was
+        rendered once and dropped, and the caller waited out a 300s timeout for a
+        turn that could not start. Failing here turns that into a 409 with the
+        reason.
+        """
+        mock_get_metadata.return_value = {
+            "tmux_session": "cao-session",
+            "tmux_window": "agy-abcd",
+        }
+        mock_provider = mock_pm.get_provider.return_value
+        mock_provider.blocks_orchestrated_input_while_waiting_user_answer = False
+        mock_provider.input_block_reason.return_value = "agy is verifying the account"
+        mock_status_monitor.get_status.return_value = TerminalStatus.IDLE
+
+        with pytest.raises(TerminalInputBlockedError, match="verifying the account"):
+            send_input("test1234", "do the thing")
+
+        mock_tmux.send_keys.assert_not_called()
+        mock_update.assert_not_called()
+
+    @patch("cli_agent_orchestrator.services.terminal_service.status_monitor")
+    @patch("cli_agent_orchestrator.services.terminal_service.update_last_active")
+    @patch("cli_agent_orchestrator.services.terminal_service.provider_manager")
+    @patch("cli_agent_orchestrator.backends.registry._backend")
+    @patch("cli_agent_orchestrator.services.terminal_service.get_terminal_metadata")
+    def test_send_input_survives_a_broken_input_guard(
+        self, mock_get_metadata, mock_tmux, mock_pm, mock_update, mock_status_monitor
+    ):
+        """The guard must never be the reason a send fails."""
+        mock_get_metadata.return_value = {
+            "tmux_session": "cao-session",
+            "tmux_window": "agy-abcd",
+        }
+        mock_provider = mock_pm.get_provider.return_value
+        mock_provider.blocks_orchestrated_input_while_waiting_user_answer = False
+        mock_provider.input_block_reason.side_effect = RuntimeError("pane read failed")
+        mock_provider.paste_enter_count = 1
+        mock_status_monitor.get_status.return_value = TerminalStatus.IDLE
+
+        assert send_input("test1234", "do the thing") is True
+        mock_tmux.send_keys.assert_called()
+
+    @patch("cli_agent_orchestrator.services.terminal_service.status_monitor")
+    @patch("cli_agent_orchestrator.services.terminal_service.update_last_active")
+    @patch("cli_agent_orchestrator.services.terminal_service.provider_manager")
+    @patch("cli_agent_orchestrator.backends.registry._backend")
+    @patch("cli_agent_orchestrator.services.terminal_service.get_terminal_metadata")
     def test_send_input_blocked_message_uses_enum_value(
         self, mock_get_metadata, mock_tmux, mock_pm, mock_update, mock_status_monitor
     ):

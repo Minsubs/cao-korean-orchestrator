@@ -98,6 +98,53 @@ def test_error_is_a_provider_error_so_existing_handlers_still_catch_it():
     assert issubclass(AntigravityAccountVerificationError, ProviderError)
 
 
+def test_input_is_blocked_while_the_gate_is_up():
+    """The launch-time check is not enough on its own.
+
+    agy shows "│ Idle │" for a moment before it contacts the backend, so
+    initialize() can pass *before* the banner is drawn — measured live: the
+    startup check read a clean pane and the very next paste was still dropped.
+    The send path is where refusing actually saves the work.
+    """
+    with patch("cli_agent_orchestrator.providers.antigravity_cli.get_backend") as backend:
+        backend.return_value.get_history.return_value = GATED_PANE
+        reason = make_provider().input_block_reason()
+
+    assert reason and "eligibility" in reason
+    # Says what to do about it, not just what happened.
+    assert "start a new one" in reason
+
+
+def test_input_is_allowed_once_the_banner_scrolls_out_of_view():
+    """Bounded to the footer window: a banner left in the scrollback must not
+    block a terminal that went on to work normally."""
+    recovered = GATED_PANE + ("\n  real output line\n" * 400)
+    with patch("cli_agent_orchestrator.providers.antigravity_cli.get_backend") as backend:
+        backend.return_value.get_history.return_value = recovered
+        assert make_provider().input_block_reason() is None
+
+
+def test_input_is_allowed_on_a_ready_pane():
+    with patch("cli_agent_orchestrator.providers.antigravity_cli.get_backend") as backend:
+        backend.return_value.get_history.return_value = READY_PANE
+        assert make_provider().input_block_reason() is None
+
+
+def test_a_failed_pane_read_never_blocks_input():
+    # The guard runs on every send_input; it must not be the thing that breaks
+    # sending when tmux hiccups.
+    with patch("cli_agent_orchestrator.providers.antigravity_cli.get_backend") as backend:
+        backend.return_value.get_history.side_effect = RuntimeError("tmux busy")
+        assert make_provider().input_block_reason() is None
+
+
+def test_other_providers_do_not_block_by_default():
+    from cli_agent_orchestrator.providers.codex import CodexProvider
+
+    provider = CodexProvider(terminal_id="t", session_name="s", window_name="w")
+    assert provider.input_block_reason() is None
+
+
 def test_initialize_refuses_a_gated_terminal():
     """The check belongs to initialize(), so an assigned worker is covered too —
     assign() fails loudly instead of creating a worker that ignores its task."""

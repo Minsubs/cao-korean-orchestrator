@@ -254,6 +254,19 @@ class BaseProvider(ABC):
         """
         return False
 
+    def input_block_reason(self) -> Optional[str]:
+        """Why this terminal cannot accept pasted input right now, or None.
+
+        Default: nothing blocks input. Override when the CLI can look ready by
+        every visible signal and still throw away what is pasted into it — the
+        caller then gets an error at the moment the work would be lost, instead
+        of waiting out a turn that can never run.
+
+        Called on every send_input, so an override must be cheap (one pane read
+        at most) and must never raise.
+        """
+        return None
+
     @property
     def extraction_retries(self) -> int:
         """Number of extraction retries for transient TUI rendering issues.
