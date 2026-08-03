@@ -316,6 +316,61 @@ class TestPipeLivenessWatchdog:
         manager._check_pipe_liveness("term")
         assert rearm_calls == [True], "a stalled pipe-pane forwarder must be re-armed"
 
+    def test_gone_pane_is_dropped_instead_of_probed_forever(self, tmp_path, monkeypatch):
+        """A killed window makes capture-pane fail every time, forever.
+
+        Measured during the cross-provider matrix run: one such terminal logged an
+        identical traceback every check interval for 40+ minutes and paid for a
+        doomed subprocess each time, burying the real errors in the same log. After
+        PIPE_LIVENESS_MAX_PROBE_FAILURES consecutive failures the terminal must be
+        unenrolled — there is nothing to re-arm when the pane is gone.
+        """
+        monkeypatch.setattr(fr, "PIPE_LIVENESS_MAX_PROBE_FAILURES", 3)
+        manager = self._manager(tmp_path, monkeypatch)
+        rearm_calls: list = []
+
+        def dead_probe():
+            raise RuntimeError("can't find window: cao-test:agent-04cb")
+
+        manager._pane_probe["term"] = dead_probe
+        manager._rearm["term"] = lambda: rearm_calls.append(True)
+        manager._last_data_at["term"] = time.monotonic()
+
+        for _ in range(2):
+            manager._check_pipe_liveness("term")
+        assert "term" in manager._pane_probe, "a transient probe failure must not unenroll"
+
+        manager._check_pipe_liveness("term")
+        assert "term" not in manager._pane_probe
+        assert "term" not in manager._rearm
+        assert "term" not in manager._probe_failures
+        assert rearm_calls == [], "a gone pane is never re-armed"
+
+    def test_probe_failure_streak_resets_on_success(self, tmp_path, monkeypatch):
+        """Only *consecutive* failures count — a busy tmux server that fails one
+        probe and answers the next must not accumulate toward the give-up bound."""
+        monkeypatch.setattr(fr, "PIPE_LIVENESS_MAX_PROBE_FAILURES", 2)
+        manager = self._manager(tmp_path, monkeypatch)
+        state = {"fail": True}
+
+        def flaky_probe():
+            if state["fail"]:
+                raise RuntimeError("tmux server busy")
+            return "pane content"
+
+        manager._pane_probe["term"] = flaky_probe
+        manager._rearm["term"] = lambda: None
+        manager._last_data_at["term"] = time.monotonic()
+
+        manager._check_pipe_liveness("term")
+        assert manager._probe_failures["term"] == 1
+        state["fail"] = False
+        manager._check_pipe_liveness("term")
+        assert "term" not in manager._probe_failures
+        state["fail"] = True
+        manager._check_pipe_liveness("term")
+        assert "term" in manager._pane_probe, "the streak restarted, so one failure is not enough"
+
     def test_idle_terminal_is_not_rearmed(self, tmp_path, monkeypatch):
         """Pane unchanged + FIFO silent = a genuinely idle terminal, which must
         NOT trigger a needless re-pipe (the false-positive guard)."""

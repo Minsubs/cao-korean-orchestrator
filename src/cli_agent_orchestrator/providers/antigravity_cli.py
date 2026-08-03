@@ -155,6 +155,31 @@ ERROR_PATTERN = (
     r"^(?:Error:|ERROR:|panic:|agy: .*(?:error|failed)|Traceback \(most recent call last\):)"
 )
 
+# Account-eligibility gate. agy sometimes finishes launching into
+#     ⚠ Verifying your account...
+#     ⎿  We're finishing verifying your account eligibility.
+#        This usually takes a moment. Please try again shortly.
+# and reaches its idle status bar with that banner still on screen, so every
+# readiness check reads it as ready. It is not: input pasted in this state is
+# silently DROPPED — the keystrokes render in the composer once and then vanish,
+# and no turn ever runs.
+#
+# Measured across the 3x3 cross-provider matrix (2026-08-03), six agy terminals,
+# no exceptions: banner present -> the pasted task was never processed (3/3);
+# banner absent -> processed (3/3). The failures cost a 300s worker-created
+# timeout each, with nothing in the logs to explain them, because CAO believed
+# it had delivered the work.
+ACCOUNT_GATE_PATTERN = r"Verifying your account|verifying your account eligibility"
+
+
+class AntigravityAccountVerificationError(ProviderError):
+    """agy is behind its account-eligibility gate and cannot be given work.
+
+    Separate from the generic ProviderError so callers (and the API layer) can
+    tell "this needs a human to finish signing in" apart from a broken profile.
+    """
+
+
 # Tail window (chars) scanned for the footer markers. The footer is rendered
 # in the last few hundred bytes of every TUI frame; 2KB is well within the
 # StatusMonitor's rolling buffer and avoids flipping to IDLE mid-response when
@@ -559,8 +584,45 @@ class AntigravityCliProvider(BaseProvider):
                 f"Antigravity CLI initialization timed out after {ready_timeout} seconds"
             )
 
+        # Ready footer reached — but agy can be ready and still refuse work (see
+        # ACCOUNT_GATE_PATTERN). Check here, at the one point where the pane holds
+        # only launch output, so both a session's supervisor and an assigned
+        # worker get the same guarantee: initialize() returning means the terminal
+        # will actually run what it is handed.
+        self._require_account_verified()
+
         self._initialized = True
         return True
+
+    def _require_account_verified(self, timeout: float = 30.0) -> None:
+        """Refuse a terminal that is sitting behind the account-eligibility gate.
+
+        Bounded wait rather than an instant refusal: the banner is sometimes a
+        transient re-check that clears on its own within a few seconds. When it is
+        still there at the deadline, raising beats returning a terminal that
+        silently eats the first task pasted into it (measured: a 300s
+        worker-created timeout with no error anywhere).
+        """
+        deadline = time.monotonic() + timeout
+        while True:
+            output = get_backend().get_history(self.session_name, self.window_name)
+            clean = strip_terminal_escapes(output or "")
+            if not re.search(ACCOUNT_GATE_PATTERN, clean):
+                return
+            if time.monotonic() >= deadline:
+                logger.error(
+                    "Antigravity account-eligibility gate still up after %.0fs for terminal %s",
+                    timeout,
+                    self.terminal_id,
+                )
+                raise AntigravityAccountVerificationError(
+                    "Antigravity CLI is still verifying the Google account "
+                    '("We\'re finishing verifying your account eligibility") and '
+                    "silently discards any task sent to it in this state. Run `agy` "
+                    "in a terminal until it starts normally (`/usage` re-syncs the "
+                    "plan), then create the session again."
+                )
+            time.sleep(2.0)
 
     # ------------------------------------------------------------------ #
     # Status detection

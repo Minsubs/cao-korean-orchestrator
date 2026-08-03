@@ -15,6 +15,7 @@ from cli_agent_orchestrator.constants import (
     PIPE_LIVENESS_CHECK_INTERVAL_S,
     PIPE_LIVENESS_COLD_START_GRACE_S,
     PIPE_LIVENESS_MAX_COLD_START_ATTEMPTS,
+    PIPE_LIVENESS_MAX_PROBE_FAILURES,
     PIPE_LIVENESS_MAX_REARM_FAILURES,
     PIPE_LIVENESS_STALL_CHECKS,
 )
@@ -136,6 +137,11 @@ class FifoManager:
         # any successful re-arm; once it hits PIPE_LIVENESS_MAX_REARM_FAILURES
         # the terminal is dropped from the watchdog instead of retrying forever.
         self._rearm_failures: Dict[str, int] = {}
+        # Consecutive pane-probe failures per terminal (probe() raised, e.g. the
+        # window was killed so capture-pane errors). Reset on any successful
+        # probe; at PIPE_LIVENESS_MAX_PROBE_FAILURES the terminal is dropped —
+        # a gone pane has nothing to re-arm and never recovers.
+        self._probe_failures: Dict[str, int] = {}
         self._watchdog_stop = threading.Event()
         self._watchdog_thread: Optional[threading.Thread] = None
 
@@ -209,6 +215,7 @@ class FifoManager:
             self._liveness.pop(terminal_id, None)
             self._last_data_at.pop(terminal_id, None)
             self._rearm_failures.pop(terminal_id, None)
+            self._probe_failures.pop(terminal_id, None)
             self._registered_at.pop(terminal_id, None)
             self._ever_delivered.pop(terminal_id, None)
             self._cold_start_attempts.pop(terminal_id, None)
@@ -414,6 +421,49 @@ class FifoManager:
                 except Exception:
                     logger.exception("pipe-pane liveness check failed for terminal %s", terminal_id)
 
+    def _note_probe_failure(self, terminal_id: str, exc: BaseException) -> None:
+        """Count a failed pane probe and unenroll the terminal once it is hopeless.
+
+        A window that was killed makes capture-pane fail every time, forever. The
+        generic handler in ``_watchdog_loop`` would log a traceback on every check
+        interval and pay for a doomed subprocess each time — measured live during
+        the cross-provider matrix run: one killed window produced 40+ minutes of
+        identical tracebacks, which is exactly the noise that hides real errors.
+        """
+        give_up = False
+        failures = 0
+        with self._lock:
+            if terminal_id not in self._pane_probe:
+                return  # unenrolled while the probe was in flight
+            failures = self._probe_failures.get(terminal_id, 0) + 1
+            self._probe_failures[terminal_id] = failures
+            give_up = failures >= PIPE_LIVENESS_MAX_PROBE_FAILURES
+            if give_up:
+                self._pane_probe.pop(terminal_id, None)
+                self._rearm.pop(terminal_id, None)
+                self._liveness.pop(terminal_id, None)
+                self._rearm_failures.pop(terminal_id, None)
+                self._probe_failures.pop(terminal_id, None)
+                self._registered_at.pop(terminal_id, None)
+                self._ever_delivered.pop(terminal_id, None)
+                self._cold_start_attempts.pop(terminal_id, None)
+        if give_up:
+            logger.warning(
+                "Pane probe for terminal %s failed %d consecutive times (%s) — the pane "
+                "is gone; dropping it from the pipe-liveness watchdog",
+                terminal_id,
+                failures,
+                exc,
+            )
+        else:
+            logger.debug(
+                "Pane probe for terminal %s failed (%d/%d): %s",
+                terminal_id,
+                failures,
+                PIPE_LIVENESS_MAX_PROBE_FAILURES,
+                exc,
+            )
+
     def _check_pipe_liveness(self, terminal_id: str) -> None:
         """One liveness check for a terminal: re-arm a stalled pipe-pane forwarder.
 
@@ -463,7 +513,13 @@ class FifoManager:
         # probe() is a slow tmux `capture-pane` call — deliberately made
         # without holding self._lock so it never blocks stop_reader() (or
         # other terminals' housekeeping) for its duration.
-        content = probe()
+        try:
+            content = probe()
+        except Exception as exc:
+            self._note_probe_failure(terminal_id, exc)
+            return
+        with self._lock:
+            self._probe_failures.pop(terminal_id, None)
         now = time.monotonic()
 
         do_rearm = False

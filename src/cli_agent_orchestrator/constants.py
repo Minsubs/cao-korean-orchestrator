@@ -134,6 +134,14 @@ PIPE_LIVENESS_STALL_CHECKS = _env_int("CAO_PIPE_LIVENESS_STALL_CHECKS", 2)
 # gives up on a terminal and drops its enrollment, instead of retrying forever
 # with a WARNING/exception log every failure.
 PIPE_LIVENESS_MAX_REARM_FAILURES = _env_int("CAO_PIPE_LIVENESS_MAX_REARM_FAILURES", 5)
+# Consecutive pane-probe failures (capture-pane itself raising) before the
+# watchdog drops a terminal. A pane whose window was killed never comes back,
+# so tmux keeps failing: measured live during the cross-provider matrix run, one
+# killed window logged a traceback and burned a capture-pane subprocess every
+# check interval for over 40 minutes, drowning the real errors in the same log.
+# Bounded separately from the re-arm failures above because it is a different
+# class: there is nothing to re-arm, the target is simply gone.
+PIPE_LIVENESS_MAX_PROBE_FAILURES = _env_int("CAO_PIPE_LIVENESS_MAX_PROBE_FAILURES", 3)
 # Cold-start stall deadline (harness-control#93): the divergence check above
 # can ONLY ever catch a pipe that WAS delivering and then went stale — it
 # requires a change from an established "healthy" baseline. A pipe that has
