@@ -16,6 +16,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { CHANNELS, type AppInfo, type ShellSettings } from './bridge-contract'
+import { buildCaoHomeProbePlan, needsSafeCaoHome, parseCaoHomeProbe, safeCaoHome } from './cao-home'
 import { isSafeExternalUrl, normalizeInitialPath } from './bridge-guards'
 import { shouldInjectCsp, withCspHeader } from './csp'
 import {
@@ -141,9 +142,30 @@ function loadBootScreen(window: BrowserWindow, state: string): void {
   void window.loadFile(bootPath, { query: { state, platform: process.platform } })
 }
 
+/**
+ * Point the server at a home that can hold FIFOs.
+ *
+ * Only when the default cannot: on this kind of setup `~/.aws` is a symlink to
+ * `/mnt/c/...`, `os.mkfifo` fails there, and the damage is invisible until the
+ * user starts a task — the server boots, /health answers, the UI renders, and
+ * session creation returns `[Errno 95] Operation not supported`.
+ */
+async function applySafeCaoHome(): Promise<void> {
+  if (deps.platform !== 'win32') return
+
+  const probePlan = buildCaoHomeProbePlan(config.distro)
+  const probed = await runCapturing(probePlan.command, probePlan.args)
+  const probe = parseCaoHomeProbe(probed.output)
+  if (!probe || !needsSafeCaoHome(probe.fsType)) return
+
+  config.serverEnv = { ...config.serverEnv, CAO_HOME_DIR: safeCaoHome(probe.home) }
+}
+
 async function boot(): Promise<void> {
   mainWindow = createWindow()
   loadBootScreen(mainWindow, 'checking')
+
+  await applySafeCaoHome()
 
   try {
     server = await startServer(deps, config)
