@@ -3,6 +3,7 @@ import { Blocks, Folder, FolderOpen, RefreshCw, X } from 'lucide-react'
 import { apiUi, type FsEntry } from '../../api.ui'
 import { DirectoryPicker } from './DirectoryPicker'
 import { addGroup, addProject } from './projects'
+import { normalizeServerPath } from './serverPath'
 import type { ProjectsData } from './types'
 
 /** Last path segment, for auto-filling a display name from a picked folder. */
@@ -69,14 +70,16 @@ export function ProjectModal({ existing, onClose, onSave }: ProjectModalProps) {
   const handleSave = () => {
     if (mode === 'single') {
       if (!singlePath.trim() || !singleName.trim()) return
-      onSave(addProject(existing, { name: singleName.trim(), path: singlePath.trim(), groupId: singleGroupId || undefined }))
+      onSave(addProject(existing, { name: singleName.trim(), path: normalizeServerPath(singlePath.trim()), groupId: singleGroupId || undefined }))
       return
     }
-    const root = groupRoot.trim().replace(/\/+$/, '')
+    // Normalise before deriving child paths: a UNC root would otherwise produce
+    // UNC children too, and every one of them fails the same way at session start.
+    const root = normalizeServerPath(groupRoot.trim()).replace(/\/+$/, '')
     const children = scanEntries
       ? scanEntries.filter(d => selected[d.name]).map(d => ({ name: d.name, path: `${root}/${d.name}` }))
-      : manualRows
-    onSave(addGroup(existing, { name: groupName.trim(), root: groupRoot.trim(), children }))
+      : manualRows.map(row => ({ ...row, path: normalizeServerPath(row.path) }))
+    onSave(addGroup(existing, { name: groupName.trim(), root, children }))
   }
 
   return (
