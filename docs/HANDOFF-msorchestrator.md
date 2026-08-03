@@ -438,19 +438,23 @@ CAO fork를 "채팅 중심 멀티 에이전트 오케스트레이션 작업대 +
 7. **Phase 7 Electron** — `docs/electron-plan.md`대로 7a(셸+서버매니저)→7b(preload+웹 감지)→7c(WSL+패키징). Tauri 2 대안 검토는 `03d278c`. 셸 기본값 설정(§4)의 백엔드 시임(CAO_DEFAULT_SHELL→create_window window_shell)은 소형 선행 작업. **다음 큰 단계.**
 8. **잔여 폴리시(작은 것들)** — 습니다체 54곳, mypy 27건(CI 허용), `MemoryGraphView` Sigma 캔버스 hex paint 4개(테마 비반응 — mount 시점 CSS 변수 읽기 필요), 새 작업 모달 첫 턴과 채팅 경로 통일 여부(§0.15 미결), §0.14.1 후속 폴리시 잔여분.
 9. ✅ **미머지 `tooling-wsl-fix`(`1486bf4`) 처리 완료** — `cache.cached_which()` 계열만 PR #18 로 이식했고, 병렬화는
-   의도적으로 제외했다(§0.17). PR #18 머지 후 원 브랜치는 폐기 가능.
-10. **draft PR 3건 리뷰·머지 대기** — #17(문서) / #18(tooling perf) / #19(`.gitattributes`). 서로 독립이라 순서 무관.
+   의도적으로 제외했다(§0.17). 원 브랜치는 `archive/tooling-wsl-fix` 태그로만 남기고 삭제했다(§0.18).
+10. ✅ **저장소 위생 정리 완료(§0.18)** — PR #17·#18·#19·#20·#21 전부 머지. main CI 상시 실패(black)와 간헐 실패
+    (ToolingView 테스트 레이스)까지 원인 수리. 원격 브랜치는 `main` 하나, CRLF 유령 0건, `core.bare` 해제.
+    **`origin/main` = `78f2826`, 열린 PR 0건.**
 
 ## 6. 미해결/사용자 확인 대기
 - 기본 팀 권한 blocker는 §0.4에서 해결했다. 향후 Codex CLI에서 MCP approval config schema가 바뀌면 `scripts/dev/fixed_orchestrator_check.py`로 재검증한다.
 - 도구및확장 "소스" 탭의 마켓플레이스 **추가/삭제 실행**(현재 명령 복사 안내만) — 사용자 요청 시 operations queue로.
 - 미이식 클래식 기능 3건(프로필 카운트 칩·대시보드 필터/정렬·tmux 세션 배지) — 사용자 확인 대기.
 - e2e용 임시 프로필 4개(agent-store) 정리 여부.
-- CRLF 재발 방지는 PR #19(`.gitattributes`)로 처리. 남은 것은 **최상위 체크아웃의 `core.bare=true` 플래그를
-  해제할지**(해제해야 그 체크아웃의 973파일이 실제로 정리 가능) — **사용자 결정 대기**(§0.17).
-- ~~스테일 워크트리 4개 삭제~~ → 사용자가 직접 실행해 제거 완료. 남은 워크트리는 `pr6-ci` 뿐이다(§0.17).
-- 제거된 워크트리의 로컬 브랜치 4개(전부 `main` 에 머지됨) 삭제 여부 — **사용자 결정 대기**.
+- ~~CRLF 973파일~~ → **종료**. PR #19 의 `.gitattributes` + `core.bare` 해제 + 재체크아웃으로 유령 diff 0건(§0.18).
+- ~~스테일 워크트리~~ → **종료**. 4개 + `pr6-ci` 까지 제거, 최상위가 정상 작업본이다(§0.18).
+- ~~브랜치 정리~~ → **종료**. 원격 브랜치는 `main` 하나뿐, 미머지였던 `tooling-wsl-fix` 는 `archive/tooling-wsl-fix`
+  태그로 보존(§0.18).
 - ~~`tooling-wsl-fix` 브랜치 처리~~ → PR #18 로 이식 완료(§0.17).
+- `workspace.test.tsx` 의 잠재 레이스 5건 — CI 실패 이력 없음, 인위적 지연에서만 재현. 실제로 깨지면 §0.18 의
+  재현 기법을 적용한다.
 - ~~push/PR: 사용자 지시 없음 — 로컬 머지만 완료된 상태.~~ **해소** — 2026-08-03 기준 PR #1~#16 전부 origin 머지, 열린 PR 0건(§0.17).
 
 ### 0.16. 2026-07-30 라이브 사용 결함 8건 + 다크 팔레트 하드코딩 제거 (Claude Opus, 백그라운드 잡)
@@ -590,6 +594,67 @@ CAO fork를 "채팅 중심 멀티 에이전트 오케스트레이션 작업대 +
 - PR #17: 문서 전용이라 코드 게이트 없음. `git diff --check` 통과, UTF-8(BOM 없음)·LF 확인.
 - **하지 않은 것**: 프런트 게이트(`tsc`/`vitest`/`build`) — 프런트 변경 0건이라 생략. 라이브 서버 검증 — 이 세션에서
   서버를 띄우지 않았다. `tooling-wsl-fix` 의 WSL 실측 수치(`providers cold 1.6s·warm 0.001s`)는 2026-07-20 원 기록이다.
+
+### 0.18. 2026-08-03 저장소 위생 정리 — 브랜치·bare 플래그·CI 상시 실패·간헐 실패 (Claude Opus, 백그라운드 잡)
+
+§0.17 이 남긴 결정 항목을 전부 닫고, 그 과정에서 드러난 CI 문제 2건을 원인까지 고쳤다. 제품 동작 변경은 없다.
+
+#### 머지된 PR
+
+| PR | 내용 |
+|---|---|
+| #17 | §0.14.1 복원 · §3-1 `CAO_HOME_DIR` · §0.17 · 미커밋 플랜 3건 |
+| #18 | `cache.cached_which()` + resolved-path probe + `rescan()` 이 extensions 갱신 |
+| #19 | `.gitattributes` `* text=auto eol=lf` + 바이너리 명시 |
+| #20 | `agent_profile.py` black 1줄 — **main CI 상시 실패 수리** |
+| #21 | ToolingView 테스트 fetch 레이스 — **CI 간헐 실패 수리** |
+
+#### CI 가 계속 빨간불이던 진짜 이유 (#20)
+
+`#16` 이 validator 뒤 빈 줄을 빠뜨려 `black --check` 가 실패했고, Code Quality job 은 그 스텝에서 중단된다.
+그래서 **그 뒤 품질 스텝들이 최근 머지 여러 번 동안 main 에서 한 번도 실행되지 않았다.** 새 브랜치는 전부
+이 실패를 상속받아 "원래 빨갛다"로 오인되기 쉬웠다. 브랜치가 red 일 때 main 도 red 인지부터 보는 게 맞다.
+
+#### 간헐 실패의 원인과 잡는 법 (#21)
+
+증상은 `Web UI Build` 가 `Unable to find an element with the text: 확인할 수 없음` 으로 **16ms** 만에 실패하고
+재실행하면 통과하는 것이었다. 원인은 제품이 아니라 테스트다 — Phase 5 가 전역 로딩 게이트를 없앤 뒤
+`ToolingView` 는 헤더·탭을 즉시 그리므로, `await screen.findByRole('heading', …)` 은 **이미 있는 요소에 대해
+기다리지 않고 즉시 반환**한다. 그 뒤의 동기 단언이 mock fetch 해소를 앞지르면 실패한다.
+
+**재현 기법(재사용할 것):** 해당 파일의 mock fetch 를 같은 마이크로태스크가 아니라 **매크로태스크에서 해소**하게
+만들면 그 순서가 유일한 순서가 되어 숨은 레이스가 매번 드러난다. `tooling.test.tsx` 는 이 지연(5ms)을 영구히
+남겨 뒀다 — 같은 실수를 하면 CI 가 아니라 로컬에서 즉시 깨진다. 이 방식으로 그 파일에서 3건을 찾아 고쳤다:
+null 환경 필드, 개요 카드, `다시 검사` 베이스라인(로딩 중 버튼 라벨이 `검사 중…`), 그리고 단일 엔드포인트 실패
+테스트의 "에러 배너 없음" 을 데이터 도착 후로 옮겼다(이전에는 아무것도 안 그려진 상태라 항상 통과 = 가짜 초록).
+`afterEach` 에 `vi.unstubAllGlobals()` 도 추가했다(`restoreAllMocks` 는 `stubGlobal` 을 되돌리지 않는다).
+
+검증: 수리 전 전체 스위트 3회 중 2회 실패 → 수리 후 **5회 연속 652/652**, 이후 재확인 3회도 652/652.
+
+**잠재 후보(미수리, 관측된 적 없음):** 같은 지연을 `workspace.test.tsx` 의 mock 7개에 임시 주입하면 5건이 깨진다.
+CI 에서 실패한 이력이 없고 인위적 지연에서만 나타나므로 추측성 수정 대신 기록만 남긴다. 실제로 CI 가 이 파일에서
+간헐 실패하면 위 기법을 그대로 적용할 것. `tooling-discover/sources/envtools` 는 같은 주입에도 전부 통과했다.
+
+#### 저장소 위생
+
+- **브랜치 정리 완료.** 워크트리에서 쓰던 4개를 먼저 지우고, 이어서 남아 있던 구 브랜치를 원격·로컬 모두 정리했다.
+  삭제 전 각 브랜치의 머지 PR 존재를 확인했다(squash 머지라 `ahead>0` 으로 보이는 것들 포함).
+  **현재 원격 브랜치는 `main` 하나뿐이다.**
+- **`tooling-wsl-fix` 만 예외**였다 — PR #4 가 CLOSED(미머지)라 `1486bf4` 가 유일본이었다. 삭제 전
+  **`archive/tooling-wsl-fix` 태그**를 찍어 push 했다(§0.17 이 이 SHA 를 참조하므로 도달 가능해야 한다).
+- **최상위 체크아웃의 `core.bare=true` 를 해제했다.** 이제 `git status` 가 정상 동작한다. 해제 직후에는 CRLF
+  유령이 1082 건 보였지만(`--ignore-cr-at-eol` 로 확인 시 실변경 0), `main` 을 새로 체크아웃하니
+  **#19 의 `.gitattributes` 가 워킹트리에 들어오면서 정규화가 실제로 걸려 0 건이 됐다.** §3-5 의 함정은 종료.
+- 그래서 **`pr6-ci` 워크트리를 제거했다** — 최상위가 bare 라서 만들어 뒀던 대체 작업본이라 존재 이유가 사라졌다.
+  미추적물은 `.omo/salvage-2026-08-03/` 에 보존했다.
+- 워크트리 제거·강제 제거는 하네스 auto-mode classifier 가 AI 실행을 막는 경우가 있다. 그때는 사용자가 직접
+  실행해야 한다(우회하지 않는다).
+
+#### 이 시점의 저장소 상태
+
+`origin/main` = `78f2826`, 열린 PR 0, 원격 브랜치 `main` 1개, 태그 `archive/tooling-wsl-fix`,
+워크트리 = 최상위(정상 작업본) + 세션 워크트리. 게이트: 백엔드 `4814 passed / 14 skipped`,
+프런트 `652/652`, tsc 0, build ✓, black/isort clean.
 
 ## 7. 데이터/저장 규약 (프런트 로컬)
 `cao:theme`(라이트 기본), `cao:projects:v1`, `cao:hidden-providers:v1`(기본 [kiro_cli,kimi_cli,cursor_cli,hermes]), `cao:workbench:v1:<session>`, `cao:workspace:team-roster:v1:<session>`, `cao:workspace:delegation-history:v1:<session>`, `cao:env-profiles:v1`, `cao:usage:claude-limits-optin:v1`, `cao:pending-select-session`(sessionStorage). 세션명은 서버 규칙 `^[A-Za-z0-9_][A-Za-z0-9_-]{0,59}$`(cao- 프리픽스는 표시에서만 숨김 — displayName.ts).

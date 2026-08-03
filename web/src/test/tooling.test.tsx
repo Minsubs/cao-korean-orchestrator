@@ -148,7 +148,7 @@ describe('ToolingView', () => {
     // and lose the race on a loaded CI runner. Forcing the delay makes that
     // ordering the only ordering, so a test that forgets to await the content
     // fails here instead of intermittently in CI.
-    await new Promise(resolve => setTimeout(resolve, 0))
+    await new Promise(resolve => setTimeout(resolve, 5))
     if (failAllCore && CORE_ENDPOINTS.includes(url)) return jsonResponse({ detail: 'not found' }, 404)
     if (failEndpoint && url === failEndpoint) return jsonResponse({ detail: 'not found' }, 404)
     if (url === '/tooling/environment') return jsonResponse(environment)
@@ -354,9 +354,12 @@ describe('ToolingView', () => {
     // No full-screen error — the tab bar and Overview render with real data
     // from the three endpoints that succeeded.
     expect(await screen.findByRole('heading', { name: /도구 및 확장/ })).toBeInTheDocument()
+    // Wait for the succeeded endpoints to paint before asserting the absence of
+    // the full-screen error: checked too early it passes for the wrong reason,
+    // since nothing has rendered yet either way.
+    const cliList = await screen.findByRole('list', { name: '감지된 AI CLI 목록' })
+    expect(await within(cliList).findByText('Claude Code')).toBeInTheDocument()
     expect(screen.queryByText('Tooling API에 연결할 수 없어요')).not.toBeInTheDocument()
-    const cliList = screen.getByRole('list', { name: '감지된 AI CLI 목록' })
-    expect(within(cliList).getByText('Claude Code')).toBeInTheDocument()
 
     // Installed tab also renders its real data untouched.
     fireEvent.click(screen.getByRole('tab', { name: /설치됨/ }))
@@ -378,6 +381,9 @@ describe('ToolingView', () => {
   it('re-fetches all Tooling data and updates the last-scanned stat after "다시 검사"', async () => {
     render(<ToolingView />)
     await screen.findByRole('heading', { name: /도구 및 확장/ })
+    // The button reads "검사 중…" while the initial load is in flight, so waiting
+    // for its idle label is what makes the call count below a stable baseline.
+    await screen.findByRole('button', { name: '다시 검사' })
     const callsBeforeRescan = mockFetch.mock.calls.filter(c => c[0] === '/tooling/environment').length
 
     fireEvent.click(screen.getByRole('button', { name: '다시 검사' }))
