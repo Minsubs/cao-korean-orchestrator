@@ -160,6 +160,27 @@ export function whichInWsl(distro?: string): string | null {
   }
 }
 
+/**
+ * Run a `wsl.exe …` plan and collect its output.
+ *
+ * Async and output-capturing because the caller shows the tail on screen when
+ * an install fails — a bare exit code tells the user nothing they can act on.
+ */
+export function runCapturing(command: string, args: string[]): Promise<{ code: number | null; output: string }> {
+  return new Promise(resolve => {
+    const child = nodeSpawn(command, args, { windowsHide: true })
+    let output = ''
+    child.stdout?.on('data', chunk => {
+      output += String(chunk)
+    })
+    child.stderr?.on('data', chunk => {
+      output += String(chunk)
+    })
+    child.once('error', error => resolve({ code: null, output: output + String(error) }))
+    child.once('close', code => resolve({ code, output }))
+  })
+}
+
 export function currentPlatform(): Platform {
   const platform = process.platform
   if (platform === 'darwin' || platform === 'win32') return platform

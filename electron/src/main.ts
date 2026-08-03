@@ -12,13 +12,23 @@
  */
 
 import { app, BrowserWindow, Menu, Tray, dialog, ipcMain, session, shell } from 'electron'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { CHANNELS, type AppInfo, type ShellSettings } from './bridge-contract'
 import { isSafeExternalUrl, normalizeInitialPath } from './bridge-guards'
 import { shouldInjectCsp, withCspHeader } from './csp'
-import { createInventoryDeps, createRuntimeDeps, getLogPath, setLogPath } from './runtime-deps'
+import {
+  buildInstallPlan,
+  buildNpmLookupPlan,
+  buildUvLookupPlan,
+  buildWslPathPlan,
+  parseBinaryPath,
+  parseUncWslPath,
+  summarizeInstall,
+  verifyCheckout,
+} from './install-server'
+import { createInventoryDeps, createRuntimeDeps, getLogPath, runCapturing, setLogPath } from './runtime-deps'
 import { distroFor, shellBinaryFor } from './shell-config'
 import { buildInventory } from './shell-inventory'
 import { readShellMode, writeShellMode, type StoreDeps } from './shell-store'
@@ -113,6 +123,15 @@ function createWindow(): BrowserWindow {
   })
 
   return window
+}
+
+/** Read a file, or null when it is not there — used for checkout verification. */
+function readFileSafely(path: string): string | null {
+  try {
+    return readFileSync(path, 'utf8')
+  } catch {
+    return null
+  }
 }
 
 /** Boot/diagnostics screen — a local file, never remote content. */
@@ -234,6 +253,97 @@ function registerBridge(): void {
     // not own — usually the developer's own terminal session.
     if (server?.mode !== 'spawned') return
     await restart()
+  })
+
+  ipcMain.handle(CHANNELS.installServer, async () => {
+    const picked = await dialog.showOpenDialog({
+      title: 'cao-server 체크아웃 폴더 선택',
+      properties: ['openDirectory'],
+      message: 'cli-agent-orchestrator 저장소를 체크아웃한 폴더를 골라 주세요.',
+    })
+    if (picked.canceled || !picked.filePaths[0]) return { ok: false, cancelled: true, message: '' }
+    const folder = picked.filePaths[0]
+
+    // Verified before anything runs: any Python project has a pyproject.toml,
+    // and installing the wrong one fails late and confusingly.
+    const verdict = verifyCheckout(
+      relative => existsSync(join(folder, relative)),
+      readFileSafely(join(folder, 'pyproject.toml'))
+    )
+    if (!verdict.ok) {
+      return {
+        ok: false,
+        message:
+          verdict.reason === 'missing-marker'
+            ? '이 폴더에서 pyproject.toml / src/cli_agent_orchestrator 를 찾지 못했어요.'
+            : '이 폴더는 cli-agent-orchestrator 체크아웃이 아니에요.',
+      }
+    }
+
+    // The dialog hands back a Windows path. A folder inside the distro comes as
+    // \\wsl.localhost\<distro>\… , which wslpath mangles rather than converts
+    // (measured: it returned /mnt/c/wsl.localhostUbuntuhome…), so that form is
+    // parsed directly — and the distro named in the path is the one holding the
+    // files, which beats whatever the settings say.
+    const unc = parseUncWslPath(folder)
+    let wslPath = unc?.path ?? ''
+    const distro = unc?.distro ?? config.distro
+
+    if (!unc) {
+      const pathPlan = buildWslPathPlan(folder, distro)
+      const converted = await runCapturing(pathPlan.command, pathPlan.args)
+      wslPath = converted.output.trim()
+      if (converted.code !== 0 || wslPath.length === 0) {
+        return { ok: false, message: 'WSL 경로로 변환하지 못했어요: ' + converted.output.trim().slice(0, 200) }
+      }
+    }
+
+    // uv has to be located first: the login shell wsl.exe starts inherits
+    // nothing, so a uv added to PATH by an interactive rc is invisible here.
+    const uvLookup = buildUvLookupPlan(distro)
+    const uvFound = await runCapturing(uvLookup.command, uvLookup.args)
+    const uvPath = parseBinaryPath(uvFound.output)
+    if (!uvPath) {
+      return {
+        ok: false,
+        message: 'WSL 에서 uv 를 찾지 못했어요. WSL 터미널에서 uv 를 설치한 뒤 다시 시도해 주세요.',
+      }
+    }
+
+    // The web bundle is gitignored, so a fresh clone has none — and a server
+    // installed without it starts fine and answers {"detail":"Not Found"} at /,
+    // which looks like a broken app. Build it as part of the install instead.
+    const needsWebBuild = !existsSync(join(folder, 'src', 'cli_agent_orchestrator', 'web_ui', 'index.html'))
+    let npmPath: string | undefined
+    if (needsWebBuild) {
+      const npmLookup = buildNpmLookupPlan(distro)
+      const npmFound = await runCapturing(npmLookup.command, npmLookup.args)
+      npmPath = parseBinaryPath(npmFound.output) ?? undefined
+      if (!npmPath) {
+        return {
+          ok: false,
+          message:
+            '웹 UI 를 빌드해야 하는데 WSL 안에서 npm 을 찾지 못했어요. ' +
+            '(Windows 쪽 npm 은 Linux 빌드에 쓸 수 없어 제외합니다.)',
+        }
+      }
+    }
+
+    const installPlan = buildInstallPlan({
+      wslCheckoutPath: wslPath,
+      uvPath,
+      ...(npmPath ? { npmPath } : {}),
+      needsWebBuild,
+      ...(distro ? { distro } : {}),
+    })
+    const installed = await runCapturing(installPlan.command, installPlan.args)
+    const result = summarizeInstall(installed.code, installed.output)
+    if (result.ok) {
+      // The install put cao-server on the login shell's PATH, which is exactly
+      // where the normal start path looks — so just start again.
+      void boot()
+    }
+    return result
   })
 
   ipcMain.handle(CHANNELS.shellConfigGet, (): ShellSettings => shellSettings())
