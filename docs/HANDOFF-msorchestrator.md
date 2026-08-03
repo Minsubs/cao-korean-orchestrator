@@ -521,8 +521,12 @@ CAO fork를 "채팅 중심 멀티 에이전트 오케스트레이션 작업대 +
   `fatal: 이 작업은 작업 폴더에서 실행해야 합니다`로 실패한다.** 그 디렉터리의 파일은 2026-07-20 스냅샷이라 최신이 아니다.
   **읽기·작업 모두 워크트리에서 한다**(예: `.claude/worktrees/pr6-ci` = `main` clean).
 - 워크트리 5개(`pr6-ci`, `coldstart-phase4d`, `handoff-linux-wsl`, `agent-a21c969f07d3bfb02`, `agent-a5714d1cc250b4f0d`)의
-  브랜치는 **전부 `main` 대비 0 commits ahead** → 커밋 유실 위험 없음. 남은 미추적물은 스크린샷 png 4장·`.omc/`·
-  `.playwright-mcp/`·`.superpowers/` 스크래치뿐이다. 삭제는 사용자 승인 대기(§6).
+  브랜치는 **전부 `main` 대비 0 commits ahead** → 커밋 유실 위험 없음. 미추적물은 위 플랜 3건 외에는 SDD 스크래치
+  (`.superpowers/`의 리뷰 diff·태스크 리포트)와 라이브 캡처 png 4장뿐이었다.
+- **스테일 워크트리 4개(`coldstart-phase4d`, `handoff-linux-wsl`, `agent-*` 2개)는 이 세션에서 제거했다.** 제거 전
+  버전관리되지 않는 참고물을 `.omo/salvage-2026-08-03/` 로 복사해 두었다(SDD 렛저 2벌 + 캡처 4장, 73파일 2.6MB).
+  HANDOFF 본문이 `.superpowers/sdd/progress.md` 를 참조하는 대목은 이제 그 아카이브에서 읽는다.
+  `pr6-ci`(= `main` 체크아웃)는 최상위가 bare 취급이라 실질적인 main 작업본이므로 남겨 두었다.
 - 서버는 **미기동**이었다(9889 무응답, tmux 세션 없음).
 
 #### §0.16의 "미완" 항목 철회
@@ -536,7 +540,7 @@ CAO fork를 "채팅 중심 멀티 에이전트 오케스트레이션 작업대 +
 |---|---|---|
 | 브랜치 `tooling-wsl-fix` `1486bf4`(2026-07-20, PR 없음) | **실질 대체됨.** 잔여가치 = `cache.cached_which()` 하나 | 프런트 타임아웃은 `DEFAULT_TIMEOUT_MS = 60000` + `Promise.allSettled` + `to_thread`(PR #5 `048ce3b`)로, 백엔드 캐시는 `TTLCache(300s)` + `api/main.py:499,543` 기동 프리웜으로 각각 다른 방식으로 해결됨. 미랜딩분은 `cached_which`(shutil.which hit/miss TTL 캐시)와 `extensions._collect_provider_extensions` 병렬화 — main은 여전히 `extensions.py:126` 직렬, `providers.py:87` 생 `shutil.which` |
 | 워크트리 `handoff-linux-wsl` 의 미커밋 HANDOFF 37줄 | **진짜 유실 위험이었음 → 이번에 §0.14.1로 복원** | `main` HANDOFF가 §0.14(07-21) → §0.15(07-27)로 건너뛰어 PR #5·#6 서사가 정본에 없었다 |
-| 미추적 `docs/superpowers/plans/2026-07-23-cli-install.md` | **기능은 이미 머지됨**(`adapters/base.py` `canInstallCli`, `OverviewPane.tsx` `install_cli`). 기록 보존 차원에서 이번에 커밋 | 같은 시기 다른 플랜 문서는 전부 `docs/superpowers/plans/`에 있는데 이것만 빠져 있었다 |
+| 미추적 플랜 문서 **3건**(`2026-07-23-cli-install.md`, `2026-07-23-phase5-loading-ux.md`, `2026-07-23-phase6b-frontend.md`) | **해당 기능은 전부 머지됨.** 기록 보존 차원에서 이번에 커밋 | 같은 시기 다른 플랜 문서는 전부 `docs/superpowers/plans/`에 있는데 07-23 세션분 3건만 워크트리에만 있었다 |
 
 **`cached_which` 잔여가치의 실제 크기**: 프리웜은 서버 기동 시 1회뿐이라 TTL 300초가 만료되면 그다음 첫 요청이
 콜드 프로브 비용을 전부 다시 낸다(WSL 실측 extensions cold 17.2s). 60s 프런트 타임아웃 안이라 실패하지는 않고
