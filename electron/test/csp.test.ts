@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { contentSecurityPolicy, withCspHeader } from '../src/csp'
+import { contentSecurityPolicy, shouldInjectCsp, withCspHeader } from '../src/csp'
 
 function directive(name: string): string {
   const found = contentSecurityPolicy()
@@ -53,4 +53,28 @@ describe('withCspHeader', () => {
     expect(keys).toHaveLength(1)
     expect((merged['Content-Security-Policy'] as string[])[0]).toContain("script-src 'self'")
   })
+})
+
+describe('shouldInjectCsp', () => {
+  it.each([
+    ['http://127.0.0.1:9889/', true],
+    ['http://localhost:9890/assets/index.js', true],
+    ['http://127.0.0.1:9889/tooling/providers', true],
+  ])('covers the server origin %s', (url, expected) => {
+    expect(shouldInjectCsp(url)).toBe(expected)
+  })
+
+  it('leaves the boot screen alone', () => {
+    // boot.html is a local file whose inline script swaps in the current state.
+    // Injecting the header there blocked it, and a failed start sat forever on
+    // "서버를 확인하는 중이에요" while the real diagnosis never rendered.
+    expect(shouldInjectCsp('file:///C:/Program%20Files/MS%20Orchestrator/resources/app.asar/boot.html')).toBe(false)
+  })
+
+  it.each([['devtools://devtools/bundled/inspector.html'], ['https://example.com/'], ['chrome-extension://abc/x.js']])(
+    'ignores %s',
+    url => {
+      expect(shouldInjectCsp(url)).toBe(false)
+    }
+  )
 })

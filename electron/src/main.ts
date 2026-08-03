@@ -17,7 +17,7 @@ import { join } from 'node:path'
 
 import { CHANNELS, type AppInfo, type ShellSettings } from './bridge-contract'
 import { isSafeExternalUrl, normalizeInitialPath } from './bridge-guards'
-import { withCspHeader } from './csp'
+import { shouldInjectCsp, withCspHeader } from './csp'
 import { createInventoryDeps, createRuntimeDeps, getLogPath, setLogPath } from './runtime-deps'
 import { distroFor, shellBinaryFor } from './shell-config'
 import { buildInventory } from './shell-inventory'
@@ -118,7 +118,8 @@ function createWindow(): BrowserWindow {
 /** Boot/diagnostics screen — a local file, never remote content. */
 function loadBootScreen(window: BrowserWindow, state: string): void {
   const bootPath = join(__dirname, '..', 'boot.html')
-  void window.loadFile(bootPath, { query: { state } })
+  // The copy for a failed lookup differs by platform — see boot.html.
+  void window.loadFile(bootPath, { query: { state, platform: process.platform } })
 }
 
 async function boot(): Promise<void> {
@@ -259,6 +260,10 @@ app.whenReady().then(async () => {
   // cao-server sends no CSP — it was written for a browser. Inject one here so
   // the renderer is not running wide open just because it is inside Electron.
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    if (!shouldInjectCsp(details.url)) {
+      callback({})
+      return
+    }
     callback({ responseHeaders: withCspHeader(details.responseHeaders ?? {}) })
   })
 
