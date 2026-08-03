@@ -80,6 +80,46 @@ export function addGroup(
   return { ...data, groups: [...data.groups, group] }
 }
 
+/**
+ * Rename a project and/or move it to a different folder.
+ *
+ * Looks in both places a project can live — standalone and inside a group —
+ * because the caller only has an id and should not have to know which.
+ */
+export function updateProject(
+  data: ProjectsData,
+  projectId: string,
+  input: { name: string; path: string },
+): ProjectsData {
+  const apply = (project: ProjectRef): ProjectRef =>
+    project.id === projectId ? { ...project, name: input.name, path: input.path } : project
+  return {
+    ...data,
+    projects: data.projects.map(apply),
+    groups: data.groups.map(group => ({ ...group, children: group.children.map(apply) })),
+  }
+}
+
+/**
+ * Rename a group and/or point it at a different root.
+ *
+ * Children keep their own paths: a group's root is a label for where the group
+ * starts, not a prefix the children are derived from, so rewriting them would
+ * silently break projects that live outside the new root.
+ */
+export function updateGroup(
+  data: ProjectsData,
+  groupId: string,
+  input: { name: string; root: string },
+): ProjectsData {
+  return {
+    ...data,
+    groups: data.groups.map(group =>
+      group.id === groupId ? { ...group, name: input.name, root: input.root } : group,
+    ),
+  }
+}
+
 export function removeProject(data: ProjectsData, projectId: string): ProjectsData {
   return {
     ...data,

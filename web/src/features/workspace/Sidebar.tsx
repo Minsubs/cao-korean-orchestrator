@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Blocks, Check, ChevronDown, ChevronRight, Folder, Pin, Plus, Search, Sidebar as SidebarIcon, Sparkles } from 'lucide-react'
+import { Blocks, Check, ChevronDown, ChevronRight, Folder, Pencil, Pin, Plus, Search, Sidebar as SidebarIcon, Sparkles, Trash2 } from 'lucide-react'
 import type { Session } from '../../api'
 import { useStore } from '../../store'
 import {
@@ -7,12 +7,18 @@ import {
   findGroupById,
   loadProjectsData,
   matchWorkingDirectoryToProject,
+  removeGroup,
+  removeProject,
   saveProjectsData,
   togglePinned,
+  updateGroup,
+  updateProject,
 } from './projects'
 import { useSessionLocations } from './useSessionLocations'
 import type { ProjectsData } from './types'
 import { ProjectModal } from './ProjectModal'
+import { ProjectEditModal, type ProjectEditTarget } from './ProjectEditModal'
+import { ConfirmModal } from '../../components/ConfirmModal'
 import { statusDotColor } from './statusColor'
 import { displaySessionName } from './displayName'
 import { isSessionCompleted } from './sessionCompletion'
@@ -37,6 +43,10 @@ export function Sidebar({ collapsed, onToggleCollapsed, activeSessionId, onSelec
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({})
   const [focusedGroupId, setFocusedGroupId] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
+  const [editTarget, setEditTarget] = useState<ProjectEditTarget | null>(null)
+  // Deleting is confirmed rather than undoable: the entry only lives in
+  // localStorage, so there is nothing to restore it from afterwards.
+  const [deleteTarget, setDeleteTarget] = useState<(ProjectEditTarget & { childCount?: number }) | null>(null)
   // Ported from the classic AgentPanel.tsx session list's search box (Phase
   // 2c feature-mapping table) — the new Sidebar had no free-text way to find
   // a session in a long list, only the group-focus click filter below.
@@ -129,7 +139,7 @@ export function Sidebar({ collapsed, onToggleCollapsed, activeSessionId, onSelec
                     type="button"
                     aria-selected={isFocused}
                     onClick={() => setFocusedGroupId(current => (current === group.id ? null : group.id))}
-                    className={`mx-1.5 my-0.5 flex w-[calc(100%-12px)] items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-[var(--surface-2)] ${
+                    className={`group mx-1.5 my-0.5 flex w-[calc(100%-12px)] items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-[var(--surface-2)] ${
                       isFocused ? 'bg-[var(--accent-soft)]' : ''
                     }`}
                     title="그룹 루트 — 하위 프로젝트 전체에 걸친 세션은 여기서 시작해요"
@@ -149,6 +159,19 @@ export function Sidebar({ collapsed, onToggleCollapsed, activeSessionId, onSelec
                       </span>
                       <span className="block truncate font-mono text-[10px] text-[var(--text-3)]">{group.root}</span>
                     </span>
+                    <RowActions
+                      label={group.name}
+                      onEdit={() => setEditTarget({ kind: 'group', id: group.id, name: group.name, path: group.root })}
+                      onDelete={() =>
+                        setDeleteTarget({
+                          kind: 'group',
+                          id: group.id,
+                          name: group.name,
+                          path: group.root,
+                          childCount: group.children.length,
+                        })
+                      }
+                    />
                     <span
                       role="button"
                       tabIndex={-1}
@@ -164,12 +187,17 @@ export function Sidebar({ collapsed, onToggleCollapsed, activeSessionId, onSelec
                   {open && (
                     <div className="ml-5 mr-1.5 border-l border-dashed border-[var(--border)] pl-2">
                       {group.children.map(child => (
-                        <div key={child.id} className="my-0.5 flex items-center gap-2 rounded-lg px-2 py-1.5 text-left">
+                        <div key={child.id} className="group my-0.5 flex items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-[var(--surface-2)]">
                           <Folder size={13} className="shrink-0 text-[var(--text-3)]" />
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-[12px] font-medium text-[var(--text)]">{child.name}</span>
                             <span className="block truncate font-mono text-[10px] text-[var(--text-3)]">{child.path}</span>
                           </span>
+                          <RowActions
+                            label={child.name}
+                            onEdit={() => setEditTarget({ kind: 'project', id: child.id, name: child.name, path: child.path })}
+                            onDelete={() => setDeleteTarget({ kind: 'project', id: child.id, name: child.name, path: child.path })}
+                          />
                         </div>
                       ))}
                     </div>
@@ -179,10 +207,9 @@ export function Sidebar({ collapsed, onToggleCollapsed, activeSessionId, onSelec
             })}
 
             {data.projects.map(project => (
-              <button
+              <div
                 key={project.id}
-                type="button"
-                className="mx-1.5 my-0.5 flex w-[calc(100%-12px)] items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-[var(--surface-2)]"
+                className="group mx-1.5 my-0.5 flex w-[calc(100%-12px)] items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-[var(--surface-2)]"
               >
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-[var(--surface-3)] text-[var(--text-2)]">
                   <Folder size={13} />
@@ -191,7 +218,12 @@ export function Sidebar({ collapsed, onToggleCollapsed, activeSessionId, onSelec
                   <span className="block truncate text-[12.5px] font-semibold text-[var(--text)]">{project.name}</span>
                   <span className="block truncate font-mono text-[10px] text-[var(--text-3)]">{project.path}</span>
                 </span>
-              </button>
+                <RowActions
+                  label={project.name}
+                  onEdit={() => setEditTarget({ kind: 'project', id: project.id, name: project.name, path: project.path })}
+                  onDelete={() => setDeleteTarget({ kind: 'project', id: project.id, name: project.name, path: project.path })}
+                />
+              </div>
             ))}
           </>
         )}
@@ -283,6 +315,55 @@ export function Sidebar({ collapsed, onToggleCollapsed, activeSessionId, onSelec
           }}
         />
       )}
+
+      {editTarget && (
+        <ProjectEditModal
+          target={editTarget}
+          onClose={() => setEditTarget(null)}
+          onSave={input => {
+            updateData(
+              editTarget.kind === 'group'
+                ? updateGroup(data, editTarget.id, { name: input.name, root: input.path })
+                : updateProject(data, editTarget.id, input),
+            )
+            setEditTarget(null)
+          }}
+        />
+      )}
+
+      <ConfirmModal
+        open={deleteTarget !== null}
+        variant="danger"
+        title={deleteTarget?.kind === 'group' ? '그룹을 삭제할까요?' : '프로젝트를 삭제할까요?'}
+        message={
+          deleteTarget?.kind === 'group'
+            ? '목록에서만 사라지고 폴더와 세션은 그대로 남아요. 이 그룹에 속한 하위 프로젝트도 함께 목록에서 제거됩니다.'
+            : '목록에서만 사라지고 폴더와 세션은 그대로 남아요. 이 프로젝트에 연결돼 있던 세션은 "기타"로 표시됩니다.'
+        }
+        details={
+          deleteTarget
+            ? [
+                { label: '이름', value: deleteTarget.name },
+                { label: deleteTarget.kind === 'group' ? '루트' : '경로', value: deleteTarget.path },
+                ...(deleteTarget.kind === 'group'
+                  ? [{ label: '하위 프로젝트', value: `${deleteTarget.childCount ?? 0}개` }]
+                  : []),
+              ]
+            : undefined
+        }
+        confirmLabel="삭제"
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={() => {
+          if (!deleteTarget) return
+          updateData(
+            deleteTarget.kind === 'group'
+              ? removeGroup(data, deleteTarget.id)
+              : removeProject(data, deleteTarget.id),
+          )
+          if (deleteTarget.kind === 'group' && focusedGroupId === deleteTarget.id) setFocusedGroupId(null)
+          setDeleteTarget(null)
+        }}
+      />
     </aside>
   )
 }
@@ -346,5 +427,64 @@ function SessionRow({
         <Pin size={12} />
       </button>
     </div>
+  )
+}
+
+/**
+ * Per-row edit/delete affordances.
+ *
+ * Spans with `role="button"` rather than real buttons: the group row is itself
+ * a `<button>`, and nesting one inside another is invalid HTML that browsers
+ * resolve by dropping the inner element — the same reason the chevron beside
+ * these is already a span.
+ *
+ * Visible on hover *and* on focus, so keyboard users are not left without them.
+ */
+function RowActions({ label, onEdit, onDelete }: { label: string; onEdit: () => void; onDelete: () => void }) {
+  const base =
+    'rounded p-1 text-[var(--text-3)] opacity-0 transition-opacity hover:bg-[var(--surface-3)] hover:text-[var(--text)] focus:opacity-100 group-hover:opacity-100'
+  return (
+    <span className="flex shrink-0 items-center gap-0.5">
+      <span
+        role="button"
+        tabIndex={0}
+        aria-label={`${label} 편집`}
+        title="편집"
+        className={base}
+        onClick={e => {
+          e.stopPropagation()
+          onEdit()
+        }}
+        onKeyDown={e => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            e.stopPropagation()
+            onEdit()
+          }
+        }}
+      >
+        <Pencil size={12} />
+      </span>
+      <span
+        role="button"
+        tabIndex={0}
+        aria-label={`${label} 삭제`}
+        title="삭제"
+        className={`${base} hover:text-[var(--danger)]`}
+        onClick={e => {
+          e.stopPropagation()
+          onDelete()
+        }}
+        onKeyDown={e => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            e.stopPropagation()
+            onDelete()
+          }
+        }}
+      >
+        <Trash2 size={12} />
+      </span>
+    </span>
   )
 }
