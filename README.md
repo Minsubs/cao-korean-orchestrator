@@ -1,429 +1,153 @@
-# CLI Agent Orchestrator (CAO)
+# MS Orchestrator
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+여러 AI 코딩 CLI(Claude Code · Codex · Antigravity 등)를 **한 채팅 화면에서 오케스트레이션**하는 로컬 작업대.
+오케스트레이터 하나가 워커 에이전트에게 일을 나눠 주고, 각 에이전트는 tmux 안에서 진짜 CLI 프로세스로 돌아간다.
 
-[![PyPI version](https://img.shields.io/pypi/v/cli-agent-orchestrator.svg)](https://pypi.org/project/cli-agent-orchestrator/)
-[![Python versions](https://img.shields.io/pypi/pyversions/cli-agent-orchestrator.svg)](https://pypi.org/project/cli-agent-orchestrator/)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/awslabs/cli-agent-orchestrator)
+[awslabs/cli-agent-orchestrator](https://github.com/awslabs/cli-agent-orchestrator) 포크다. 상위 프로젝트의 코어
+(tmux 백엔드 · MCP 오케스트레이션 · 프로필)를 그대로 쓰면서, 이 저장소는 **한국어 UI · 채팅 중심 작업공간 ·
+도구/확장 컨트롤센터 · 데스크톱 셸**을 얹었다. CLI 사용법·MCP 프리미티브 같은 원본 기능 문서는 상위 저장소 README 를 참고한다.
 
-**CLI Agent Orchestrator (CAO)** is an open-source multi-agent orchestration framework for AI coding CLIs — Claude Code, Kiro CLI, Codex CLI, Antigravity CLI, Hermes Agent, Kimi CLI, GitHub Copilot CLI, OpenCode, and Cursor CLI. CAO runs each agent in an isolated tmux session and coordinates them with a supervisor–worker pattern over the Model Context Protocol (MCP), so one supervisor agent can delegate tasks to multiple specialist agents in parallel, sequentially, or as a swarm.
-
-## What is CAO?
-
-CAO (pronounced "kay-oh") is a lightweight local orchestrator that sits between you and the CLI coding agents you already use. Instead of running a single agent at a time, CAO lets a supervisor agent launch, message, and coordinate multiple worker agents — each one a real CLI tool (Claude Code, Kiro, Codex, etc.) running in its own tmux terminal. Agents communicate through MCP-exposed primitives (**handoff**, **assign**, and **send_message**) and are managed via a CLI, a bundled Web UI, or an MCP management server. Because every agent is a full CLI process, CAO preserves tool behaviour, auth, and advanced features (Claude Code sub-agents, Kiro CLI custom agents, etc.) that a raw API wrapper cannot.
-
-## Common use cases
-
-- **Parallel code review / implementation** — supervisor assigns N reviewers to review N files concurrently, then merges their findings.
-- **Cross-provider workflows** — supervisor on one CLI (e.g. Kiro), worker on another (e.g. Claude Code), per-profile provider selection.
-- **Scheduled agent runs** — cron-style "every morning at 9am" triggers via [Flows](docs/flows.md).
-- **Headless agent execution in CI** — `cao launch --headless --async` to run tasks unattended.
-- **Multi-agent swarms with HITL** — humans can attach to any tmux session to intervene or steer.
-- **Agent-driven agent management** — a primary agent uses [`cao-ops-mcp`](#cao-ops-mcp-server) to spawn and monitor CAO sessions from its own chat loop.
-
-## Hierarchical Multi-Agent System
-
-CAO implements a hierarchical multi-agent system — one supervisor agent delegates to specialised worker agents rather than running everything in a single context.
-
-![CAO architecture: supervisor agent delegating to worker agents in isolated tmux sessions via MCP](./docs/assets/cao_architecture.png)
-
-### Key Features
-
-- **Hierarchical supervisor–worker orchestration** — a supervisor agent coordinates and delegates; workers focus on their domain. Preserves overall context without polluting workers.
-- **Session isolation via tmux** — every agent runs in its own tmux session. Clean context separation, real PTY access, humans can `tmux attach` to steer at any time.
-- **Orchestration primitives over MCP** — `handoff` (sync, wait for completion), `assign` (async, fire-and-forget), and `send_message` (inbox delivery between agents). Hermes workers also use `answer_user_prompt` for structured approval and clarify prompts; other providers may fall back to ordinary text delivery until they implement equivalent prompt states. See [Multi-Agent Orchestration](#multi-agent-orchestration).
-- **Cross-provider mixing** — run workers on different CLIs in the same session. Pin a profile to a provider via agent frontmatter. See [Cross-Provider Orchestration](#cross-provider-orchestration).
-- **Scheduled flows** — cron-like scheduling for unattended agent runs. See [docs/flows.md](docs/flows.md).
-- **Web UI, CLI, and MCP control planes** — manage sessions from the browser, `cao session` commands, or the `cao-ops-mcp` server. See [docs/control-planes.md](docs/control-planes.md).
-- **Tool restrictions per agent** — `role` + `allowedTools` in the profile, translated to each provider's native enforcement where available. See [docs/tool-restrictions.md](docs/tool-restrictions.md).
-- **Persistent agent memory** — agents store and recall knowledge across sessions using `memory_store` and `memory_recall` MCP tools. CAO automatically injects relevant memories as context at session start. See [docs/memory.md](docs/memory.md).
-- **Direct worker steering** — unlike traditional "sub-agent" features, you can attach to a running worker and intervene mid-task.
-- **Full CLI feature access** — agents keep native CLI features: Claude Code [sub-agents](https://docs.claude.com/en/docs/claude-code/sub-agents), Kiro CLI custom agents, provider-native auth, etc.
-- **Plugin system for outbound events** — forward inter-agent messages to Discord, Slack, Telegram, or any webhook target. See [Plugins](#plugins).
-
-For detailed project structure and architecture, see [CODEBASE.md](CODEBASE.md).
-
-## Installation
-
-### Requirements
-
-- **curl** and **git** — for downloading installers and cloning the repo
-- **Python 3.10 or higher** — see [pyproject.toml](pyproject.toml)
-- **tmux 3.3+** — used for agent session isolation
-- **[uv](https://docs.astral.sh/uv/)** — fast Python package installer and virtual environment manager
-
-### 1. Install Python 3.10+
-
-```bash
-# macOS (Homebrew)
-brew install python@3.12
-
-# Ubuntu/Debian
-sudo apt update && sudo apt install python3.12 python3.12-venv
-
-# Amazon Linux 2023 / Fedora
-sudo dnf install python3.12
-```
-
-Verify:
-
-```bash
-python3 --version   # 3.10 or higher
-```
-
-> We recommend using [uv](https://docs.astral.sh/uv/) rather than a system-wide Python install like Anaconda. `uv` handles virtual environments and Python version resolution per-project.
-
-### 2. Install tmux (3.3+)
-
-```bash
-bash <(curl -s https://raw.githubusercontent.com/awslabs/cli-agent-orchestrator/refs/heads/main/tmux-install.sh)
-```
-
-### 3. Install uv
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-source $HOME/.local/bin/env   # Add uv to PATH (or restart your shell)
-```
-
-### 4. Install CLI Agent Orchestrator
-
-```bash
-uv tool install git+https://github.com/awslabs/cli-agent-orchestrator.git@main --upgrade
-```
-
-This pulls the latest `main` commit and includes the pre-built Web UI inside the wheel, so **you do not need Node.js or `npm install` to use CAO**. Node.js is only required if you plan to run the frontend in dev mode (hot-reload) or rebuild the bundle yourself — see [docs/web-ui.md](docs/web-ui.md).
-
-#### Install from PyPI (optional)
-
-PyPI publishes tagged releases only, so it will lag behind `main` between releases. Prefer the `git+` install above if you want the latest fixes.
-
-```bash
-uv tool install cli-agent-orchestrator --upgrade
-
-# Pin a specific release
-uv tool install cli-agent-orchestrator==2.1.0
-```
-
-For local development (`git clone` + `uv sync`) and the testing/quality workflow, see [DEVELOPMENT.md](DEVELOPMENT.md).
-
-## Devcontainer Feature
-
-CAO includes an official devcontainer feature for container-native installation.
-
-- Usage and options: [docs/devcontainer-feature.md](docs/devcontainer-feature.md)
-- Local validation commands: [docs/devcontainer-feature.md#validation](docs/devcontainer-feature.md#validation)
-- Release plan: [docs/devcontainer-feature.md#release-plan](docs/devcontainer-feature.md#release-plan)
-
-## Prerequisite: a CLI agent tool
-
-CAO drives existing CLI agent tools — it does not replace them. Before using CAO, install at least one of the following. You can install more than one and mix them in the same orchestration.
-
-| Provider | Documentation | Authentication |
-|----------|---------------|----------------|
-| **Kiro CLI** (default) | [Provider docs](docs/kiro-cli.md) · [Installation](https://kiro.dev/docs/kiro-cli) | AWS credentials |
-| **Claude Code** | [Provider docs](docs/claude-code.md) · [Installation](https://docs.anthropic.com/en/docs/claude-code/getting-started) | Anthropic API key |
-| **Codex CLI** | [Provider docs](docs/codex-cli.md) · [Installation](https://github.com/openai/codex) | OpenAI API key |
-| **Hermes Agent** | [Provider docs](docs/hermes.md) | Hermes auth; optional `hermesProfile` wrapper; configure `cao-mcp-server` in the selected Hermes profile for orchestration tools |
-| **Kimi CLI** | [Provider docs](docs/kimi-cli.md) · [Installation](https://platform.moonshot.cn/docs/kimi-cli) | Moonshot API key |
-| **GitHub Copilot CLI** | [Provider docs](docs/copilot-cli.md) · [Installation](https://github.com/features/copilot/cli) | GitHub auth |
-| **OpenCode CLI** *(experimental — temporary inbox polling fallback for multi-agent callbacks, [#203](https://github.com/awslabs/cli-agent-orchestrator/issues/203))* | [Provider docs](docs/opencode-cli.md) · [Installation](https://opencode.ai) | Per-model API key |
-| **Cursor CLI** | [Provider docs](docs/cursor-cli.md) · [Installation](https://cursor.com/cli) | Cursor subscription / API key |
-| **Antigravity CLI** | [Provider docs](docs/antigravity-cli.md) · [Installation](https://antigravity.google) | Google account (shared with the Antigravity IDE login) |
-
-## Quick Start
-
-### 1. Install agent profiles
-
-```bash
-cao install code_supervisor      # the supervisor that delegates to workers
-cao install developer            # optional worker
-cao install reviewer             # optional worker
-```
-
-You can also install agents from local files or URLs:
-
-```bash
-cao install ./my-custom-agent.md
-cao install https://example.com/agents/custom-agent.md
-```
-
-For creating custom agent profiles, see [docs/agent-profile.md](docs/agent-profile.md).
-
-#### Profile management (`cao profile`)
-
-```bash
-cao profile list                                    # List all installed profiles
-cao profile show <name|file>                        # Inspect frontmatter details
-cao profile validate <name|file>                    # Schema + deprecation checks
-cao profile templates                               # List scaffolding templates
-cao profile create -t aws/stepfunction -c config.json  # Generate from template
-cao profile remove <name>                           # Delete from local store
-```
-
-### 2. Start the server
-
-```bash
-cao-server
-```
-
-### 3. Launch the supervisor
-
-In another terminal:
-
-```bash
-cao launch --agents code_supervisor
-
-# Or specify a provider
-cao launch --agents code_supervisor --provider claude_code
-# Valid: kiro_cli | claude_code | codex | antigravity_cli | hermes | kimi_cli | copilot_cli | opencode_cli | cursor_cli
-
-# Unrestricted access, skip confirmation (DANGEROUS)
-cao launch --agents code_supervisor --yolo
-```
-
-The supervisor coordinates and delegates tasks to worker agents using the orchestration patterns.
-
-### 4. Shutdown
-
-```bash
-cao shutdown --all                      # shut down every CAO session
-cao shutdown --session cao-my-session   # shut down a specific session
-```
-
-### Sessions run in tmux
-
-All agent sessions run in tmux — you can `tmux attach -t <session-name>` to watch agents in real time. For the full list of tmux shortcuts and the interactive window selector, see [docs/tmux.md](docs/tmux.md).
-
-CAO also supports [herdr](https://herdr.dev/) as an experimental alternative backend. herdr is agent-aware, so it replaces tmux output polling with real-time status events. For setup and configuration, see [docs/herdr.md](docs/herdr.md).
-
-## Web UI
-
-CAO ships a bundled web dashboard for managing agents, terminals, and flows from the browser. The pre-built UI is packaged inside the wheel, so there is nothing extra to install — just start the server:
-
-```bash
-cao-server
-```
-
-Then open http://localhost:9889.
-
-![CAO Web UI](https://github.com/user-attachments/assets/e7db9261-62b1-4422-b9f5-6fe5f65bdea4)
-
-For hot-reload dev mode, remote access over SSH, and rebuilding the frontend from source (only these require Node.js), see [docs/web-ui.md](docs/web-ui.md). For frontend architecture, see [web/README.md](web/README.md).
-
-## MCP Apps — host-rendered fleet UI
-
-Beyond the browser dashboard, CAO can render its fleet UI **inside an MCP App-capable host** (Claude / Claude Desktop, ChatGPT, VS Code GitHub Copilot, Microsoft 365 Copilot, Goose, Postman, MCPJam, Archestra.AI — see the [client matrix](https://modelcontextprotocol.io/extensions/client-matrix)) using the [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview) extension (SEP-1865) — so you observe and steer agents without leaving your chat host. It ships three single-file views (`ui://cao/dashboard`, `ui://cao/agent`, `ui://cao/event-stream`) plus a build-free topology widget, backed by an in-process event ring buffer and a single audited `submit_command` mutation path.
-
-![CAO MCP Apps — fleet dashboard rendered in an MCP App host](docs/media/mcp-apps-dashboard.png)
-
-*The fleet dashboard rendered from the built `ui://cao/dashboard` bundle. Full motion walk-through (dashboard → agent detail → live event stream): [`docs/media/mcp-apps-demo.webm`](docs/media/mcp-apps-demo.webm). Regenerate via `cd cao_mcp_apps && npm run build:all && node scripts/record-demo.mjs`.*
-
-It is **default-off and behavior-preserving** — packaged as the built-in `mcp_apps` plugin and registered only when enabled:
-
-```bash
-export CAO_MCP_APPS_ENABLED=true
-cao-server        # REST + SSE /events on :9889
-cao-mcp-server    # registers the MCP App tools/resources for your host
-```
-
-New in this area: `src/cli_agent_orchestrator/ext_apps/` (resources + topology widget), `cao_mcp_apps/` (JIT-free React views), `src/cli_agent_orchestrator/plugins/builtin/mcp_apps.py` (the plugin), with docs in [docs/mcp-apps.md](docs/mcp-apps.md), a worked example in [examples/mcp-apps/](examples/mcp-apps/), and the [skills/cao-mcp-apps](skills/cao-mcp-apps/SKILL.md) operator playbook. Optional default-off OAuth 2.1 scopes (`cao:read`/`cao:write`/`cao:admin`) gate mutations when an IdP is configured.
-
-The single-file views are built from source under `cao_mcp_apps/` — see [cao_mcp_apps/README.md](cao_mcp_apps/README.md) for the dev workflow (build, test, and the CI coverage/JIT/bundle-size gates). Node.js is only needed to rebuild them, not to run CAO.
-
-## Multi-Agent Orchestration
-
-CAO agents coordinate through a local HTTP server (default `localhost:9889`). CLI agents reach it via MCP tools to route messages, track status, and drive orchestration.
-
-Each agent terminal is assigned a unique `CAO_TERMINAL_ID` environment variable. The server uses this ID to route messages, track terminal status (IDLE / PROCESSING / COMPLETED / ERROR), and coordinate operations. When an agent calls an MCP tool, the server identifies the caller by their `CAO_TERMINAL_ID` and orchestrates accordingly.
-
-### Orchestration Modes
-
-> **Note:** All orchestration modes support an optional `working_directory` parameter when enabled via `CAO_ENABLE_WORKING_DIRECTORY=true`. See [docs/working-directory.md](docs/working-directory.md).
-
-**1. Handoff** — transfer control to another agent and wait for completion.
-
-- Creates a new terminal with the specified agent profile
-- Sends the task message and waits for the agent to finish
-- Returns the agent's output to the caller and exits the agent
-- **Automatically deletes the worker terminal on success** — the scrollback and metadata are saved to `~/.cao/logs/terminal/` before deletion, so you can restore the terminal for debugging with `cao terminal restore <terminal_id>` as long as the session still exists. See [docs/terminal-lifecycle.md](docs/terminal-lifecycle.md) for the full lifecycle, snapshot schema, and restore semantics.
-- Use when you need **synchronous** execution with results
-
-Example: sequential code review workflow.
-
-![Handoff Workflow](./docs/assets/handoff-workflow.png)
-
-**2. Assign** — spawn an agent to work independently (async).
-
-- Creates a new terminal, sends the task with callback instructions, returns immediately
-- The supervisor's terminal ID is appended to the task message automatically (disable with `CAO_ENABLE_SENDER_ID_INJECTION=false`), and recorded on the worker terminal so callbacks route structurally
-- The assigned agent sends results back via `send_message` when done — omitting `receiver_id` routes the reply to the assigning terminal; messages queue if the supervisor is busy
-- Use for **asynchronous** execution or fire-and-forget operations
-
-Example: a supervisor assigns parallel data-analysis tasks to multiple analysts while using handoff to generate a report template, then combines results. See [examples/assign](examples/assign).
-
-![Parallel Data Analysis](./docs/assets/parallel-data-analysis.png)
-
-**3. Send Message** — communicate with an existing agent.
-
-- Sends a message to a specific terminal's inbox; delivered when the terminal is idle
-- Enables ongoing collaboration and multi-turn conversations
-- Common in **swarm** operations
-- Supports [eager delivery](docs/inbox-delivery.md) for providers that buffer input during processing (eliminates inter-turn latency)
-
-Example: multi-role feature development.
-
-![Multi-role Feature Development](./docs/assets/multi-role-feature-development.png)
-
-### Cross-Provider Orchestration
-
-Workers inherit the provider of the terminal that spawned them by default. To pin a profile to a specific provider, add `provider` to its frontmatter:
-
-```markdown
 ---
-name: developer
-provider: claude_code
+
+## 무엇이 들어 있나
+
+| 구성 | 위치 | 설명 |
+|---|---|---|
+| 서버 | `src/cli_agent_orchestrator/` | FastAPI. 세션·터미널·오케스트레이션·도구 인벤토리 API, 웹 UI 정적 서빙, MCP 서버 |
+| 웹 UI | `web/` | React + Vite. 빌드 산출물이 서버의 `web_ui/` 로 들어가 같은 오리진에서 서빙된다 |
+| 데스크톱 셸 | `electron/` | Electron. **서버 수명 관리 + 네이티브 브리지만** 담당하고, 창은 `http://127.0.0.1:<port>` 를 그대로 띄운다 |
+| 터미널 백엔드 | `backends/` | tmux(기본) / herdr |
+
+데스크톱 셸이 웹 UI 를 복제하지 않는 것이 핵심이다. 브라우저로 쓰든 앱으로 쓰든 **같은 화면**이고, 앱에서만
+가능한 동작(OS 폴더 선택창 등)은 `window.caoNative` 브리지로 기능 감지해서 쓴다.
+
 ---
-```
 
-Valid values: `kiro_cli`, `claude_code`, `codex`, `antigravity_cli`, `hermes`, `kimi_cli`, `copilot_cli`, `opencode_cli`, `cursor_cli`. The `cao launch --provider` flag always takes precedence for the initial session. See [`examples/cross-provider/`](examples/cross-provider/).
+## 빠른 시작 (Linux / WSL2)
 
-### Tool Restrictions
+### 준비물
 
-CAO controls what each agent can do via `role` and `allowedTools` in the profile. CAO translates restrictions to each provider's native enforcement where available. See [docs/tool-restrictions.md](docs/tool-restrictions.md) for the full reference.
-
-### Custom Orchestration
-
-`cao-server` exposes REST APIs for session management, terminal control, and messaging. The built-in CLI commands and MCP tools are just packagings of those APIs — you can combine the three orchestration modes into custom workflows or build new patterns on top of the underlying API. See [docs/api.md](docs/api.md).
-
-## Extensibility & Integration
-
-Three programmatic surfaces for driving CAO from outside, plus two extension points (skills and plugins). For the decision guide on which surface to use, see [docs/control-planes.md](docs/control-planes.md).
-
-### Session Management CLI
-
-`cao session` commands manage sessions programmatically — ideal for scripting, CI pipelines, or any caller that can run a shell command.
-
-| Command | Description |
-|---------|-------------|
-| `cao session list` | List active sessions |
-| `cao session status <name>` | Show conductor status and last output |
-| `cao session status <name> --workers` | Include worker terminal statuses |
-| `cao session send <name> "msg"` | Send a message and wait for completion |
-| `cao session send <name> "msg" --async` | Fire-and-forget |
-| `cao session send <name> "msg" --timeout N` | Wait up to N seconds |
-| `cao launch --agents <profile>` | Launch a new supervisor session |
-| `cao shutdown --session <name>` | Shut down a specific session |
-| `cao shutdown --all` | Shut down every CAO session |
-| `cao terminal restore <terminal_id>` | Restore a deleted terminal's scrollback into a new window for debugging |
-
-Headless launch (send an initial task without attaching):
+- **Python 3.12** — uv 로 설치한다. 시스템 기본이 3.14 면 그대로 쓰지 말 것: `httptools`·`uvloop` 에 cp314 휠이
+  없어 소스 컴파일로 넘어가고 컴파일러가 없으면 그대로 실패한다.
+- Node 20+ (웹/데스크톱 빌드), tmux, `uv`
 
 ```bash
-cao launch --agents supervisor --headless --yolo \
-  --session-name my-task --working-directory '/path/to/project' "Your task here"
+uv python install 3.12
+uv sync -p 3.12
 ```
 
-Add `--async` to return immediately without waiting for completion.
-
-> Session names are auto-prefixed with `cao-`. Use the prefixed form (e.g. `cao-my-task`) in later commands.
-
-For the command reference and the agent-facing skill, see the [Session Management skill](skills/cao-session-management/SKILL.md).
-
-Because `cao session` is just shell commands, any AI assistant that supports shell-callable skills should be able to drive CAO this way — e.g. Claude Code, Kiro CLI, [OpenClaw](https://github.com/openclaw/openclaw), or [Hermes Agent](https://github.com/NousResearch/hermes-agent). See [docs/external-tool-integration.md](docs/external-tool-integration.md) for integrating CAO session management into external tools.
-
-### CAO Ops MCP Server
-
-`cao-ops-mcp` exposes the same management operations as structured MCP tools for a primary agent (Claude Code, Claude Desktop, etc.). It is the MCP-flavoured equivalent of `cao session` — pick `cao-ops-mcp` when your caller speaks MCP, `cao session` otherwise.
-
-| Server | Who uses it | Purpose |
-|--------|-------------|---------|
-| `cao-mcp-server` | Agents **inside** a CAO session | Inter-agent orchestration (`handoff`, `assign`, `send_message`) |
-| `cao-ops-mcp` | A primary agent **outside** a CAO session | Meta management (install profiles, launch/monitor sessions) |
-
-**Setup** — add to your primary agent's MCP configuration. Requires `cao-server` running at `localhost:9889`.
-
-For Claude Code, add to `.mcp.json`:
-
-```json
-{
-  "mcpServers": {
-    "cao-ops-mcp": {
-      "command": "uvx",
-      "args": ["--from", "git+https://github.com/awslabs/cli-agent-orchestrator.git@main", "cao-ops-mcp-server"]
-    }
-  }
-}
-```
-
-Other agents: use the equivalent stdio MCP command:
-
-```
-uvx --from git+https://github.com/awslabs/cli-agent-orchestrator.git@main cao-ops-mcp-server
-```
-
-**Available tools** — `list_profiles`, `get_profile_details`, `install_profile`, `launch_session`, `send_session_message`, `list_sessions`, `get_session_info`, `shutdown_session`.
-
-Typical workflow: `list_profiles` → `install_profile` → `launch_session` → `send_session_message` → `get_session_info` → `shutdown_session`.
-
-### Flows — scheduled agent sessions
-
-Schedule agent sessions to run automatically using cron expressions:
+### 서버 실행
 
 ```bash
-cao schedule add daily-standup.md
-cao schedule list
-cao schedule run daily-standup   # manual run, ignores schedule
+CAO_HOME_DIR=$HOME/.local/share/cao-home \
+PYTHONPATH=src uv run cao-server --host 127.0.0.1 --port 9889
 ```
 
-Flows support static prompts or conditional execution via a gating script. `cao-server` must be running for scheduled execution.
+> **`CAO_HOME_DIR` 를 ext4 경로로 지정해야 한다.** 기본 홈은 `~/.aws/cli-agent-orchestrator/…` 인데, WSL 에서 그
+> 경로가 Windows 9p 마운트면 FIFO 생성이 `os.mkfifo: [Errno 95] Operation not supported` 로 실패한다. 이때
+> **서버는 정상적으로 뜨고 `/health` 도 200 을 주지만 터미널·오케스트레이션·슬래시·컨텍스트 게이지가 전부 죽는다.**
+> 겉보기 멀쩡함이 이 함정의 핵심이라 명령에 항상 포함한다.
 
-For the full guide — flow file format, the conditional-execution pattern, and all `cao schedule` commands — see [docs/flows.md](docs/flows.md).
+브라우저에서 `http://127.0.0.1:9889` 를 연다. Windows 에서 WSL 서버로 접속할 때도 같은 주소를 쓴다(WSL2 localhost 포워딩).
 
-### Skills
-
-Skills are portable, structured guides (following the universal [SKILL.md](https://github.com/anthropics/skills) format) that encode domain knowledge for agents. They work across coding assistants (Claude Code, Kiro CLI, Codex CLI, Kimi CLI, GitHub Copilot, Cursor, OpenCode, LobeHub) and frameworks ([Strands Agents SDK](https://strandsagents.com/docs/user-guide/concepts/plugins/skills/), [Microsoft Agent Framework](https://devblogs.microsoft.com/agent-framework/give-your-agents-domain-expertise-with-agent-skills-in-microsoft-agent-framework/)).
-
-CAO ships built-in skills and also manages "managed skills" shared across all agent sessions. Built-ins (`cao-supervisor-protocols`, `cao-worker-protocols`) are auto-seeded at server startup. You can add your own:
+### 웹 UI 개발
 
 ```bash
-cao skills list
-cao skills add ./my-coding-standards
-cao skills add ./my-coding-standards --force   # overwrite
-cao skills remove my-coding-standards
+cd web
+npm ci
+npm run dev      # vite dev 서버 (API 는 9889 로 프록시)
+npm run build    # 서버가 서빙하는 web_ui/ 로 산출
 ```
 
-Skills are delivered to providers automatically (native `skill://` resources for Kiro CLI; runtime prompt injection for Claude Code / Codex / Kimi; baked-in `.agent.md` for Copilot).
+---
 
-For the full reference — authoring, loading, delivery mechanics — see [docs/skills.md](docs/skills.md). For integrating with OpenClaw or other external tools, see [docs/external-tool-integration.md](docs/external-tool-integration.md).
+## 데스크톱 앱
 
-### Plugins
+```bash
+cd electron
+npm ci
+npm run build          # tsc -p tsconfig.build.json → dist/
+npx electron .         # 실행
+npm run pack:win       # nsis 인스톨러
+npm run pack:mac       # dmg/zip (arm64)
+```
 
-Plugins are observer-only Python extensions that react to server-side events inside `cao-server` — lifecycle changes and message delivery. They are the **outbound** surface of CAO: the interfaces above drive CAO in; plugins stream events out. Typical uses: forwarding inter-agent messages to Discord/Slack/Telegram, audit logging, metrics export.
+동작 규칙 — 전부 의도적인 선택이다.
 
-- **Installation, events, troubleshooting:** [docs/plugins.md](docs/plugins.md)
-- **Ready-to-run example:** [examples/plugins/cao-discord/](examples/plugins/cao-discord/)
-- **Author your own:** [cao-plugin skill](skills/cao-plugin/SKILL.md)
-- **How plugins fit with the inbound surfaces:** [docs/control-planes.md](docs/control-planes.md)
+- **attach 우선.** 이미 CAO 서버가 응답하면 새로 띄우지 않고 연결한다. 서버가 둘이면 같은 tmux pane 에 pipe-pane
+  모니터가 둘 붙어 출력 캡처가 깨진다. 그래서 이미 뜬 서버가 있으면 바이너리 탐색조차 건너뛴다.
+- **포트가 찼다고 우리 서버는 아니다.** `/health` 가 `service: cli-agent-orchestrator` 로 답할 때만 attach 하고,
+  아니면 다음 포트(9890…)로 넘어간다.
+- **우리가 띄운 서버만 종료한다.** attach 한 서버는 사용자 터미널 소유다.
+- **로그인 셸로 기동한다**(`<shell> -lc`). GUI 로 띄운 앱은 사용자 PATH 를 상속하지 않아 uv·nvm·pyenv 로 깐 CLI 가
+  "설치 안 됨"처럼 보인다. Windows 에서는 그 셸이 `wsl.exe -d <distro> --` 안에서 돈다 — 서버는 Windows 에서 돌지 않는다.
+- **설정 › 서버 실행 셸** 에서 셸/배포판을 고른다. 설치되지 않은 항목은 숨기지 않고 사유와 함께 비활성으로 보여 준다.
+  선택한 셸은 `CAO_DEFAULT_SHELL` 로 서버에 전달돼 에이전트 터미널도 같은 셸에서 뜬다.
+- 앱이 띄운 서버의 출력은 `userData/cao-server.log` 에 쌓이고 트레이의 **서버 로그 열기** 로 볼 수 있다.
+- 렌더러 CSP 는 셸이 주입한다(`script-src 'self'`). 서버는 CSP 를 보내지 않는다 — 브라우저 배포를 건드리지 않기 위해서다.
 
-## Security
+### 플랫폼별 검증 상태
 
-`cao-server` is designed for **localhost-only use**. The WebSocket terminal endpoint (`/terminals/{id}/ws`) provides full PTY access and rejects non-loopback connections. Do not expose the server to untrusted networks without adding authentication.
+| 플랫폼 | 상태 |
+|---|---|
+| Windows + WSL2 | **실기동 검증 완료** — attach/spawn, WSL distro·셸 감지, 메뉴 전수, nsis 패키징, 종료 시 서버 정리 (HANDOFF §0.20) |
+| Linux | 서버·웹은 상시 사용 중. 데스크톱 셸 GUI 는 미검증 |
+| macOS | **미검증** — 코드 경로는 있으나 dmg·로그인 셸 감지를 실기동으로 확인하지 않았다 |
 
-**DNS rebinding protection** — the server validates HTTP `Host` headers and rejects requests where the host is not `localhost` or `127.0.0.1` with `400 Bad Request`. This guards against [DNS rebinding attacks](https://owasp.org/www-community/attacks/DNS_Rebinding).
+---
 
-If you need to expose the server on a network (not recommended for development), the Host header validation will also reject those requests unless the hostname is in the allowed list.
+## 개발
 
-See [SECURITY.md](SECURITY.md) for vulnerability reporting and best practices.
+```bash
+# 백엔드
+PYTHONPATH=src uv run python -m pytest test/ -q --no-cov -m 'not e2e' \
+  --ignore=test/e2e --ignore=test/providers/test_kiro_cli_integration.py
 
-## Contributing
+# 웹
+cd web && npx tsc --noEmit && npm test && npm run build
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+# 데스크톱 셸
+cd electron && npm run typecheck && npm test
+```
 
-## Releases
+CI(`.github/workflows/ci.yml`)는 Unit Tests(3.10/3.11/3.12) · Web UI Build · **Desktop Shell**(typecheck + 단위) ·
+CAO MCP Apps · Code Quality · Security Scan 을 돌린다. Desktop Shell 잡은 `ELECTRON_SKIP_BINARY_DOWNLOAD=1` 로
+Electron 바이너리를 받지 않는다 — 패키징은 로컬 작업이다.
 
-CAO publishes to [PyPI](https://pypi.org/project/cli-agent-orchestrator/) via an OIDC-authenticated GitHub Actions pipeline (TestPyPI → smoke test → maintainer-approved prod). See [docs/RELEASING.md](docs/RELEASING.md).
+---
 
-## License
+## 문서
 
-Apache-2.0.
+| 문서 | 내용 |
+|---|---|
+| [`docs/HANDOFF-msorchestrator.md`](docs/HANDOFF-msorchestrator.md) | **세션 간 인수인계 정본.** 지금까지의 결정·실버그·함정이 시간순으로 쌓여 있다. 새로 붙는 사람은 여기부터 |
+| [`docs/electron-plan.md`](docs/electron-plan.md) | 데스크톱 셸 확정 설계 |
+| [`docs/desktop-shell-electron-vs-tauri.md`](docs/desktop-shell-electron-vs-tauri.md) | Tauri 2 대안 검토와 v1 에서 Electron 을 유지한 근거 |
+| [`docs/ui-refactor-plan.md`](docs/ui-refactor-plan.md) | UI 개편 전체 계획 |
+| [`docs/api.md`](docs/api.md), [`docs/configuration.md`](docs/configuration.md), [`docs/agent-profile.md`](docs/agent-profile.md) | API · 설정 · 에이전트 프로필 |
+| `docs/superpowers/plans/` | 작업별 구현 플랜 |
+
+---
+
+## 알려진 함정
+
+다시 알아내려면 비싼 것들만 모았다. 자세한 재현·근거는 HANDOFF 각 절에.
+
+- **`CAO_HOME_DIR` 은 ext4** — 위 §서버 실행. 증상이 "서버는 멀쩡한데 아무것도 안 됨"이라 오진하기 쉽다.
+- **Python 3.12 고정** — 3.14 는 휠이 없어 컴파일로 넘어간다.
+- **`wsl.exe -l -v` 출력은 UTF-16LE** — UTF-8 로 읽으면 `Ubuntu` 가 `" U b u n t u"` 가 되어 이름 비교가 조용히
+  전부 실패한다. 헤더 행도 Windows 언어에 따라 현지화되므로 문자열이 아니라 위치로 걷어내야 한다.
+- **WSL1 은 쓸 수 없다** — localhost 포워딩 방식이 달라 창이 서버에 닿지 못한다. docker-desktop 배포판도 선택지에서 제외한다.
+- **샌드박스 preload 는 상대경로 `require` 를 못 한다** — Electron 문서가 "여러 파일로 쪼개려면 번들러가 필요하다"고
+  명시한 그 제약이다. 어기면 preload 가 조용히 죽고 `window.caoNative` 가 사라지는데, 메인 로그에는 아무 것도 안 남아
+  앱이 "그냥 브라우저"처럼 보인다. `electron/test/preload-sandbox.test.ts` 가 이걸 소스 수준에서 막는다.
+- **Windows 에서 `process.kill(-pid)` 는 못 쓴다** — POSIX 전용이라 예외가 나고, 앱을 닫아도 서버가 살아 포트를
+  잡고 있게 된다. `taskkill /T` 를 쓴다.
+- **CRLF** — `.gitattributes` 가 `* text=auto eol=lf` 를 강제한다. 이전에는 EOL 차이만으로 973 파일이 수정된 것처럼 보였다.
+
+---
+
+## 라이선스
+
+Apache-2.0. 상위 프로젝트 [awslabs/cli-agent-orchestrator](https://github.com/awslabs/cli-agent-orchestrator) 의
+저작권 표기는 [`NOTICE`](NOTICE) 를 따른다.
