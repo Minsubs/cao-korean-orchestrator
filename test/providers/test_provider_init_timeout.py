@@ -400,6 +400,9 @@ class TestAntigravityInitTimeoutWiring:
         mock_wait_shell.return_value = True
         mock_wait_status.return_value = True
         mock_load.return_value = AgentProfile(name="a", description="d", provider_init_timeout=200)
+        # initialize() reads the pane after the readiness wait to reject agy's
+        # account-eligibility gate; a MagicMock is not text for that scan.
+        mock_get_backend.return_value.get_history.return_value = "│ Idle │"
 
         provider = AntigravityCliProvider("t1", "sess", "win", agent_profile="agent-x")
         result = await provider.initialize()
@@ -427,6 +430,7 @@ class TestAntigravityInitTimeoutWiring:
         """No agent profile -> the 180s agy-specific floor wins over the 60s server default."""
         mock_wait_shell.return_value = True
         mock_wait_status.return_value = True
+        mock_get_backend.return_value.get_history.return_value = "│ Idle │"
 
         provider = AntigravityCliProvider("t1", "sess", "win")  # agent_profile=None
         result = await provider.initialize()

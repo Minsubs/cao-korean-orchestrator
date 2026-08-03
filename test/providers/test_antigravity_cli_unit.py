@@ -735,6 +735,12 @@ async def test_initialize_success(monkeypatch):
         def send_keys(self, session, window, command):
             sent["command"] = command
 
+        def get_history(self, session, window, **kwargs):
+            # initialize() reads the pane once more after the readiness wait, to
+            # reject a terminal parked behind agy's account-eligibility banner
+            # (see test_antigravity_account_gate.py). A normal launch has none.
+            return "Gemini 3.1 Pro (High) │ Idle │ Context 100% left │ ~/work"
+
     async def fake_wait_for_shell(tid, timeout):
         return True
 
