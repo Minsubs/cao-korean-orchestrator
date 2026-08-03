@@ -11,12 +11,13 @@
  * filesystem, no shell — file work still goes through cao-server's API.
  */
 
-import { app, BrowserWindow, Menu, Tray, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, Menu, Tray, dialog, ipcMain, session, shell } from 'electron'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { CHANNELS, type AppInfo, type ShellSettings } from './bridge-contract'
 import { isSafeExternalUrl, normalizeInitialPath } from './bridge-guards'
+import { withCspHeader } from './csp'
 import { createInventoryDeps, createRuntimeDeps, getLogPath, setLogPath } from './runtime-deps'
 import { distroFor, shellBinaryFor } from './shell-config'
 import { buildInventory } from './shell-inventory'
@@ -255,6 +256,12 @@ function registerBridge(): void {
 }
 
 app.whenReady().then(async () => {
+  // cao-server sends no CSP — it was written for a browser. Inject one here so
+  // the renderer is not running wide open just because it is inside Electron.
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({ responseHeaders: withCspHeader(details.responseHeaders ?? {}) })
+  })
+
   const userData = app.getPath('userData')
   storeDeps = {
     path: join(userData, 'shell-settings.json'),
