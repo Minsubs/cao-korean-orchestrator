@@ -20,6 +20,10 @@ const caoNative: CaoNative = {
   },
   appInfo: (): Promise<AppInfo> => ipcRenderer.invoke(CHANNELS.appInfo),
   restartServer: () => ipcRenderer.invoke(CHANNELS.restartServer),
+  shellConfig: {
+    get: () => ipcRenderer.invoke(CHANNELS.shellConfigGet),
+    set: (mode: string) => ipcRenderer.invoke(CHANNELS.shellConfigSet, mode),
+  },
 }
 
 contextBridge.exposeInMainWorld('caoNative', caoNative)

@@ -6,16 +6,21 @@
  * keeps the web code unchanged (docs/electron-plan.md §1). Nothing is loaded
  * over the network; the only origin is localhost.
  *
- * The native bridge (`window.caoNative`) lands in 7b. Until then the renderer
- * has no preload at all, which is the safest possible default.
+ * The renderer's only extra privilege is `window.caoNative` (see preload.ts and
+ * `registerBridge` below): five functions, each validated here in main. No
+ * filesystem, no shell — file work still goes through cao-server's API.
  */
 
 import { app, BrowserWindow, Menu, Tray, dialog, ipcMain, shell } from 'electron'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-import { CHANNELS, type AppInfo } from './bridge-contract'
+import { CHANNELS, type AppInfo, type ShellSettings } from './bridge-contract'
 import { isSafeExternalUrl, normalizeInitialPath } from './bridge-guards'
-import { createRuntimeDeps } from './runtime-deps'
+import { createInventoryDeps, createRuntimeDeps, getLogPath, setLogPath } from './runtime-deps'
+import { distroFor, shellBinaryFor } from './shell-config'
+import { buildInventory } from './shell-inventory'
+import { readShellMode, writeShellMode, type StoreDeps } from './shell-store'
 import {
   DEFAULT_CONFIG,
   ServerStartError,
@@ -31,6 +36,50 @@ const BOOT_POLL = { attempts: 60, intervalMs: 1000 }
 
 const deps = createRuntimeDeps()
 const config: ServerConfig = { ...DEFAULT_CONFIG }
+
+let storeDeps: StoreDeps | null = null
+
+/** Current shell settings, validated against what is installed right now. */
+function shellSettings(): ShellSettings {
+  const stored = storeDeps ? readShellMode(storeDeps) : 'auto'
+  const inventory = buildInventory(createInventoryDeps(), stored)
+  return {
+    mode: inventory.mode,
+    fellBackToAuto: inventory.fellBackToAuto,
+    choices: inventory.options,
+    autoResolvesTo: inventory.autoResolvesTo,
+    // Changing the shell cannot move a running server into it; the change lands
+    // on the next start. Saying so is the difference between "nothing happened"
+    // and "it will apply in a moment".
+    restartRequired: true,
+  }
+}
+
+/**
+ * Fold the shell choice into the spawn config.
+ *
+ * The selected shell is passed to the server as CAO_DEFAULT_SHELL too, so agent
+ * terminals get the same shell as the server itself rather than tmux's
+ * default — that pairing is the whole point of the setting (§4).
+ */
+function applyShellSettings(): void {
+  const { mode } = shellSettings()
+  const shell = shellBinaryFor(mode)
+  const distro = distroFor(mode)
+
+  if (shell) {
+    config.shell = shell
+    config.serverEnv = { ...config.serverEnv, CAO_DEFAULT_SHELL: shell }
+  } else {
+    delete config.shell
+    const env = { ...config.serverEnv }
+    delete env.CAO_DEFAULT_SHELL
+    config.serverEnv = env
+  }
+
+  if (distro) config.distro = distro
+  else delete config.distro
+}
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
@@ -113,6 +162,16 @@ function updateTray(): void {
         click: () => void restart(),
       },
       { label: '창 보이기', click: () => mainWindow?.show() },
+      {
+        // Without this a failed start is a dead end: the child's output went to
+        // a file precisely so there is something to look at.
+        label: '서버 로그 열기',
+        enabled: getLogPath() !== null,
+        click: () => {
+          const path = getLogPath()
+          if (path) void shell.openPath(path)
+        },
+      },
       { type: 'separator' },
       { label: '종료', click: () => app.quit() },
     ])
@@ -174,9 +233,37 @@ function registerBridge(): void {
     if (server?.mode !== 'spawned') return
     await restart()
   })
+
+  ipcMain.handle(CHANNELS.shellConfigGet, (): ShellSettings => shellSettings())
+
+  ipcMain.handle(CHANNELS.shellConfigSet, (_event, mode: unknown) => {
+    if (typeof mode !== 'string') return { ok: false, error: '잘못된 값이에요' }
+    if (!storeDeps) return { ok: false, error: '설정을 저장할 위치를 찾지 못했어요' }
+
+    // Reject a mode that does not resolve on this machine *now*, rather than
+    // storing it and falling back on every future boot with no explanation.
+    const { choices } = shellSettings()
+    const choice = choices.find(option => option.mode === mode)
+    if (!choice?.available) {
+      return { ok: false, error: choice?.unavailableReason ?? '지금 사용할 수 없는 선택이에요' }
+    }
+
+    const result = writeShellMode(storeDeps, mode)
+    if (result.ok) applyShellSettings()
+    return result
+  })
 }
 
 app.whenReady().then(async () => {
+  const userData = app.getPath('userData')
+  storeDeps = {
+    path: join(userData, 'shell-settings.json'),
+    readFile: path => readFileSync(path, 'utf8'),
+    writeFile: (path, contents) => writeFileSync(path, contents, 'utf8'),
+  }
+  setLogPath(join(userData, 'cao-server.log'))
+  applyShellSettings()
+
   registerBridge()
   tray = new Tray(join(__dirname, '..', 'assets', 'tray.png'))
   updateTray()

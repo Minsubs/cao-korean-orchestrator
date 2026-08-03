@@ -6,12 +6,14 @@
  * small enough to read as "obviously just plumbing".
  */
 
-import { spawn as nodeSpawn } from 'node:child_process'
-import { accessSync, constants, existsSync } from 'node:fs'
+import { execFileSync, spawn as nodeSpawn } from 'node:child_process'
+import { accessSync, constants, createWriteStream, existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { delimiter, join } from 'node:path'
 
 import type { HealthResult, Platform, ProcessHandle, ServerManagerDeps } from './server-manager'
+import type { InventoryDeps } from './shell-inventory'
+import { decodeWslOutput, parseWslList, type WslDistro } from './wsl'
 
 /** The `service` value cao-server's /health reports. */
 const SERVICE_NAME = 'cli-agent-orchestrator'
@@ -61,8 +63,33 @@ export function which(binary: string): string | null {
  * the grace period takes the whole tree with it — a login shell wrapping
  * cao-server means the thing we signal is not the thing serving HTTP.
  */
+/**
+ * Where a spawned server's output goes.
+ *
+ * Without this the boot screen can say "the server did not answer" and there is
+ * nothing to look at — the child's stderr died with our pipe. The tray's
+ * "로그 열기" opens this file.
+ */
+let logPath: string | null = null
+
+export function setLogPath(path: string): void {
+  logPath = path
+}
+
+export function getLogPath(): string | null {
+  return logPath
+}
+
 export function spawn(command: string, args: string[]): ProcessHandle {
   const child = nodeSpawn(command, args, { detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+
+  if (logPath) {
+    // Append: a restart should not erase the log that explains why the previous
+    // start failed.
+    const log = createWriteStream(logPath, { flags: 'a' })
+    child.stdout?.pipe(log)
+    child.stderr?.pipe(log)
+  }
 
   const exited = new Promise<void>(resolve => {
     child.once('exit', () => resolve())
@@ -89,6 +116,41 @@ export function currentPlatform(): Platform {
   const platform = process.platform
   if (platform === 'darwin' || platform === 'win32') return platform
   return 'linux'
+}
+
+/**
+ * Ask Windows which WSL distros exist.
+ *
+ * Runs with `encoding: 'buffer'` on purpose: wsl.exe writes UTF-16LE, and
+ * letting Node decode it as UTF-8 is exactly the bug `decodeWslOutput` exists
+ * to prevent. A missing wsl.exe (no WSL installed) is an empty list, not an
+ * error — the settings UI then simply has no distros to offer.
+ */
+export function listDistros(): WslDistro[] {
+  if (process.platform !== 'win32') return []
+  try {
+    const raw = execFileSync('wsl.exe', ['-l', '-v'], { encoding: 'buffer', timeout: 5000 })
+    return parseWslList(decodeWslOutput(raw))
+  } catch {
+    return []
+  }
+}
+
+export function createInventoryDeps(): InventoryDeps {
+  return {
+    platform: process.platform,
+    readEtcShells: () => {
+      try {
+        return readFileSync('/etc/shells', 'utf8')
+      } catch {
+        return ''
+      }
+    },
+    fileExists: existsSync,
+    ...(process.env.SHELL ? { currentShell: process.env.SHELL } : {}),
+    listDistros,
+    windowsBinaryExists: binary => which(binary) !== null,
+  }
 }
 
 export function createRuntimeDeps(): ServerManagerDeps {

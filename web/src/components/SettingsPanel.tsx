@@ -3,6 +3,7 @@ import { api, AgentDirsSettings } from '../api'
 import { useStore } from '../store'
 import { FolderOpen, Plus, X, RefreshCw } from 'lucide-react'
 import { UsageAccountsSection } from '../features/usage/UsageAccountsSection'
+import { ShellSettingsCard } from '../features/desktop/ShellSettingsCard'
 
 /** A small on/off switch (GH #280). */
 function Toggle({ on, onClick, disabled, label }: {
@@ -154,6 +155,9 @@ export function SettingsPanel() {
 
   return (
     <div className="space-y-6">
+      {/* Desktop-only; renders nothing in a browser. */}
+      <ShellSettingsCard />
+
       <div className="bg-[var(--surface-2)] border border-[var(--border-soft)] rounded-xl p-5">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold text-[var(--text-2)] uppercase tracking-wide">

@@ -18,11 +18,31 @@ export interface NativeAppInfo {
   distro?: string
 }
 
+export interface NativeShellChoice {
+  mode: string
+  label: string
+  available: boolean
+  unavailableReason?: string
+  caveat?: string
+}
+
+export interface NativeShellSettings {
+  mode: string
+  fellBackToAuto: boolean
+  choices: NativeShellChoice[]
+  autoResolvesTo: string | null
+  restartRequired: boolean
+}
+
 export interface CaoNative {
   pickDirectory(initialPath?: string): Promise<string | null>
   openExternal(url: string): void
   appInfo(): Promise<NativeAppInfo>
   restartServer(): Promise<void>
+  shellConfig: {
+    get(): Promise<NativeShellSettings>
+    set(mode: string): Promise<{ ok: boolean; error?: string }>
+  }
 }
 
 declare global {
@@ -89,6 +109,35 @@ export function openExternal(url: string): void {
     return
   }
   window.open(url, '_blank', 'noopener,noreferrer')
+}
+
+/**
+ * Shell settings, or null when there is no desktop shell to configure.
+ *
+ * A bridge that throws is treated as absent so the settings screen loses one
+ * card rather than failing to render.
+ */
+export async function getShellSettings(): Promise<NativeShellSettings | null> {
+  const shellConfig = getNative()?.shellConfig
+  if (typeof shellConfig?.get !== 'function') return null
+  try {
+    return await shellConfig.get()
+  } catch {
+    return null
+  }
+}
+
+/** Persist a shell choice. Main re-validates it before accepting. */
+export async function setShellMode(mode: string): Promise<{ ok: boolean; error?: string }> {
+  const shellConfig = getNative()?.shellConfig
+  if (typeof shellConfig?.set !== 'function') {
+    return { ok: false, error: '데스크톱 앱에서만 변경할 수 있어요.' }
+  }
+  try {
+    return await shellConfig.set(mode)
+  } catch {
+    return { ok: false, error: '설정을 저장하지 못했어요.' }
+  }
 }
 
 /** App/server info for the header chip, or null outside the desktop app. */
