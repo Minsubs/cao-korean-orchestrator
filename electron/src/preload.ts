@@ -32,6 +32,7 @@ const CHANNELS: typeof Contract.CHANNELS = {
   restartServer: 'cao:restart-server',
   shellConfigGet: 'cao:shell-config-get',
   shellConfigSet: 'cao:shell-config-set',
+  installServer: 'cao:install-server',
 }
 
 const caoNative: Contract.CaoNative = {
@@ -47,6 +48,7 @@ const caoNative: Contract.CaoNative = {
     get: () => ipcRenderer.invoke(CHANNELS.shellConfigGet),
     set: (mode: string) => ipcRenderer.invoke(CHANNELS.shellConfigSet, mode),
   },
+  installServer: () => ipcRenderer.invoke(CHANNELS.installServer),
 }
 
 contextBridge.exposeInMainWorld('caoNative', caoNative)

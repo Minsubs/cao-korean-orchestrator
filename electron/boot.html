@@ -12,6 +12,13 @@
         background: Canvas; color: CanvasText;
       }
       main { max-width: 34rem; padding: 2rem; text-align: center; }
+      button {
+        margin-top: 1.25rem; padding: .55rem 1rem; font: inherit; font-size: .85rem; font-weight: 600;
+        border-radius: 999px; border: 1px solid currentColor; background: transparent; color: inherit; cursor: pointer;
+      }
+      button[disabled] { opacity: .5; cursor: default; }
+      #action { display: none; }
+      #result { margin-top: .75rem; font-size: .8rem; white-space: pre-wrap; opacity: .85; }
       h1 { font-size: 1.05rem; font-weight: 600; margin: 0 0 .5rem; }
       p { margin: 0; line-height: 1.6; font-size: .9rem; opacity: .8; }
       ul { text-align: left; font-size: .85rem; line-height: 1.8; opacity: .85; }
@@ -23,6 +30,8 @@
     <main>
       <h1 id="title"><span class="dot"></span>서버를 확인하는 중이에요</h1>
       <p id="detail">이미 실행 중인 서버가 있으면 새로 띄우지 않고 연결합니다.</p>
+      <button id="action" type="button">WSL 에 설치하기</button>
+      <p id="result"></p>
     </main>
     <script>
       const params0 = new URLSearchParams(location.search)
@@ -70,6 +79,28 @@
       const copy = STATES[state] || STATES.checking
       document.getElementById('title').innerHTML = '<span class="dot"></span>' + copy.title
       document.getElementById('detail').innerHTML = copy.detail
+
+      // The shell ships the window, not the server, so "not installed" is the
+      // expected first-run state rather than a fault. Offer the install here
+      // instead of asking the user to go find a terminal — but only when the
+      // bridge can actually perform it.
+      const action = document.getElementById('action')
+      const result = document.getElementById('result')
+      if (state === 'failed:binary-not-found' && typeof window.caoNative?.installServer === 'function') {
+        action.style.display = 'inline-block'
+        action.addEventListener('click', async () => {
+          action.disabled = true
+          result.textContent = '폴더를 고른 뒤 설치합니다…'
+          const r = await window.caoNative.installServer()
+          if (r.cancelled) {
+            result.textContent = ''
+            action.disabled = false
+            return
+          }
+          result.textContent = r.message
+          if (!r.ok) action.disabled = false
+        })
+      }
     </script>
   </body>
 </html>

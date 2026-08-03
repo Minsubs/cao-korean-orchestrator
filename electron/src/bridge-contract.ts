@@ -53,6 +53,7 @@ export const CHANNELS = {
   restartServer: 'cao:restart-server',
   shellConfigGet: 'cao:shell-config-get',
   shellConfigSet: 'cao:shell-config-set',
+  installServer: 'cao:install-server',
 } as const
 
 export interface CaoNative {
@@ -68,4 +69,12 @@ export interface CaoNative {
     /** Rejected modes come back as `{ok:false, error}` rather than throwing. */
     set(mode: string): Promise<{ ok: boolean; error?: string }>
   }
+  /**
+   * Install cao-server into WSL from a checkout the user picks.
+   *
+   * Offered by the diagnostics screen when the server is missing — the shell
+   * ships the window, not the server, so a fresh install has nothing to show
+   * until this runs. `cancelled` means the folder dialog was dismissed.
+   */
+  installServer(): Promise<{ ok: boolean; message: string; cancelled?: boolean }>
 }
