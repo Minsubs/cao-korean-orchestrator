@@ -260,6 +260,9 @@ export function SessionChatPanel({ sessionName, terminalId, onClose }: SessionCh
     let cancelled = false
     let timer: ReturnType<typeof setTimeout> | undefined
     let timeoutTimer: ReturnType<typeof setTimeout> | undefined
+    // Previous round's cleaned output — two identical reads mean the render
+    // settled (see ReplyReadyOptions in sessionCompletion.ts).
+    let lastCleanOutput: string | null = null
 
     const poll = async () => {
       try {
@@ -269,35 +272,40 @@ export function SessionChatPanel({ sessionName, terminalId, onClose }: SessionCh
         ])
         if (cancelled) return
 
-        const beforeFingerprint = orchestrationReplyFingerprint(
-          sessionBefore.terminals,
-          terminalId,
-          pendingReply.baselineGenerations,
-          inboxBefore,
-          pendingReply.baselineInboxMessageId,
-        )
-        if (!beforeFingerprint) throw new Error('Orchestration is still running')
-
         const outputResult = await api.getTerminalOutput(terminalId, 'last')
         const [sessionAfter, inboxAfter] = await Promise.all([
           api.getSession(sessionName),
           api.getInboxMessages(terminalId, 100, undefined, pendingReply.baselineInboxMessageId),
         ])
         if (cancelled) return
+
+        const clean = formatOrchestratorOutput(outputResult.output || '')
+        const terminalStatus = sessionAfter.terminals.find(item => item.id === terminalId)?.status ?? null
+        setStatus(terminalStatus)
+
+        const changed = !!clean && clean !== pendingReply.baseline
+        const renderSettled = changed && clean === lastCleanOutput
+        lastCleanOutput = clean
+        const readyOptions = { allowUnobservedTargetTurn: renderSettled }
+        const beforeFingerprint = orchestrationReplyFingerprint(
+          sessionBefore.terminals,
+          terminalId,
+          pendingReply.baselineGenerations,
+          inboxBefore,
+          pendingReply.baselineInboxMessageId,
+          readyOptions,
+        )
         const afterFingerprint = orchestrationReplyFingerprint(
           sessionAfter.terminals,
           terminalId,
           pendingReply.baselineGenerations,
           inboxAfter,
           pendingReply.baselineInboxMessageId,
+          readyOptions,
         )
-        if (beforeFingerprint !== afterFingerprint) throw new Error('Orchestration state changed during output read')
+        const bracketed = !!beforeFingerprint && beforeFingerprint === afterFingerprint
 
-        const clean = formatOrchestratorOutput(outputResult.output || '')
-        const terminalStatus = sessionAfter.terminals.find(item => item.id === terminalId)?.status ?? null
-        setStatus(terminalStatus)
-
-        if (clean && clean !== pendingReply.baseline) {
+        if (bracketed && changed) {
           replaceMessage(pendingReply.messageId, clean)
           setLastOutput(clean)
           setPendingReply(null)
