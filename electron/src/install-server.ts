@@ -187,47 +187,9 @@ export function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`
 }
 
-/**
- * A folder inside the distro, as the dialog reports it.
- *
- * `\\wsl.localhost\Ubuntu\home\me\repo` and the older `\\wsl$\Ubuntu\…` are
- * views *into* a distro, so the path after the distro name is already the
- * POSIX path — and the distro named there is the one that actually holds the
- * files, which matters when the user has more than one.
- */
-export interface UncCheckout {
-  distro: string
-  path: string
-}
-
-/**
- * Parse a `\\wsl.localhost\<distro>\…` / `\\wsl$\<distro>\…` path, or null.
- *
- * **`wslpath` cannot do this.** Handed a UNC path it treats it as a drive path
- * and returns nonsense — measured: `\\wsl.localhost\Ubuntu\home\me\repo`
- * came back as `/mnt/c/wsl.localhostUbuntuhomemerepo`, and the install then
- * failed on a directory that never existed. Only drive paths (`C:\src`) go to
- * wslpath.
- */
-export function parseUncWslPath(windowsPath: string): UncCheckout | null {
-  const match = /^\\\\(?:wsl\.localhost|wsl\$)\\([^\\]+)\\?(.*)$/.exec(windowsPath)
-  if (!match) return null
-  const distro = match[1] ?? ''
-  const rest = (match[2] ?? '').replace(/\\/g, '/')
-  if (!distro) return null
-  return { distro, path: '/' + rest.replace(/^\/+/, '') }
-}
-
-/**
- * The `wslpath` call for a real Windows drive path (`C:\src\repo`).
- *
- * Only reached when {@link parseUncWslPath} says the path is not inside a
- * distro.
- */
-export function buildWslPathPlan(windowsPath: string, distro?: string): { command: string; args: string[] } {
-  const distroArgs = distro ? ['-d', distro] : []
-  return { command: 'wsl.exe', args: [...distroArgs, '--', 'wslpath', '-u', windowsPath] }
-}
+// Path translation lives in wsl-paths.ts — the folder dialog needs the same
+// conversion, and one implementation beats two that can drift.
+export { buildDrivePathPlan as buildWslPathPlan, parseUncWslPath } from './wsl-paths'
 
 export interface InstallResult {
   ok: boolean
