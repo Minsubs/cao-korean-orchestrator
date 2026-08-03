@@ -441,8 +441,11 @@ function SessionRow({
  * Visible on hover *and* on focus, so keyboard users are not left without them.
  */
 function RowActions({ label, onEdit, onDelete }: { label: string; onEdit: () => void; onDelete: () => void }) {
+  // Dimmed but present, not hidden until hover. Hover-only affordances are how
+  // a feature that exists reads as missing — which is exactly the report that
+  // prompted adding these.
   const base =
-    'rounded p-1 text-[var(--text-3)] opacity-0 transition-opacity hover:bg-[var(--surface-3)] hover:text-[var(--text)] focus:opacity-100 group-hover:opacity-100'
+    'rounded p-1 text-[var(--text-3)] opacity-45 transition-opacity hover:bg-[var(--surface-3)] hover:text-[var(--text)] focus:opacity-100 group-hover:opacity-100'
   return (
     <span className="flex shrink-0 items-center gap-0.5">
       <span
