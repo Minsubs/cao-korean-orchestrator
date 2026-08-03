@@ -60,3 +60,10 @@ aidlc-docs
 
 # Separate git repos (not part of this project)
 cao-flows/
+
+# Packaged desktop builds. electron-builder writes the installer here (the
+# repo-root copy is where we keep the current Windows Setup), and a ~95MB
+# binary does not belong in git — GitHub rejects files over 100MB outright and
+# every rebuild would add another copy to history. Distribute via a GitHub
+# Release instead.
+/release/
