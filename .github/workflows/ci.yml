@@ -85,6 +85,37 @@ jobs:
         run: npm run build
         working-directory: web
 
+  desktop-shell:
+    name: Desktop Shell
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: electron/package-lock.json
+
+      - name: Install dependencies
+        # The Electron binary is a ~100MB download we never run here: this job
+        # type-checks and unit-tests the server-manager logic, and packaging is
+        # a local task (docs/electron-plan.md §6).
+        run: npm ci
+        working-directory: electron
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+
+      - name: Type check
+        run: npm run typecheck
+        working-directory: electron
+
+      - name: Run tests
+        run: npm test
+        working-directory: electron
+
   cao-mcp-apps:
     name: CAO MCP Apps
     runs-on: ubuntu-latest
