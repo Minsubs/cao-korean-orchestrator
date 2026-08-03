@@ -57,13 +57,6 @@ export function which(binary: string): string | null {
 }
 
 /**
- * Spawn the server detached from our stdio.
- *
- * `detached: true` puts the child in its own process group so a SIGKILL after
- * the grace period takes the whole tree with it — a login shell wrapping
- * cao-server means the thing we signal is not the thing serving HTTP.
- */
-/**
  * Where a spawned server's output goes.
  *
  * Without this the boot screen can say "the server did not answer" and there is
@@ -80,8 +73,29 @@ export function getLogPath(): string | null {
   return logPath
 }
 
+/**
+ * Spawn the server and keep hold of its output.
+ *
+ * The two platforms need opposite things here, and the first real Windows run
+ * showed why:
+ *
+ * - POSIX: `detached: true` puts the child in its own process group, so
+ *   signalling `-pid` after the grace period takes the whole tree — a login
+ *   shell wrapping cao-server means the process we signal is not the one
+ *   serving HTTP.
+ * - Windows: `detached: true` gives the child its own console and our stdio
+ *   pipes come back empty — the log file stayed 0 bytes while the server was
+ *   plainly running. There are no process groups to signal either, so the
+ *   trade has no upside: attach normally, hide the console window, and kill the
+ *   tree with taskkill.
+ */
 export function spawn(command: string, args: string[]): ProcessHandle {
-  const child = nodeSpawn(command, args, { detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+  const onWindows = process.platform === 'win32'
+  const child = nodeSpawn(command, args, {
+    detached: !onWindows,
+    windowsHide: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
 
   if (logPath) {
     // Append: a restart should not erase the log that explains why the previous
@@ -101,6 +115,15 @@ export function spawn(command: string, args: string[]): ProcessHandle {
     kill(signal) {
       if (child.pid === undefined) return false
       try {
+        if (onWindows) {
+          // `process.kill(-pid)` is POSIX-only; on Windows it throws and the
+          // server would simply keep running (and keep the port) after quit.
+          // /T takes the wsl.exe tree with it, which is where the server lives.
+          execFileSync('taskkill', ['/pid', String(child.pid), '/T', ...(signal === 'SIGKILL' ? ['/F'] : [])], {
+            stdio: 'ignore',
+          })
+          return true
+        }
         // Negative pid signals the group, which is why we spawned detached.
         process.kill(-child.pid, signal)
         return true
@@ -109,6 +132,31 @@ export function spawn(command: string, args: string[]): ProcessHandle {
       }
     },
     exited,
+  }
+}
+
+/**
+ * Ask the distro whether it has `cao-server`.
+ *
+ * Windows-only, and the only lookup that means anything there: the server is
+ * installed inside WSL, so the Windows PATH cannot answer. Runs through a login
+ * shell for the same reason the spawn does — `~/.local/bin` and uv's shims are
+ * on the PATH only after the rc files run.
+ */
+export function whichInWsl(distro?: string): string | null {
+  if (process.platform !== 'win32') return null
+  const distroArgs = distro ? ['-d', distro] : []
+  try {
+    const out = execFileSync('wsl.exe', [...distroArgs, '--', 'bash', '-lc', 'command -v cao-server'], {
+      encoding: 'utf8',
+      timeout: 10000,
+    })
+    const path = out.trim()
+    return path.length > 0 ? path : null
+  } catch {
+    // Non-zero exit means "not found"; a missing wsl.exe means there is nothing
+    // to find either.
+    return null
   }
 }
 
@@ -159,6 +207,7 @@ export function createRuntimeDeps(): ServerManagerDeps {
     checkHealth,
     spawn,
     which,
+    whichInWsl,
     fileExists: existsSync,
     homeDir: homedir(),
     delay: ms => new Promise(resolve => setTimeout(resolve, ms)),

@@ -46,6 +46,13 @@ export interface ServerManagerDeps {
   spawn(command: string, args: string[]): ProcessHandle
   /** Resolve an executable on PATH, or null. */
   which(binary: string): string | null
+  /**
+   * Resolve `cao-server` *inside* WSL, or null.
+   *
+   * Windows only. The Windows PATH says nothing about what is installed in the
+   * distro, so this is the only lookup that means anything there.
+   */
+  whichInWsl(distro?: string): string | null
   /** Existence check for the extra install locations we look in. */
   fileExists(path: string): boolean
   homeDir: string
@@ -103,7 +110,17 @@ export function installCandidates(homeDir: string): string[] {
  * launch through will resolve it the same way the user's terminal does — and an
  * absolute path when we had to fall back to a known install location.
  */
-export function resolveServerBinary(deps: ServerManagerDeps): string | null {
+export function resolveServerBinary(deps: ServerManagerDeps, distro?: string): string | null {
+  // On Windows the server does not live on Windows. Looking for `cao-server` on
+  // the Windows PATH — or under `C:\Users\<name>/.local/bin` — can only ever
+  // fail, and it failed loudly the first time the app ran there: the
+  // diagnostics screen said "not found" while a perfectly good cao-server sat
+  // inside the distro. Ask WSL instead, and return the bare name so the login
+  // shell we launch through resolves it the same way the user's terminal does.
+  if (deps.platform === 'win32') {
+    return deps.whichInWsl(distro) ? 'cao-server' : null
+  }
+
   if (deps.which('cao-server')) return 'cao-server'
   for (const candidate of installCandidates(deps.homeDir)) {
     if (deps.fileExists(candidate)) return candidate
@@ -240,9 +257,14 @@ export async function startServer(
     return { mode: 'attached', port: scan.port }
   }
 
-  const binary = resolveServerBinary(deps)
+  const binary = resolveServerBinary(deps, config.distro)
   if (binary === null) {
-    throw new ServerStartError('cao-server was not found on PATH or in the usual install locations', 'binary-not-found')
+    throw new ServerStartError(
+      deps.platform === 'win32'
+        ? `cao-server was not found inside WSL${config.distro ? ` (${config.distro})` : ''}`
+        : 'cao-server was not found on PATH or in the usual install locations',
+      'binary-not-found'
+    )
   }
 
   const plan = buildSpawnPlan(binary, { ...config, basePort: scan.port }, deps.platform)

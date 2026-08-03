@@ -23,12 +23,14 @@ function depsWith({
   health = {},
   platform = 'linux',
   onPath = true,
+  inWsl = false,
   existing = [],
   spawn = vi.fn<ServerManagerDeps['spawn']>(() => handleStub()),
 }: {
   health?: Record<number, HealthResult>
   platform?: Platform
   onPath?: boolean
+  inWsl?: boolean
   existing?: string[]
   spawn?: ServerManagerDeps['spawn']
 } = {}): ServerManagerDeps {
@@ -37,6 +39,7 @@ function depsWith({
     checkHealth: async (_host, port) => health[port] ?? { reachable: false, isCao: false },
     spawn,
     which: () => (onPath ? '/usr/bin/cao-server' : null),
+    whichInWsl: () => (inWsl ? '/home/dev/.local/bin/cao-server' : null),
     fileExists: path => existing.includes(path),
     homeDir: '/home/dev',
     delay: async () => {},
@@ -127,6 +130,36 @@ describe('resolveServerBinary', () => {
 
   it('returns null rather than guessing when nothing is found', () => {
     expect(resolveServerBinary(depsWith({ onPath: false }))).toBeNull()
+  })
+
+  it('asks WSL on Windows, not the Windows PATH', () => {
+    // The first real Windows run failed here: the Windows PATH cannot know what
+    // is installed inside the distro, so a perfectly good cao-server produced
+    // "not found" on the diagnostics screen.
+    const deps = depsWith({ platform: 'win32', onPath: false, inWsl: true })
+    expect(resolveServerBinary(deps)).toBe('cao-server')
+  })
+
+  it('ignores a Windows-side hit that says nothing about the distro', () => {
+    const deps = depsWith({ platform: 'win32', onPath: true, inWsl: false })
+    expect(resolveServerBinary(deps)).toBeNull()
+  })
+
+  it('passes the chosen distro to the WSL lookup', () => {
+    const whichInWsl = vi.fn<ServerManagerDeps['whichInWsl']>(() => '/home/dev/.local/bin/cao-server')
+    const deps = { ...depsWith({ platform: 'win32', onPath: false }), whichInWsl }
+
+    resolveServerBinary(deps, 'Ubuntu')
+
+    expect(whichInWsl).toHaveBeenCalledWith('Ubuntu')
+  })
+
+  it('says WSL in the failure when there is a distro to name', async () => {
+    const deps = depsWith({ platform: 'win32', onPath: false, inWsl: false })
+    const error = await startServer(deps, { ...DEFAULT_CONFIG, distro: 'Ubuntu' }).catch(e => e)
+
+    expect(error.reason).toBe('binary-not-found')
+    expect(error.message).toContain('Ubuntu')
   })
 })
 

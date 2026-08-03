@@ -1,0 +1,12 @@
+{
+  // Build only what ships. The root tsconfig includes test/ so `tsc --noEmit`
+  // type-checks it, but emitting with that include makes rootDir the workspace
+  // root and puts main.js at dist/src/main.js — which then breaks every
+  // `join(__dirname, '..')` path to boot.html and the tray icon.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "src"
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["dist", "node_modules", "test"]
+}
