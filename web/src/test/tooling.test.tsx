@@ -141,6 +141,14 @@ describe('ToolingView', () => {
   let scannedAtResponse: string
 
   const mockFetch = vi.fn(async (url: string, init?: RequestInit) => {
+    // Resolve on a macrotask, never in the same microtask drain as the call.
+    // ToolingView renders its header and tabs immediately and fills the panes
+    // when the four core reads land (Phase 5), so a mock that resolves
+    // instantly lets an assertion sneak in before the data on a fast machine
+    // and lose the race on a loaded CI runner. Forcing the delay makes that
+    // ordering the only ordering, so a test that forgets to await the content
+    // fails here instead of intermittently in CI.
+    await new Promise(resolve => setTimeout(resolve, 0))
     if (failAllCore && CORE_ENDPOINTS.includes(url)) return jsonResponse({ detail: 'not found' }, 404)
     if (failEndpoint && url === failEndpoint) return jsonResponse({ detail: 'not found' }, 404)
     if (url === '/tooling/environment') return jsonResponse(environment)
@@ -169,12 +177,20 @@ describe('ToolingView', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
+    // restoreAllMocks does not undo stubGlobal, so the patched `fetch` would
+    // outlive this file's tests.
+    vi.unstubAllGlobals()
   })
 
   // ── Overview ────────────────────────────────────────────────────────────
   it('renders overview stats, environment card, and detected CLI list', async () => {
     render(<ToolingView />)
     expect(await screen.findByRole('heading', { name: /도구 및 확장/ })).toBeInTheDocument()
+
+    // The heading is painted before the four core reads land, so wait for a
+    // value that only exists once /tooling/environment has answered. Everything
+    // below arrives in the same state update.
+    expect(await screen.findByText('macOS 15.5')).toBeInTheDocument()
 
     // Stat chips: 2/3 CLIs detected, 3 extensions installed, 1 non-info diagnostic warning (error counts too)
     expect(screen.getByText('설치된 확장').previousElementSibling).toHaveTextContent('3')
@@ -203,8 +219,11 @@ describe('ToolingView', () => {
     render(<ToolingView />)
     await screen.findByRole('heading', { name: /도구 및 확장/ })
 
+    // Await the placeholders themselves: the heading is painted before
+    // /tooling/environment resolves, so asserting synchronously after it reads
+    // an empty environment card.
     // OS, Architecture, Shell, WSL 여부, 서버 버전 — all five null fields
-    expect(screen.getAllByText('확인할 수 없음').length).toBeGreaterThanOrEqual(5)
+    expect((await screen.findAllByText('확인할 수 없음')).length).toBeGreaterThanOrEqual(5)
   })
 
   // ── Installed (filter / search / select→detail) ────────────────────────
