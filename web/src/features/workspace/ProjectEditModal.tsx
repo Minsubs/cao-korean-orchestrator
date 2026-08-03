@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Check, Folder, FolderOpen, X } from 'lucide-react'
 import { DirectoryPicker } from './DirectoryPicker'
+import { normalizeServerPath } from './serverPath'
 
 export interface ProjectEditTarget {
   kind: 'project' | 'group'
@@ -96,7 +97,7 @@ export function ProjectEditModal({ target, onClose, onSave }: ProjectEditModalPr
           <button
             type="button"
             disabled={!canSave}
-            onClick={() => onSave({ name: trimmedName, path: trimmedPath })}
+            onClick={() => onSave({ name: trimmedName, path: normalizeServerPath(trimmedPath) })}
             className="flex items-center gap-1.5 rounded-full bg-[var(--accent)] px-3 py-1.5 text-xs font-bold text-[var(--on-accent)] disabled:opacity-40"
           >
             <Check size={13} />

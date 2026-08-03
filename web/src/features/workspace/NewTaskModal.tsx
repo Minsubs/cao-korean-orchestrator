@@ -21,6 +21,7 @@ import { saveTeamRoster } from './teamRoster'
 import { newTaskBlockReason } from './newTaskGate'
 import { teamSizeHint } from './teamSizeHint'
 import type { ProjectsData } from './types'
+import { normalizeServerPath } from './serverPath'
 
 interface NewTaskModalProps {
   projects: ProjectsData
@@ -219,7 +220,9 @@ export function NewTaskModal({ projects, defaultTarget, onClose, onCreated }: Ne
         orchestratorProvider,
         selectedProfile.name,
         sessionName.trim() || undefined,
-        workingDirectory,
+        // A project saved before the shell learned to convert dialog results
+        // still holds `\\wsl.localhost\…`, which the server cannot resolve.
+        workingDirectory ? normalizeServerPath(workingDirectory) : undefined,
       )
       saveTeamRoster(terminal.session_name, checkedPresetNames.map(name => {
         const profile = delegatableCandidates.find(candidate => candidate.name === name)
