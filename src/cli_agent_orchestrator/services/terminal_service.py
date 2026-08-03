@@ -88,6 +88,65 @@ class TerminalInputBlockedError(Exception):
     """Raised when orchestrated input would answer an active interactive prompt."""
 
 
+class TerminalWindowGoneError(Exception):
+    """Raised when the terminal's tmux window no longer exists.
+
+    The CLI process exiting takes its window with it, and the terminal record
+    outlives that — so the UI can hold a perfectly valid terminal id whose
+    window is gone. Sending to it used to surface as a 500 carrying a raw tmux
+    command line ("Command '['tmux', 'paste-buffer', ...]' returned non-zero
+    exit status 1"), which told the user nothing and read as a server fault
+    rather than a dead terminal.
+    """
+
+
+# Fragments tmux/herdr print when the target no longer exists. Only a secondary
+# signal: `subprocess.CalledProcessError` from the tmux client carries just
+# "Command '[...]' returned non-zero exit status 1" — tmux's own "can't find
+# window: <name>" goes to the server's stderr, not into the exception. Measured,
+# which is why the primary check below asks the backend instead.
+_WINDOW_GONE_MARKERS = (
+    "can't find window",
+    "can't find pane",
+    "no such window",
+    "no such pane",
+    "session not found",
+    "can't find session",
+)
+
+
+def _mentions_missing_target(error: BaseException) -> bool:
+    """Whether the failure text itself names a missing window/pane/session."""
+    text = str(error).lower()
+    stderr = getattr(error, "stderr", None)
+    if stderr:
+        text += (
+            " "
+            + (
+                stderr.decode(errors="replace") if isinstance(stderr, bytes) else str(stderr)
+            ).lower()
+        )
+    return any(marker in text for marker in _WINDOW_GONE_MARKERS)
+
+
+def _is_window_gone(error: BaseException, session_name: str = "", window_name: str = "") -> bool:
+    """Whether a send failure means the window is gone rather than tmux failing.
+
+    Asks the backend whether the window still has a pane — deterministic, and
+    independent of what the failure text happens to contain. Runs only on the
+    failure path, so the happy path pays nothing.
+    """
+    if session_name and window_name:
+        try:
+            if get_backend().get_pane_current_command(session_name, window_name) is None:
+                return True
+        except Exception:
+            # The probe itself failing tells us nothing either way; fall through
+            # to the text check rather than guessing.
+            pass
+    return _mentions_missing_target(error)
+
+
 def inject_memory_context(first_message: str, terminal_id: str) -> str:
     """Prepend <cao-memory> context block to the first user message.
 
@@ -843,14 +902,22 @@ def send_input(
         # latch-block the IDLE→PROCESSING transition for the whole turn.
         status_monitor.clear_rolling_buffer(terminal_id)
 
-        get_backend().send_keys(
-            metadata["tmux_session"],
-            metadata["tmux_window"],
-            message,
-            enter_count=enter_count,
-            force_bracketed_paste=True,
-            submit_delay=provider.paste_submit_delay if provider else 0.3,
-        )
+        try:
+            get_backend().send_keys(
+                metadata["tmux_session"],
+                metadata["tmux_window"],
+                message,
+                enter_count=enter_count,
+                force_bracketed_paste=True,
+                submit_delay=provider.paste_submit_delay if provider else 0.3,
+            )
+        except Exception as e:
+            if _is_window_gone(e, metadata["tmux_session"], metadata["tmux_window"]):
+                raise TerminalWindowGoneError(
+                    f"Terminal '{terminal_id}' window "
+                    f"'{metadata['tmux_window']}' no longer exists — the CLI has exited."
+                ) from e
+            raise
 
         # Notify the provider that external input was received.
         # This allows providers to adjust status

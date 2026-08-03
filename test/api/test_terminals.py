@@ -830,3 +830,84 @@ class TestCrossProviderResolution:
 
             assert response.status_code == 500
             assert "Failed to create terminal" in response.json()["detail"]
+
+
+class TestSendInputWindowGone:
+    """POST /terminals/{id}/input when the CLI has exited.
+
+    The terminal record outlives its tmux window, so a valid id can point at
+    nothing. That used to surface as a 500 carrying a raw tmux command line
+    ("Command '['tmux', 'paste-buffer', ...]' returned non-zero exit status 1"),
+    which reads as a server fault instead of a dead terminal — reported from
+    live use alongside tmux's own "can't find window: <name>".
+    """
+
+    def test_window_gone_maps_to_410(self, client):
+        from cli_agent_orchestrator.services.terminal_service import TerminalWindowGoneError
+
+        with patch("cli_agent_orchestrator.api.main.terminal_service") as mock_svc:
+            mock_svc.send_input.side_effect = TerminalWindowGoneError(
+                "Terminal 'abcd1234' window 'codex_orchestrator_sol-04cb' no longer exists"
+            )
+
+            response = client.post("/terminals/abcd1234/input", params={"message": "hi"})
+
+            assert response.status_code == 410
+            assert "no longer exists" in response.json()["detail"]
+
+    def test_other_failures_still_500(self, client):
+        """A real tmux fault must not be mislabelled as a dead terminal."""
+        with patch("cli_agent_orchestrator.api.main.terminal_service") as mock_svc:
+            mock_svc.send_input.side_effect = RuntimeError("tmux server exited unexpectedly")
+
+            response = client.post("/terminals/abcd1234/input", params={"message": "hi"})
+
+            assert response.status_code == 500
+
+
+class TestWindowGoneClassification:
+    """The marker match that decides 410 vs 500."""
+
+    def test_asks_the_backend_rather_than_reading_the_message(self):
+        """The real failure carries no tmux text at all — measured.
+
+        `CalledProcessError` from the tmux client stringifies to "Command
+        '[...]' returned non-zero exit status 1"; tmux's own "can't find window"
+        goes to the server's stderr. So the primary signal has to be the
+        backend, not the message.
+        """
+        from subprocess import CalledProcessError
+
+        from cli_agent_orchestrator.services import terminal_service
+
+        error = CalledProcessError(1, ["tmux", "paste-buffer"])
+        assert terminal_service._mentions_missing_target(error) is False
+
+        with patch.object(terminal_service, "get_backend") as get_backend:
+            get_backend.return_value.get_pane_current_command.return_value = None
+            assert terminal_service._is_window_gone(error, "cao-x", "win-1") is True
+
+            get_backend.return_value.get_pane_current_command.return_value = "node"
+            assert terminal_service._is_window_gone(error, "cao-x", "win-1") is False
+
+    def test_still_recognises_an_explicit_tmux_message(self):
+        from subprocess import CalledProcessError
+
+        from cli_agent_orchestrator.services.terminal_service import _is_window_gone
+
+        error = CalledProcessError(
+            1, ["tmux", "paste-buffer"], stderr=b"can't find window: codex_orchestrator_sol-04cb"
+        )
+        assert _is_window_gone(error) is True
+
+    def test_recognises_a_missing_pane_or_session(self):
+        from cli_agent_orchestrator.services.terminal_service import _is_window_gone
+
+        assert _is_window_gone(RuntimeError("no such pane")) is True
+        assert _is_window_gone(RuntimeError("can't find session: cao-test")) is True
+
+    def test_leaves_unrelated_failures_alone(self):
+        from cli_agent_orchestrator.services.terminal_service import _is_window_gone
+
+        assert _is_window_gone(RuntimeError("permission denied")) is False
+        assert _is_window_gone(RuntimeError("tmux: connection refused")) is False
