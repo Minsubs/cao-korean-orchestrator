@@ -120,7 +120,12 @@ def _mentions_missing_target(error: BaseException) -> bool:
     text = str(error).lower()
     stderr = getattr(error, "stderr", None)
     if stderr:
-        text += " " + (stderr.decode(errors="replace") if isinstance(stderr, bytes) else str(stderr)).lower()
+        text += (
+            " "
+            + (
+                stderr.decode(errors="replace") if isinstance(stderr, bytes) else str(stderr)
+            ).lower()
+        )
     return any(marker in text for marker in _WINDOW_GONE_MARKERS)
 
 

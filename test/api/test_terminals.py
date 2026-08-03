@@ -895,7 +895,9 @@ class TestWindowGoneClassification:
 
         from cli_agent_orchestrator.services.terminal_service import _is_window_gone
 
-        error = CalledProcessError(1, ["tmux", "paste-buffer"], stderr=b"can't find window: codex_orchestrator_sol-04cb")
+        error = CalledProcessError(
+            1, ["tmux", "paste-buffer"], stderr=b"can't find window: codex_orchestrator_sol-04cb"
+        )
         assert _is_window_gone(error) is True
 
     def test_recognises_a_missing_pane_or_session(self):
