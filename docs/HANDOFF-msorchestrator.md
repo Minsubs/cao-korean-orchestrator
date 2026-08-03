@@ -435,7 +435,11 @@ CAO fork를 "채팅 중심 멀티 에이전트 오케스트레이션 작업대 +
 4. ✅ **크로스 검증 마지막 다리 완료** — Claude→Codex와 Codex→Claude에서 caller/inbox delivered/generation/final output까지 확인. 상세는 §0.3과 `.omo/evidence/orchestration-full-2026-07-18/report.md`.
 5. ✅ **기본 팀 프리셋 무인 권한 수정 완료** — Codex는 `never/read-only` + CAO MCP 전용 auto-approve, Claude scout/architect는 `bypassPermissions`로 수정. `scripts/dev/fixed_orchestrator_check.py`가 Codex→Claude scout와 Claude→Codex QA의 caller/inbox/generation/final output을 모두 검증한다. 상세는 §0.4.
 6. ✅ **UX Phase 1~6 + 6b 프런트 전부 완료·머지** — Phase 1(§0.14), Phase 4·5·6b(§0.14.1, PR #5·#6), Phase 2(PR #7)·Phase 3(PR #8)(§0.15), Phase 5/6 잔여·알림 초기화·문구 통일(PR #11~#13), 라이브 결함 3라운드(PR #14·#15·#16, §0.16). **2026-08-03 기준 열린 PR 0건, `main` = `4ae4f42`.**
-7. **Phase 7 Electron** — `docs/electron-plan.md`대로 7a(셸+서버매니저)→7b(preload+웹 감지)→7c(WSL+패키징). Tauri 2 대안 검토는 `03d278c`. 셸 기본값 설정(§4)의 백엔드 시임(CAO_DEFAULT_SHELL→create_window window_shell)은 소형 선행 작업. **다음 큰 단계.**
+7. 🔄 **Phase 7 Electron 진행 중(§0.19)** — 백엔드 시임(#23), `electron/` + server-manager(#24), `caoNative` 브리지
+   + 웹 감지(#25), WSL·셸 감지 + builder 설정(#26) 머지 완료. Tauri 2 검토 결론은 **Electron 유지**.
+   **남은 것**: `shellConfig` 브리지·설정 화면 셸 카드, spawn 에 선택 셸/배포판 실제 반영, mac 실기동+dmg,
+   Windows nsis 실검증(사용자 수행), 트레이 아이콘 실물. **GUI 는 아직 한 번도 안 띄웠다** — 검증된 것은 순수
+   로직과 웹 폴백뿐이다.
 8. **잔여 폴리시(작은 것들)** — 습니다체 54곳, mypy 27건(CI 허용), `MemoryGraphView` Sigma 캔버스 hex paint 4개(테마 비반응 — mount 시점 CSS 변수 읽기 필요), 새 작업 모달 첫 턴과 채팅 경로 통일 여부(§0.15 미결), §0.14.1 후속 폴리시 잔여분.
 9. ✅ **미머지 `tooling-wsl-fix`(`1486bf4`) 처리 완료** — `cache.cached_which()` 계열만 PR #18 로 이식했고, 병렬화는
    의도적으로 제외했다(§0.17). 원 브랜치는 `archive/tooling-wsl-fix` 태그로만 남기고 삭제했다(§0.18).
@@ -655,6 +659,57 @@ CI 에서 실패한 이력이 없고 인위적 지연에서만 나타나므로 �
 `origin/main` = `78f2826`, 열린 PR 0, 원격 브랜치 `main` 1개, 태그 `archive/tooling-wsl-fix`,
 워크트리 = 최상위(정상 작업본) + 세션 워크트리. 게이트: 백엔드 `4814 passed / 14 skipped`,
 프런트 `652/652`, tsc 0, build ✓, black/isort clean.
+
+### 0.19. 2026-08-03 Phase 7 착수 — 데스크톱 셸 3단계 (Claude Opus, 백그라운드 잡)
+
+`docs/desktop-shell-electron-vs-tauri.md` 의 결론(**v1 Electron 유지**)을 그대로 따랐다. Tauri 2 는 외부 URL 로드 시
+remote-origin IPC 허용(구 `dangerousRemoteUrlIpcAccess`)이 필요해 계획의 load-bearing 결정과 충돌한다.
+
+#### 머지된 PR
+
+| PR | 내용 | 게이트 |
+|---|---|---|
+| #23 | `CAO_DEFAULT_SHELL` 백엔드 시임 (§4) | 백엔드 `4825 passed / 14 skipped` |
+| #24 | `electron/` 워크스페이스 + server-manager + 부트/트레이 | electron `28`, tsc 0 |
+| #25 | `caoNative` 브리지 + 웹 측 감지 | 웹 `670/670`, electron `46`, build ✓ |
+| #26 | WSL distro·셸 감지 + electron-builder 설정 | electron `89`, tsc 0 |
+
+CI 에 `Desktop Shell` job 추가(typecheck + 단위만, `ELECTRON_SKIP_BINARY_DOWNLOAD=1` 로 ~100MB 바이너리 미다운로드).
+
+#### 계획서와 달라진 것 — 순서
+
+계획 §8 의 7a 는 **mac 우선**(mac spawn·mac 셸 감지·"mac 에서 dmg 기동까지")인데, 이 저장소의 현재 개발 환경은
+**Windows + WSL2** 다. mac 실기동을 할 수 없으므로 "여기서 검증 가능한 것" 순서로 재배열했다: 백엔드 시임 →
+순수 로직(server-manager·WSL 파싱·셸 검증) + 단위 테스트 → 웹 측 감지. mac/Windows 실기동과 패키징은 뒤로 미뤘다.
+
+#### 다시 알아내기 비싼 것
+
+- **`wsl.exe -l -v` 는 UTF-16LE 다.** UTF-8 로 읽으면 `Ubuntu` 가 `" U b u n t u"` 가 되어 모든 이름 비교가 조용히
+  실패한다. 실측 바이트 `20 00 20 00 4E 00 …`. 테스트 픽스처는 이 PC 의 실제 출력이다.
+- **헤더 행은 위치로 버려야 한다.** Windows 가 헤더를 현지화하므로 `"NAME"` 매칭은 한국어 환경에서 `이름` 이라는
+  가짜 배포판을 만든다.
+- **WSL1 은 사용 불가**(localhost 포워딩이 달라 창이 서버에 닿지 못함), docker-desktop 계열은 Running 이라 멀쩡해
+  보이지만 선택지에서 제외.
+- **`findByRole` 은 이미 있는 요소면 기다리지 않는다** — §0.18 과 같은 계열의 함정. 브리지 테스트도 데이터 도착을
+  기다리도록 작성했다.
+- **attach 우선이 왜 절대 규칙인지**: 서버가 둘이면 같은 tmux pane 에 pipe-pane 모니터가 둘 붙어 출력 캡처가 깨진다.
+  그래서 이미 뜬 CAO 서버가 있으면 바이너리 탐색조차 건너뛴다(PATH 를 못 읽는 GUI 실행에서도 앱이 동작하는 이유).
+- **포트가 찼다고 우리 것이 아니다** — `/health` 의 `service: cli-agent-orchestrator` 확인 후에만 attach.
+
+#### 남은 Phase 7 작업
+
+1. `shellConfig` 브리지 배선(preload/main) + **설정 화면 셸 카드** — 감지 로직(#26)은 있고 UI 와 저장이 없다.
+   PowerShell 선택 시 `POWERSHELL_CAVEAT` 를 상시 표시해야 한다.
+2. 서버 spawn 에 선택된 셸/배포판 실제 반영 + `CAO_DEFAULT_SHELL` 전달(백엔드 쪽 #23 은 준비 완료).
+3. mac: 로그인 셸 기동·`dscl` 폴백 감지, **실기동 + dmg 검증**(Mac 필요).
+4. Windows: `wsl.exe` 경로 실동작, nsis 패키징 검증(**회사 PC 에서 사용자 수행** — 계획 §8 검증 행).
+5. 트레이 아이콘 실물 교체(현재 16×16 생성 PNG), 로그 열기 메뉴.
+
+#### 검증하지 않은 것 (중요)
+
+이 세션은 **GUI 를 한 번도 띄우지 않았다.** 디스플레이 없는 WSL 이라 Electron 창·폴더 대화상자·트레이·부트 화면은
+코드로만 존재한다. 검증된 것은 순수 로직(server-manager·WSL 파싱·셸 검증·브리지 가드)과 웹 측 폴백 동작뿐이다.
+패키징도 실행하지 않았다(설정만).
 
 ## 7. 데이터/저장 규약 (프런트 로컬)
 `cao:theme`(라이트 기본), `cao:projects:v1`, `cao:hidden-providers:v1`(기본 [kiro_cli,kimi_cli,cursor_cli,hermes]), `cao:workbench:v1:<session>`, `cao:workspace:team-roster:v1:<session>`, `cao:workspace:delegation-history:v1:<session>`, `cao:env-profiles:v1`, `cao:usage:claude-limits-optin:v1`, `cao:pending-select-session`(sessionStorage). 세션명은 서버 규칙 `^[A-Za-z0-9_][A-Za-z0-9_-]{0,59}$`(cao- 프리픽스는 표시에서만 숨김 — displayName.ts).
