@@ -8,7 +8,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "build": "tsc",
+    "build": "tsc -p tsconfig.build.json",
     "start": "npm run build && electron .",
     "pack:mac": "npm run build && electron-builder --mac --arm64",
     "pack:win": "npm run build && electron-builder --win --x64"

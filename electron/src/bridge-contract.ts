@@ -23,12 +23,36 @@ export interface AppInfo {
   distro?: string
 }
 
+/** One selectable shell/distro, with the reason when it is not selectable. */
+export interface ShellChoice {
+  mode: string
+  label: string
+  available: boolean
+  unavailableReason?: string
+  /** Something the user must know before choosing (e.g. PowerShell's limits). */
+  caveat?: string
+}
+
+export interface ShellSettings {
+  /** Effective mode after validation against what is installed. */
+  mode: string
+  /** True when the stored mode no longer resolves and `auto` took over. */
+  fellBackToAuto: boolean
+  choices: ShellChoice[]
+  /** What `auto` resolves to right now, so it is not a black box. */
+  autoResolvesTo: string | null
+  /** A change applies when the server restarts, not immediately. */
+  restartRequired: boolean
+}
+
 /** IPC channel names, kept in one place so preload and main agree. */
 export const CHANNELS = {
   pickDirectory: 'cao:pick-directory',
   openExternal: 'cao:open-external',
   appInfo: 'cao:app-info',
   restartServer: 'cao:restart-server',
+  shellConfigGet: 'cao:shell-config-get',
+  shellConfigSet: 'cao:shell-config-set',
 } as const
 
 export interface CaoNative {
@@ -39,4 +63,9 @@ export interface CaoNative {
   appInfo(): Promise<AppInfo>
   /** Only meaningful for a server we spawned; a no-op otherwise. */
   restartServer(): Promise<void>
+  shellConfig: {
+    get(): Promise<ShellSettings>
+    /** Rejected modes come back as `{ok:false, error}` rather than throwing. */
+    set(mode: string): Promise<{ ok: boolean; error?: string }>
+  }
 }
