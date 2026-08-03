@@ -834,5 +834,117 @@ Working directory does not exist: \\wsl.localhost\ubuntu\home\...\i-oneNGS
 **남은 것**: 코드 서명 없음(다른 PC 에서 SmartScreen 경고), macOS 미검증, 세션 생성 시 관측된
 `Claude Code initialization timed out after 60s`(FIFO 와 무관한 CLI 초기화 단계 — 미조사).
 
+### 0.22. 2026-08-03 3-AI 교차 검증 매트릭스 — 결함 4건 (Claude Opus, 백그라운드 잡)
+
+사용자 지시로 codex / claude_code / antigravity_cli 를 **감독 × 워커 9조합 전부** 실제 CLI 로 돌렸다
+(`scripts/dev/matrix_check.py`, 3×3). 케이스 통과 조건은 느슨하지 않다 — 워커가 호출자에 연결되고,
+콜백이 전달되고, 양쪽 턴이 정착하고, 감독이 콜백 이후 최종 마커를 출력해야 한다.
+
+1차 결과는 **2/9**. 실패 7건을 유형별로 파서 원인까지 확인했고, 그 과정에서 **제품 결함 3건 + 검사 도구 결함 1건**을
+찾았다. 재실행 후 최종은 **6/9 통과, 남은 3건은 전부 agy 계정 게이트(환경)** 이며 이제 즉시 원인이 표시된다.
+
+#### 최종 매트릭스
+
+| 감독 ↓ / 워커 → | codex | claude_code | antigravity_cli |
+|---|---|---|---|
+| **codex** | PASS | PASS | PASS |
+| **claude_code** | PASS | PASS | FAIL — agy 게이트 |
+| **antigravity_cli** | PASS | FAIL — agy 게이트 | FAIL — agy 게이트 |
+
+#### 머지된 PR
+
+| PR | 내용 |
+|---|---|
+| #40 | claude 첫 실행 온보딩을 60초 타임아웃 대신 원인으로 알림 |
+| #41 | 상태 모니터가 관측하지 못한 턴의 응답도 표시(채팅 무한 대기 제거) |
+| #42 | agy 계정 확인 게이트에 갇힌 터미널 거부 + 죽은 pane 워치독 해제 |
+
+#### 1. claude 워커·감독이 매번 60초 타임아웃 (#40)
+
+```
+Worker … failed to initialize: TimeoutError('Claude Code initialization timed out after 60s')
+```
+
+`claude -p "say OK"` 는 정상 응답했다. tmux 에서 맨손으로 띄워 보니 **첫 실행 온보딩**(`Let's get started.` /
+테마 선택)이 떠 있었다. 원인은 설정 불일치다.
+
+```
+~/.claude.json:  hasCompletedOnboarding: false
+                 lastOnboardingVersion: 2.1.141   (설치본 2.1.220)
+```
+
+버전이 올라갔는데 완료 플래그가 false 라 **대화형 실행마다** 온보딩이 떴고, CAO 는 오지 않을 준비 배너를 기다렸다.
+환경은 백업(`~/.claude.json.bak-185421`) 후 완료 상태로 맞췄다. 코드는 온보딩 화면을 감지해 **원인과 조치를 즉시
+말한다**(자동 응답은 하지 않는다 — 로그인은 사람이 해야 하고, 테마를 대신 저장하면 사용자 설정을 몰래 바꾸는 것).
+이 수정 후 claude 관련 4케이스 중 3건이 통과했다.
+
+#### 2. 응답이 도착했는데 채팅이 영구 대기 (#41) — 이번 라운드 최대 결함
+
+`CL-to-AG` 가 이상하게 실패했다: 로그에 `final=True` 가 찍혀 있는데 케이스는 FAIL.
+
+- 감독 터미널 `bb2deb7d` 의 **FIFO 바이트 로그에 최종 마커가 실제로 존재** → 답은 서버까지 도달
+- 그런데 콜백 전달(18:55:32) 이후 **상태 전이 로그가 0건**, 정리 시점까지 6분간 `gen 3/2` 고정
+
+원인: `ready_generation` 은 `PROCESSING → ready` **엣지에서만** 기록된다(`status_monitor.py:254-257`).
+이미 `completed` 로 latch 된 상태에서 시작해 `completed` 로 끝나는 **빠른 턴**(워커 콜백에 한 줄로 답하는 경우)은
+기록될 수가 없다. `get_status` 의 재감지 경로도 `cached == PROCESSING` 일 때만 돌아 회복되지 않는다.
+
+사용자 영향이 여기서 나온다. 웹 채팅은 출력을 읽기 **전에** `ready_generation === input_generation` 을
+요구하므로(`sessionCompletion.ts`), 그 답은 **영구히 표시되지 않는다.** 0.4초 폴링 실측으로 일반 입력의 짧은 턴은
+`2/2`, `3/3` 으로 정상 정착함을 확인해 "감지 자체의 문제"가 아니라 **이 조건에서만** 생기는 것으로 좁혔다.
+
+고친 방식은 계층 책임 분리다. 모니터는 관측한 사실만 보고하게 두고, **소비자가 내용 증거와 결합**한다 —
+출력이 직전 폴과 동일(렌더 완료) + 프롬프트 이전 baseline 과 다름 + 상태가 응답을 담은 상태일 때만 gen 지연을 허용.
+`idle`(조용함은 답이 아니다), 처리 중, 콜백 미도착, 워커 지연은 전부 계속 거부한다. 부수 효과로 **출력 읽기를
+게이트 앞으로 옮겨** 정상 작동 중인 긴 턴이 5분 뒤 "조용함"으로 오판되던 문제도 사라졌다.
+
+**이 결함은 provider 무관이다.** 재실행에서 `AG-to-CX` 가 `supervisor_gen=3/2` 로 **통과**했다 — 같은 스톨이
+antigravity 감독에서도 발생하며, 완화 규칙이 실제로 작동한다는 증거다.
+
+#### 3. agy 계정 확인 게이트 — 지시가 조용히 사라진다 (#42)
+
+`AG-to-CL`, `AG-to-AG` 는 `worker-created timed out after 300s` + **로그에 아무 원인 없음**. 감독 화면이
+답이었다: agy 가
+
+```
+⚠ Verifying your account...
+⎿  We're finishing verifying your account eligibility.
+   This usually takes a moment. Please try again shortly.
+```
+
+배너를 띄운 채 **status bar 는 `Idle`** 이라 모든 준비 검사가 통과한다. 이 상태에서 붙여넣은 지시는 **버려진다** —
+composer 에 한 번 찍히고 사라지며 턴이 아예 돌지 않는다. 같은 실행의 agy 터미널 6개가 예외 없이 갈렸다.
+
+| 터미널 | 배너 | 태스크 처리 | 토큰 |
+|---|---|---|---|
+| `fef79985` / `25492db4` / `e747f77f` | 없음 | 됨 | 31k~ |
+| `cadb9229` / `710e8961` / `7ae3d2ca` | 있음 | **안 됨** | 2k(부팅 인사뿐) |
+
+재실행의 `CL-to-AG` 실패도 같은 원인이었다(워커 `1dce4b40`: 배너 있음, 725 tok, 콜백 미전송).
+배너는 pane 이 idle 이 된 뒤에도 **스스로 사라지지 않는다** → 기다리면 되는 게 아니라 사람이 처리할 게이트다.
+`initialize()` 에서 짧게 기다려 본 뒤 남아 있으면 조치를 담아 실패시킨다. 배정 경로도 같은 검사를 지나므로
+**일을 못 받는 워커가 만들어지지 않는다.**
+
+#### 4. 죽은 pane 을 영원히 찌르던 워치독 (#42)
+
+창이 사라진 터미널의 `capture-pane` 은 매번 실패하는데, 일반 예외 처리기가 **4초마다 동일 traceback** 을 남겼다 —
+40분 이상, 매번 실패할 서브프로세스를 하나씩 낭비하면서. 이 소음이 실제로 이번 조사에서 한 번 오판을 유발했다
+(워치독 전체가 죽은 것으로 잠시 의심). 연속 실패를 세어 한계에서 등록 해제한다. 기존 re-arm / cold-start 실패 계열과
+같은 방식이며 **연속** 실패만 센다(일시적으로 바쁜 tmux 는 누적되지 않음).
+
+#### 검사 도구 자체의 결함 (`fixed_orchestrator_check.py`)
+
+`supervisor-final` 이 `input_generation == ready_generation` 을 요구해, 위 2번 상황에서 **제품이 아니라 샘플링
+한계를 측정**하고 있었다. 워커 단계도 같은 문제가 있었다. 워커는 콜백 마커(더 강한 증거)로, 감독은 제품과 동일한
+"출력 안정 + 마커" 규칙으로 바꿨다.
+
+#### 이 시점 상태
+
+`origin/main` = `1ac3556`(#41 까지). PR #42 는 CI 대기.
+백엔드 **4844 passed / 21 skipped**, 웹 **720 passed / 92 files**, providers+fifo **1088 passed**, tsc 0.
+
+**남은 것**: 코드 서명 없음, macOS 미검증, 인스톨러·로컬 WSL 서버는 #39~#42 반영 재빌드 필요.
+agy 게이트는 환경 상태이므로 재현 시 `agy` 를 직접 한 번 실행해 확인을 끝내야 한다.
+
 ## 7. 데이터/저장 규약 (프런트 로컬)
 `cao:theme`(라이트 기본), `cao:projects:v1`, `cao:hidden-providers:v1`(기본 [kiro_cli,kimi_cli,cursor_cli,hermes]), `cao:workbench:v1:<session>`, `cao:workspace:team-roster:v1:<session>`, `cao:workspace:delegation-history:v1:<session>`, `cao:env-profiles:v1`, `cao:usage:claude-limits-optin:v1`, `cao:pending-select-session`(sessionStorage). 세션명은 서버 규칙 `^[A-Za-z0-9_][A-Za-z0-9_-]{0,59}$`(cao- 프리픽스는 표시에서만 숨김 — displayName.ts).
