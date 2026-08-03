@@ -10,6 +10,7 @@ from typing import Dict, List, Optional
 import libtmux
 
 from cli_agent_orchestrator.constants import TMUX_HISTORY_LINES
+from cli_agent_orchestrator.utils.default_shell import resolve_default_window_shell
 from cli_agent_orchestrator.utils.path_validation import (
     BLOCKED_SYSTEM_DIRECTORIES,
     resolve_and_validate_path,
@@ -176,6 +177,13 @@ class TmuxClient:
             # silently dropped. Starting at a larger size makes the attach
             # resize a no-op/shrink, which kiro handles correctly. All other
             # providers tolerate wider panes. See issue #216.
+            # Operator-chosen login shell (CAO_DEFAULT_SHELL, set by the desktop
+            # shell). Unset or unusable leaves tmux on its own default-shell.
+            new_session_kwargs: dict = {}
+            default_shell = resolve_default_window_shell()
+            if default_shell:
+                new_session_kwargs["window_command"] = default_shell
+
             session = self.server.new_session(
                 session_name=session_name,
                 window_name=window_name,
@@ -184,6 +192,7 @@ class TmuxClient:
                 environment=environment,
                 x=220,
                 y=50,
+                **new_session_kwargs,
             )
             logger.info(
                 f"Created tmux session: {session_name} with window: {window_name} in directory: {working_directory}"
@@ -227,8 +236,12 @@ class TmuxClient:
                 "start_directory": working_directory,
                 "environment": window_env,
             }
-            if window_shell:
-                kwargs["window_shell"] = window_shell
+            # An explicit window_shell (the restore path replaying scrollback)
+            # already encodes the shell it wants, so it wins over the operator
+            # default rather than being wrapped by it.
+            effective_shell = window_shell or resolve_default_window_shell()
+            if effective_shell:
+                kwargs["window_shell"] = effective_shell
 
             window = session.new_window(**kwargs)
 
