@@ -144,6 +144,40 @@ subagent-driven-development(구현 sonnet / 리뷰 sonnet / 최종 opus)로 **Ph
 
 - **라이브 서버:** `127.0.0.1:9889`에 `cao-server` 가동 중(pid 3970095, ext4 `CAO_HOME_DIR=/home/minsub57/.local/share/cao-home`). 라우트 prefix는 `/tooling`(not `/api/tooling`). web_ui는 Phase 1까지 반영된 빌드. Windows 브라우저 `http://localhost:9889`.
 
+### 0.14.1. 2026-07-23~24 Phase 4~6b 대량 구현 (PR #5·#6, Claude Opus, SDD)
+
+> **2026-08-03 복원분.** 이 절은 원래 워크트리 `.claude/worktrees/handoff-linux-wsl` 에 **미커밋 상태로만**
+> 남아 있어 `main` 의 HANDOFF 가 §0.14(07-21) → §0.15(07-27) 로 건너뛰고 있었다. 코드는 전부 머지됐지만
+> "왜 그렇게 했는지"가 정본에 없어 복원한다. 본문은 당시 기록 그대로이고, 그 뒤 상황이 바뀐 곳만
+> `[2026-08-03]` 로 덧붙였다. 번호는 기존 §0.15/§0.16 을 밀지 않으려고 `0.14.1` 로 넣었다(시간순 위치는 맞다).
+
+브랜치 `wsl-3ai-orchestration`. §0.14 이후 이어진 장기 세션으로 Phase 4 전체 + Phase 5 + 후속 수정 + Phase 6b 프런트를 subagent-driven-development(구현 sonnet / 리뷰 sonnet / 최종 opus)로 구현·리뷰·라이브검증했다. 커밋/push/PR/머지는 전부 사용자 승인 턴에서만 수행했다. 진행 렛저 전체: `.superpowers/sdd/progress.md`(gitignore scratch)에 태스크별 커밋·리뷰·minor가 남아 있다.
+
+**PR #5 — 머지 완료 (merge commit `e73ce5d`, origin/main).** 내용:
+- **Phase 4-A** 에이전트 프로필 정상화: antigravity를 1급 팀으로 승격(오케스트레이터 3번째 선택지 = Codex/Claude/Antigravity), "기타"로 빠지던 agy 프로필에 `uiRole` 부여 + `PRESENTATION` 등록. examples/cross-provider 예제도 카테고리화.
+- **Phase 4-B** 모델 카탈로그 수정: `services/tooling/models.py` `_KNOWN_MODELS` codex STALE(gpt-5-codex/gpt-5/o3) → 실제 `gpt-5.6-sol/terra/luna` + fable alias, agy QA 워커를 Gemini 3.6 Flash로(당시 신모델, agy 1.1.5가 하이픈/Title-Case 둘 다 수용 실측). 계약 테스트 포함.
+- **Phase 4-C** 에이전트 시각화: RoleBoard(A, 역할별 카드 + provider 색 + 모델 배지) + DelegationHierarchy(B, 위임 계층) + 자동 A/B 전환. `providerAccent` 디자인 토큰.
+- **Phase 4-D** 인라인 사용량 바: 각 AI 사용량을 버튼이 아니라 provider별 인라인 막대(`InlineUsageBar`)로 상시 표시. antigravity quota 집계기(`services/usage/antigravity_quota.py`) 추가. `[2026-08-03]` §0.16 에서 `HeaderUsageBars` 로 한 번 더 개편됐다.
+- **이벤트 스트림 언마운트 버그 수정**(`b7a971f`): `/ui/events` SSE를 Workspace가 소유해 메뉴 이동 시 unmount→구독 끊김. AppShell로 hoist + `selectedSessionId` lift로 nav 가로질러 1회 구독 유지.
+- **Tooling ERR_ABORTED 수정**(`048ce3b`): `fetchJSON` 10s 기본 타임아웃이 WSL 콜드 프로브에 짧음 + `Promise.all`이 전체 화면을 blank + 백엔드 read 핸들러가 blocking. read 타임아웃 60s + `Promise.allSettled`(부분 렌더) + probe 핸들러 `asyncio.to_thread`. RCA로 event-hoist 회귀 아닌 선존 확인.
+- **favicon**(`dfe4778`): data-URI SVG "M" 배지 + theme-color. `/favicon.ico` 404 제거.
+- **CLI 설치 기능(npm 기반)**(`a17af2c`/`6c10111`/`7aebe5a`): `install_cli` 액션 + codex/claude/kiro/copilot/opencode 를 고정 패키지명으로 npm 설치(클라이언트가 패키지명 못 넣음 — provider→상수 매핑, 보안 리뷰 Approved). 미설치 provider 행에 "설치" 버튼. agy(curl|bash)·kimi(brew)는 보안상 제외. `[2026-08-03]` 이 작업의 플랜 문서도 미커밋이라 함께 복원: `docs/superpowers/plans/2026-07-23-cli-install.md`.
+
+**PR #6 — `[2026-08-03] 머지 완료(2026-07-24).`** (당시 기록: 생성 완료·머지 대기, origin/main `e73ce5d` 대비 13커밋. `gh pr merge 6 --merge` 가 세션 auto-mode classifier에 차단돼 사용자 직접 머지가 필요했다 — 하네스 레벨 차단이라 우회하지 않았다.) 내용:
+- **Phase 5 로딩/성능 UX** (6커밋 `65af802..a133cc1`): (1) huni 마스코트 전역 로딩 오버레이(release-deploy `huni.png` 이식, ref-count store, 새작업 생성·세션 종료 시 표시, `prefers-reduced-motion` 존중, z-index 90); (2) 도구·확장 페이지 즉시 열림(전역 로딩 게이트 제거 → 헤더+탭 즉시, 활성 탭 콘텐츠만 스켈레톤); (3) tooling 캐시+프리웜(catalog/extensions/adapters TTL 캐시 + `CACHE_TTL_SECONDS` 60→300 + lifespan 백그라운드 프리웜 — WSL 콜드 catalog 첫 ~19s를 프리웜 이후 ~2ms로); (4) M1 스낵바 z-[100]로 올려 성공 토스트가 오버레이에 안 가리게.
+- **오케스트레이터 채팅 슬래시 자동완성 수정**(`c2cedf7`): `/` 자동완성 provider를 워크벤치 터미널(`wbContext`)이 아니라 **채팅 대상**(`composerTarget`)에서 가져오도록. 원인 = 채팅은 오케스트레이터에게 보내는데 슬래시는 워크벤치에 열린 터미널 provider를 봤음 → 워크벤치 안 열면 codex 오케스트레이터와 채팅 중에도 슬래시 안 뜸. `ComposerTarget`에 `provider` 추가 + `slashProvider={composerTarget?.provider}`. 워크벤치 무관 회귀 테스트 RED→GREEN.
+- **Antigravity 컨텍스트 게이지 파서**(`71d465e`): agy footer "Context N% left" 스크랩 `get_context_usage` 추가(claude_code 방식 미러링). agy 세션에서 게이지 표시.
+- **codex 게이지 제약 문서화**(`d31efd2`): codex는 upstream이 **v0.136+에서 footer의 "N% left" 세그먼트를 제거** → codex 0.145는 스크랩할 컨텍스트 데이터가 없음. codex.py에 주석으로 명시(게이지를 가짜 0%가 아니라 정상적으로 숨김). **게이지 실현 가능성 = footer가 노출하는 CLI만: claude_code ✓, antigravity ✓(추가), codex ✗(upstream 제약).**
+- **Phase 6b 프런트 — "환경·지침" 탭**(5커밋 `9f7ce17..4f48662`, SDD 5태스크 전부 Approved): 백엔드 `/env/*`(이미 배포됨, 6b-spec)를 소비하는 도구·확장 8번째 서브탭. (T1) `web/src/api.env.ts` 타입 클라이언트(inventory/instructions/convert/write, `api.tooling.ts`의 `ApiError` 인터페이스 재사용). (T2) CLI 인벤토리 섹션(claude_code/codex/antigravity의 지침·설정·스킬·에이전트·MCP 파일 메타 — 경로·크기·수정시각, 내용 비노출). (T3) AGENTS/CLAUDE 지침 매트릭스(전역 + 프로젝트 경로별 존재/크기/시각 + 마스킹된 headline, 경로 추가 스캔). (T4) 변환 미리보기(claude_agent→cao_profile, claude_command↔codex_prompt, CLAUDE.md↔AGENTS.md 4쌍, preview-only). (T5) 가드된 저장(변환 결과를 CLAUDE.md/AGENTS.md로 write — 홈경로·파일명·256KiB 백엔드 검증, 409 충돌 시 덮어쓰기 체크 필요, 덮어쓰면 자동 백업. **유일한 mutation, 명시 "저장" 클릭 없이는 절대 실행 안 함**).
+
+**검증(PR #6 기준):** 프런트 `460 tests` + `tsc --noEmit` clean + `npm run build` 성공. 백엔드 `test/providers 1044 passed / 7 skipped`, `test/tooling + test/api 744 passed`. 각 태스크 리뷰 Approved + 최종 whole-branch 리뷰(opus, `a133cc1..4f48662` 8커밋) = **READY TO MERGE**(Critical/Important 0). 라이브 브라우저 검증(서버 `127.0.0.1:9889`): huni 오버레이(실물 850×1000 PNG·z90·완료·에러 시 정상 hide), 도구 즉시 렌더 + 프리웜 캐시(catalog 2.4ms), 슬래시 드롭다운 6개 codex 명령, 환경·지침 탭(실데이터 인벤토리 24항목·지침 매트릭스 masked headline·변환 4쌍 UI).
+
+**후속 폴리시(당시 비블로킹, `.superpowers/sdd/progress.md`에 기록):** 환경·지침 탭 재진입 시 추가 프로젝트 경로 칩/카드 desync, 저장블록 경로변경 시 overwrite 잔존, `KIND_LABELS` 중복(envtools.ts vs shared.tsx의 `KIND_LABEL_KO`), 테스트 파일 3개 `vi.unstubAllGlobals()` 누락(잠재 parallel-worker fetch-mock 누수 → 간헐 flaky), addPath dedup(중복 경로 시 React key 경고), AppShell이 SSE 이벤트마다 re-render, "오케스트레이터오케스트레이터" 라벨 중복, adapterless CLI(kimi/hermes/cursor) install/update 버튼 400. `[2026-08-03]` 이 중 "오케스트레이터오케스트레이터" 는 §0.16(`roleLabel.ts`)에서 해소됐다. 나머지는 재확인하지 않았다.
+
+**다음 세션 예정이었던 Phase 2(실시간 진행 카드)** — `[2026-08-03]` §0.15 에서 PR #7 로 구현·머지 완료.
+
+**중요 환경 재확인:** 서버는 반드시 `CAO_HOME_DIR=/home/minsub57/.local/share/cao-home`(ext4)로 기동해야 한다. 이 env 없이 기동하면 기본 홈 `~/.aws/...`가 Windows 9p 마운트라 `os.mkfifo`가 `[Errno 95] Operation not supported` → 세션 생성 실패 → **모든 터미널·오케스트레이션·슬래시·게이지가 죽는다**(§0.11 blocker 1과 동일). 정확한 기동 명령은 §3-1 참조.
+
 ### 0.15. 2026-07-27 콜드스타트 복구 + UX Phase 2·3 구현 + EOD 자율 루프 (Claude Opus, 백그라운드 잡)
 
 이 세션은 콜드스타트로 시작해 Phase 2 → Phase 3 을 구현하고, 마지막에 `/end-of-day-handoff-loop`
@@ -349,6 +383,10 @@ CAO fork를 "채팅 중심 멀티 에이전트 오케스트레이션 작업대 +
 원칙: 가짜 데이터/빈 성공 화면 금지(capability 기반), 한국어 UI, 파스텔 디자인 토큰(`var(--…)`, 하드코딩 색 금지), 단계별 게이트(black/isort/mypy/pytest/tsc/vitest/build), **커밋·push는 사용자가 시킬 때만**.
 
 ## 2. 머지 시점 상태 (전부 초록)
+
+> **주의: 아래 수치는 2026-07-17 스냅샷이다.** 최신 게이트 수치는 §0.16(프런트 `652/652`,
+> 백엔드 `4809 passed / 21 skipped`), 최신 저장소 상태는 §0.17을 본다.
+
 - pytest `4665 passed / 14 skipped` · vitest `324/324` · tsc 클린 · `npm run build` 성공 · `node design-tokens/gen.mjs --check` 통과
 - 완료: Phase 0~5(셸·작업공간·tooling 읽기/쓰기·프로필/모델/Flows/팔레트), Phase 5.5(실사용 피드백 17건), 2d(컨텍스트 게이지)+2e(슬래시 자동완성) 백/프런트, 6b(`/env` 마이그레이션·지침 API 4종), 6c 소스 백엔드(`/tooling/sources`), 소스 탭 프런트(SourcesPane/EnvProfilesPane — 게이트 통과 상태로 랜딩)
 - 오케스트레이터 라이브 e2e: claude 8/8 PASS, codex send_message/assign 콜백 PASS(아래 §4 버그 수정 후), claude→codex 크로스는 워커 생성·provider 오버라이드·caller_id까지 PASS
@@ -362,7 +400,17 @@ CAO fork를 "채팅 중심 멀티 에이전트 오케스트레이션 작업대 +
 - **Python은 3.12로 고정한다.** 시스템 기본은 linuxbrew `3.14.4`인데, `httptools`·`uvloop` 등이 cp314 wheel이 없어 소스 컴파일을 강제하고 `gcc-12` 부재로 즉사한다. uv 관리형 3.12로 부트스트랩: `uv python install 3.12` → `uv sync -p 3.12`(전부 prebuilt wheel, 컴파일 0). Linux는 hidden-flag 재적용이 없어 `--no-sync` 불필요(macOS 레거시). 부트스트랩 뒤 plain `uv run`으로 실행한다. **검증 완료(2026-07-20): `.venv`는 `3.12.13`.**
 - agent-store 등 홈 상대 경로(`~/.aws/cli-agent-orchestrator/...`)는 Linux에서 `/home/minsub57/.aws/...`로 해석된다(형태 동일).
 
-1. **서버**: `uv sync` 뒤 `PYTHONPATH=src uv run cao-server --host 127.0.0.1 --port 9889`. host/port 기본값은 config 해석(`--host/--port` default None)이므로 명시 권장. tmux 백그라운드 유지 시 세션명 자유. 옛 uv tool 설치본과 동시 기동 금지(pipe-pane 이중 연결).
+1. **서버**: `uv sync` 뒤
+
+   ```bash
+   CAO_HOME_DIR=/home/minsub57/.local/share/cao-home PYTHONPATH=src uv run cao-server --host 127.0.0.1 --port 9889
+   ```
+
+   **`CAO_HOME_DIR`(ext4 경로)를 빼면 안 된다.** 기본 홈 `~/.aws/cli-agent-orchestrator/...`는 Windows 9p 마운트라
+   FIFO 생성이 `os.mkfifo: [Errno 95] Operation not supported`로 실패하고 → 세션 생성 실패 → **터미널·오케스트레이션·
+   슬래시·컨텍스트 게이지가 전부 죽는다.** 서버 자체는 뜨고 `/sessions`도 200이라 겉으로는 정상으로 보이는 것이
+   함정이다(§0.11 blocker 1, §0.14.1 말미에서 두 번 밟았다). host/port 기본값은 config 해석(`--host/--port` default
+   None)이므로 명시 권장. tmux 백그라운드 유지 시 세션명 자유. 옛 uv tool 설치본과 동시 기동 금지(pipe-pane 이중 연결).
 2. **pytest**: `PYTHONPATH=src uv run python -m pytest test/ -q --no-cov -m 'not e2e' --ignore=test/e2e --ignore=test/providers/test_kiro_cli_integration.py` (console-script shebang이 옛 경로를 가리킬 수 있으므로 `python -m pytest` 사용)
 3. **웹 게이트**: `cd web && npx tsc --noEmit && npm test && npm run build`
 4. **e2e(실서버 필요)**: `PYTHONPATH=src uv run pytest -m e2e test/e2e/... -v` — 전제 프로필 data_analyst/report_generator/analysis_supervisor/data_analyst_codex는 `~/.aws/cli-agent-orchestrator/agent-store/`에 설치돼 있어야 함(임시 — 검증 끝나면 제거 가능). 크로스 검증 스크립트: generic `scripts/dev/xprov_check.py`, 기본 고정 팀 `scripts/dev/fixed_orchestrator_check.py`(서버 떠 있을 때 `PYTHONPATH=src uv run python ...`).
@@ -386,15 +434,20 @@ CAO fork를 "채팅 중심 멀티 에이전트 오케스트레이션 작업대 +
 3. ✅ **6c 탭 마무리 확인 완료** — Sources 실데이터, EnvProfiles 실제 CLI 버전 스냅샷/비교·legacy v1 호환·부분 실패, Discover `kind:'cli'`와 Vercel Skills CLI 수동 명령을 실서버/실브라우저에서 확인. 회귀 테스트와 3개 뷰포트 증거는 §0.2 참조.
 4. ✅ **크로스 검증 마지막 다리 완료** — Claude→Codex와 Codex→Claude에서 caller/inbox delivered/generation/final output까지 확인. 상세는 §0.3과 `.omo/evidence/orchestration-full-2026-07-18/report.md`.
 5. ✅ **기본 팀 프리셋 무인 권한 수정 완료** — Codex는 `never/read-only` + CAO MCP 전용 auto-approve, Claude scout/architect는 `bypassPermissions`로 수정. `scripts/dev/fixed_orchestrator_check.py`가 Codex→Claude scout와 Claude→Codex QA의 caller/inbox/generation/final output을 모두 검증한다. 상세는 §0.4.
-6. **Phase 6** — 접근성/성능/Settings·Memory 라이트 테마 전환/폴링 통합/최종 보고(§26 형식). **Phase 6b 프런트** — `/env` API 소비 화면(마이그레이션·지침 관리 탭). 스펙은 `docs/specs/phase6b-spec.md` 참조(백엔드 완료).
-7. **Phase 7 Electron** — `docs/electron-plan.md`대로 7a(mac 셸+서버매니저)→7b(preload+웹 감지)→7c(WSL+패키징). 셸 기본값 설정(§4)의 백엔드 시임(CAO_DEFAULT_SHELL→create_window window_shell)은 소형 선행 작업.
+6. ✅ **UX Phase 1~6 + 6b 프런트 전부 완료·머지** — Phase 1(§0.14), Phase 4·5·6b(§0.14.1, PR #5·#6), Phase 2(PR #7)·Phase 3(PR #8)(§0.15), Phase 5/6 잔여·알림 초기화·문구 통일(PR #11~#13), 라이브 결함 3라운드(PR #14·#15·#16, §0.16). **2026-08-03 기준 열린 PR 0건, `main` = `4ae4f42`.**
+7. **Phase 7 Electron** — `docs/electron-plan.md`대로 7a(셸+서버매니저)→7b(preload+웹 감지)→7c(WSL+패키징). Tauri 2 대안 검토는 `03d278c`. 셸 기본값 설정(§4)의 백엔드 시임(CAO_DEFAULT_SHELL→create_window window_shell)은 소형 선행 작업. **다음 큰 단계.**
+8. **잔여 폴리시(작은 것들)** — 습니다체 54곳, mypy 27건(CI 허용), `MemoryGraphView` Sigma 캔버스 hex paint 4개(테마 비반응 — mount 시점 CSS 변수 읽기 필요), 새 작업 모달 첫 턴과 채팅 경로 통일 여부(§0.15 미결), §0.14.1 후속 폴리시 잔여분.
+9. **미머지 `tooling-wsl-fix`(`1486bf4`) 처리 결정** — §0.17 참조. `cache.cached_which()`만 체리픽하거나 브랜치를 폐기한다.
 
 ## 6. 미해결/사용자 확인 대기
 - 기본 팀 권한 blocker는 §0.4에서 해결했다. 향후 Codex CLI에서 MCP approval config schema가 바뀌면 `scripts/dev/fixed_orchestrator_check.py`로 재검증한다.
 - 도구및확장 "소스" 탭의 마켓플레이스 **추가/삭제 실행**(현재 명령 복사 안내만) — 사용자 요청 시 operations queue로.
 - 미이식 클래식 기능 3건(프로필 카운트 칩·대시보드 필터/정렬·tmux 세션 배지) — 사용자 확인 대기.
 - e2e용 임시 프로필 4개(agent-store) 정리 여부.
-- push/PR: 사용자 지시 없음 — **로컬 머지만 완료된 상태**.
+- 원본 체크아웃(`/home/minsub57/hunesion_workspace/cao-korean-orchestrator`)의 CRLF 973파일 정리 — **사용자 승인 대기**(§3-5).
+- 스테일 워크트리 4개 삭제 여부 — **사용자 승인 대기**(§0.17).
+- `tooling-wsl-fix` 브랜치 처리(체리픽 vs 폐기) — **사용자 결정 대기**(§0.17).
+- ~~push/PR: 사용자 지시 없음 — 로컬 머지만 완료된 상태.~~ **해소** — 2026-08-03 기준 PR #1~#16 전부 origin 머지, 열린 PR 0건(§0.17).
 
 ### 0.16. 2026-07-30 라이브 사용 결함 8건 + 다크 팔레트 하드코딩 제거 (Claude Opus, 백그라운드 잡)
 
@@ -455,6 +508,52 @@ CAO fork를 "채팅 중심 멀티 에이전트 오케스트레이션 작업대 +
   캔버스 hex paint 4개(테마 비반응 — 토큰화하려면 mount 시점에 CSS 변수를 읽어야 해서 별건),
   `.omc/` 미추적 디렉터리(커밋 대상 아님).
 
+
+### 0.17. 2026-08-03 콜드스타트 감사 — 미머지 잔재 판정 + HANDOFF 공백 복원 (Claude Opus, 백그라운드 잡)
+
+이 세션은 **코드 변경 0건, 문서만** 고쳤다. 콜드스타트로 저장소 상태를 실제 ref/PR 기준으로 확인하고,
+어디에도 커밋되지 않은 채 워크트리에만 남아 있던 기록을 정본으로 되살렸다.
+
+#### 저장소 실측 상태
+
+- `main` = `origin/main` = `4ae4f42`. **PR #1~#16 전부 머지, 열린 PR 0건**(`gh pr list --state open` 빈 결과).
+- **⚠️ 최상위 체크아웃 `/home/minsub57/hunesion_workspace/cao-korean-orchestrator` 는 bare 취급이라 `git status`가
+  `fatal: 이 작업은 작업 폴더에서 실행해야 합니다`로 실패한다.** 그 디렉터리의 파일은 2026-07-20 스냅샷이라 최신이 아니다.
+  **읽기·작업 모두 워크트리에서 한다**(예: `.claude/worktrees/pr6-ci` = `main` clean).
+- 워크트리 5개(`pr6-ci`, `coldstart-phase4d`, `handoff-linux-wsl`, `agent-a21c969f07d3bfb02`, `agent-a5714d1cc250b4f0d`)의
+  브랜치는 **전부 `main` 대비 0 commits ahead** → 커밋 유실 위험 없음. 남은 미추적물은 스크린샷 png 4장·`.omc/`·
+  `.playwright-mcp/`·`.superpowers/` 스크래치뿐이다. 삭제는 사용자 승인 대기(§6).
+- 서버는 **미기동**이었다(9889 무응답, tmux 세션 없음).
+
+#### §0.16의 "미완" 항목 철회
+
+§0.16은 `live-ux-round2` push 실패로 커밋 `ac1d1cf`가 로컬에만 있다고 적었다. **실제로는 그 뒤 push·PR·머지까지
+완료됐다** — PR #16(2026-07-30T10:53Z 머지), `main` `4ae4f42`. §0.16의 해당 문단은 기록으로 남기되 이 절이 정정한다.
+
+#### 미머지 잔재 3건 판정
+
+| 잔재 | 판정 | 근거 |
+|---|---|---|
+| 브랜치 `tooling-wsl-fix` `1486bf4`(2026-07-20, PR 없음) | **실질 대체됨.** 잔여가치 = `cache.cached_which()` 하나 | 프런트 타임아웃은 `DEFAULT_TIMEOUT_MS = 60000` + `Promise.allSettled` + `to_thread`(PR #5 `048ce3b`)로, 백엔드 캐시는 `TTLCache(300s)` + `api/main.py:499,543` 기동 프리웜으로 각각 다른 방식으로 해결됨. 미랜딩분은 `cached_which`(shutil.which hit/miss TTL 캐시)와 `extensions._collect_provider_extensions` 병렬화 — main은 여전히 `extensions.py:126` 직렬, `providers.py:87` 생 `shutil.which` |
+| 워크트리 `handoff-linux-wsl` 의 미커밋 HANDOFF 37줄 | **진짜 유실 위험이었음 → 이번에 §0.14.1로 복원** | `main` HANDOFF가 §0.14(07-21) → §0.15(07-27)로 건너뛰어 PR #5·#6 서사가 정본에 없었다 |
+| 미추적 `docs/superpowers/plans/2026-07-23-cli-install.md` | **기능은 이미 머지됨**(`adapters/base.py` `canInstallCli`, `OverviewPane.tsx` `install_cli`). 기록 보존 차원에서 이번에 커밋 | 같은 시기 다른 플랜 문서는 전부 `docs/superpowers/plans/`에 있는데 이것만 빠져 있었다 |
+
+**`cached_which` 잔여가치의 실제 크기**: 프리웜은 서버 기동 시 1회뿐이라 TTL 300초가 만료되면 그다음 첫 요청이
+콜드 프로브 비용을 전부 다시 낸다(WSL 실측 extensions cold 17.2s). 60s 프런트 타임아웃 안이라 실패하지는 않고
+느려질 뿐이다. 급하지 않으므로 §5-9로 남긴다.
+
+#### 이번에 고친 문서
+
+- **§0.14.1 신설** — 위 미커밋 기록 복원(번호는 기존 §0.15/§0.16을 밀지 않으려고 `0.14.1`).
+- **§3-1 기동 명령에 `CAO_HOME_DIR` 추가** — 기존 §3-1은 `PYTHONPATH=src uv run cao-server ...`만 적어 두어,
+  §3만 보고 기동하면 `~/.aws`(9p 마운트)에서 `os.mkfifo ENOTSUP` → 세션 생성 실패로 오케스트레이션이 전멸한다.
+  올바른 명령이 §0.15 본문 안에만 묻혀 있던 것을 §3 정본으로 끌어올렸다.
+- **§5 재작성 / §6 갱신** — 완료된 Phase 항목 정리, 다음 큰 단계 = Phase 7 Electron, 승인 대기 항목 명시.
+
+#### 검증
+
+문서 전용 변경이라 코드 게이트는 돌리지 않았다(`.md` 외 수정 0건). `git diff --check` 통과, 링크·절 번호는
+문서 내에서 상호 참조 확인. **테스트/빌드/라이브 서버 검증은 수행하지 않았다.**
 
 ## 7. 데이터/저장 규약 (프런트 로컬)
 `cao:theme`(라이트 기본), `cao:projects:v1`, `cao:hidden-providers:v1`(기본 [kiro_cli,kimi_cli,cursor_cli,hermes]), `cao:workbench:v1:<session>`, `cao:workspace:team-roster:v1:<session>`, `cao:workspace:delegation-history:v1:<session>`, `cao:env-profiles:v1`, `cao:usage:claude-limits-optin:v1`, `cao:pending-select-session`(sessionStorage). 세션명은 서버 규칙 `^[A-Za-z0-9_][A-Za-z0-9_-]{0,59}$`(cao- 프리픽스는 표시에서만 숨김 — displayName.ts).
