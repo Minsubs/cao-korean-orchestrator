@@ -536,6 +536,26 @@ class AntigravityCliProvider(BaseProvider):
                     return
             time.sleep(1.0)
 
+    async def _launch_and_wait_ready(self, ready_timeout: float, dialog_timeout: float) -> bool:
+        """Type the agy command and wait for its ready state. Shared by the
+        first launch and the one relaunch attempt after an account gate."""
+        from cli_agent_orchestrator.services.status_monitor import status_monitor
+
+        status_monitor.notify_input_sent(self.terminal_id)
+        get_backend().send_keys(self.session_name, self.window_name, self._build_agy_command())
+
+        # Accept the workspace-trust dialog if agy shows one (first launch in an
+        # untrusted cwd). Unanswered it blocks init — the picker never reads IDLE.
+        self._handle_startup_dialog(outer_timeout=dialog_timeout)
+
+        # agy startup + first MCP connection + the -i acknowledgment can take
+        # a while.
+        return await wait_until_status(
+            self.terminal_id,
+            {TerminalStatus.IDLE, TerminalStatus.COMPLETED},
+            timeout=ready_timeout,
+        )
+
     async def initialize(self) -> bool:
         """Initialize the Antigravity CLI provider by starting ``agy``.
 
@@ -549,16 +569,6 @@ class AntigravityCliProvider(BaseProvider):
         if not await wait_for_shell(self.terminal_id, timeout=10.0):
             raise TimeoutError("Shell initialization timed out after 10 seconds")
 
-        command = self._build_agy_command()
-
-        # Arm the StatusMonitor stickiness gate so the launch drives a fresh
-        # PROCESSING transition past any stale ready latch. Imported lazily to
-        # avoid a circular import (status_monitor imports provider_manager).
-        from cli_agent_orchestrator.services.status_monitor import status_monitor
-
-        status_monitor.notify_input_sent(self.terminal_id)
-        get_backend().send_keys(self.session_name, self.window_name, command)
-
         # Resolve the per-profile provider_init_timeout override (if any) so it
         # governs both the startup-dialog handler's outer cap and the readiness
         # wait below, mirroring ClaudeCodeProvider. Best-effort: a missing/
@@ -566,33 +576,43 @@ class AntigravityCliProvider(BaseProvider):
         # _build_agy_command above already raised its own ProviderError on a
         # genuine load failure before this point.
         init_timeout = self.get_init_timeout(self._try_load_profile())
-        default_ready_timeout = 180.0
+        ready_timeout = max(180.0, init_timeout)
 
-        # Accept the workspace-trust dialog if agy shows one (first launch in an
-        # untrusted cwd). Unanswered it blocks init — the picker never reads IDLE.
-        self._handle_startup_dialog(outer_timeout=max(default_ready_timeout, init_timeout))
-
-        # agy startup + first MCP connection + the -i acknowledgment can take
-        # a while.
-        ready_timeout = max(default_ready_timeout, init_timeout)
-        if not await wait_until_status(
-            self.terminal_id,
-            {TerminalStatus.IDLE, TerminalStatus.COMPLETED},
-            timeout=ready_timeout,
-        ):
+        if not await self._launch_and_wait_ready(ready_timeout, ready_timeout):
             raise TimeoutError(
                 f"Antigravity CLI initialization timed out after {ready_timeout} seconds"
             )
 
-        # Ready footer reached — but agy can be ready and still refuse work (see
-        # ACCOUNT_GATE_PATTERN). Check here, at the one point where the pane holds
-        # only launch output, so both a session's supervisor and an assigned
-        # worker get the same guarantee: initialize() returning means the terminal
-        # will actually run what it is handed.
-        self._require_account_verified()
+        # Ready state reached — but agy can be ready and still refuse work (see
+        # ACCOUNT_GATE_PATTERN). A gated instance never recovers, so the only way
+        # out is a new one: quit this CLI and launch it again, once. Measured:
+        # gates cluster on launches that follow another one closely, and a fresh
+        # launch is usually clean, so one retry converts most of them into a
+        # working terminal instead of a failed session.
+        if self._account_gate_present():
+            logger.warning(
+                "Antigravity account-eligibility gate on terminal %s at launch — "
+                "restarting the CLI once",
+                self.terminal_id,
+            )
+            self._quit_cli()
+            if not await self._launch_and_wait_ready(ready_timeout, ready_timeout):
+                raise TimeoutError(
+                    "Antigravity CLI initialization timed out after the account-gate restart"
+                )
+            self._require_account_verified()
 
         self._initialized = True
         return True
+
+    def _quit_cli(self) -> None:
+        """Send agy's exit command and give the pane a moment to fall back to a
+        shell prompt, so the relaunch types into a shell and not into a TUI."""
+        from cli_agent_orchestrator.services.status_monitor import status_monitor
+
+        status_monitor.notify_input_sent(self.terminal_id)
+        get_backend().send_keys(self.session_name, self.window_name, self.exit_cli())
+        time.sleep(3.0)
 
     ACCOUNT_GATE_MESSAGE = (
         "Antigravity CLI is parked on its account-eligibility check "
@@ -638,7 +658,11 @@ class AntigravityCliProvider(BaseProvider):
             return self.ACCOUNT_GATE_MESSAGE
         return None
 
-    def _require_account_verified(self, timeout: float = 30.0) -> None:
+    #: How long to keep re-reading the pane before calling the gate permanent.
+    #: A class attribute so a test can drive it to 0 without patching the clock.
+    ACCOUNT_GATE_WAIT_S = 30.0
+
+    def _require_account_verified(self, timeout: Optional[float] = None) -> None:
         """Refuse a terminal that is already sitting behind the gate at launch.
 
         Bounded wait rather than an instant refusal: the banner is sometimes a
@@ -647,6 +671,8 @@ class AntigravityCliProvider(BaseProvider):
         silently eats the first task pasted into it (measured: a 300s
         worker-created timeout with no error anywhere).
         """
+        if timeout is None:
+            timeout = self.ACCOUNT_GATE_WAIT_S
         deadline = time.monotonic() + timeout
         while True:
             if not self._account_gate_present():

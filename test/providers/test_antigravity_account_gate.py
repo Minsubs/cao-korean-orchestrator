@@ -145,28 +145,67 @@ def test_other_providers_do_not_block_by_default():
     assert provider.input_block_reason() is None
 
 
-def test_initialize_refuses_a_gated_terminal():
-    """The check belongs to initialize(), so an assigned worker is covered too —
-    assign() fails loudly instead of creating a worker that ignores its task."""
-    provider = make_provider()
+def _run_initialize(provider, pane_sequence):
+    """Drive initialize() and return (result_or_error, backend_mock)."""
+    import asyncio
+
+    async def _true(*args, **kwargs):
+        return True
+
     with (
         patch.object(AntigravityCliProvider, "_build_agy_command", return_value="agy"),
         patch.object(AntigravityCliProvider, "_handle_startup_dialog", return_value=None),
         patch("cli_agent_orchestrator.providers.antigravity_cli.get_backend") as backend,
-        patch("cli_agent_orchestrator.providers.antigravity_cli.wait_for_shell") as shell,
-        patch("cli_agent_orchestrator.providers.antigravity_cli.wait_until_status") as status,
+        patch("cli_agent_orchestrator.providers.antigravity_cli.wait_for_shell", side_effect=_true),
+        patch(
+            "cli_agent_orchestrator.providers.antigravity_cli.wait_until_status", side_effect=_true
+        ),
         patch("cli_agent_orchestrator.providers.antigravity_cli.time.sleep"),
     ):
-        backend.return_value.get_history.return_value = GATED_PANE
+        if isinstance(pane_sequence, list):
+            backend.return_value.get_history.side_effect = pane_sequence
+        else:
+            backend.return_value.get_history.return_value = pane_sequence
+        try:
+            return asyncio.run(provider.initialize()), backend
+        except Exception as exc:  # returned so the caller can assert on it
+            return exc, backend
 
-        async def _true(*args, **kwargs):
-            return True
 
-        shell.side_effect = _true
-        status.side_effect = _true
-        import asyncio
+def test_initialize_restarts_the_cli_once_when_it_launches_gated():
+    """A gated instance never recovers, so the only fix is a new one.
 
-        with pytest.raises(AntigravityAccountVerificationError):
-            asyncio.run(provider.initialize())
+    Gates cluster on launches that closely follow another one, and a fresh
+    launch is usually clean — so one restart turns most of them into a working
+    terminal instead of a failed session.
+    """
+    provider = make_provider()
+    provider.ACCOUNT_GATE_WAIT_S = 0.0
+    # gate seen at launch -> restart -> clean afterwards
+    result, backend = _run_initialize(provider, [GATED_PANE, READY_PANE])
 
+    assert result is True
+    assert provider._initialized is True
+    sent = [call.args[2] for call in backend.return_value.send_keys.call_args_list]
+    assert sent.count("agy") == 2, "the CLI must actually be relaunched"
+    assert "/quit" in sent, "the gated CLI has to be quit before relaunching"
+
+
+def test_initialize_refuses_when_the_restart_is_gated_too():
+    """Two gated launches in a row is not a transient — fail with the reason
+    instead of handing back a worker that ignores its task."""
+    provider = make_provider()
+    provider.ACCOUNT_GATE_WAIT_S = 0.0
+    result, _ = _run_initialize(provider, GATED_PANE)
+
+    assert isinstance(result, AntigravityAccountVerificationError)
     assert provider._initialized is False
+
+
+def test_initialize_does_not_restart_a_clean_launch():
+    provider = make_provider()
+    result, backend = _run_initialize(provider, READY_PANE)
+
+    assert result is True
+    sent = [call.args[2] for call in backend.return_value.send_keys.call_args_list]
+    assert sent == ["agy"], "a healthy launch must not be restarted"
