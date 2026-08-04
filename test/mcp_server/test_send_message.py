@@ -262,3 +262,72 @@ class TestSendMessageCallerDefault:
         assert result["success"] is False
         assert "own CAO_TERMINAL_ID" in result["error"]
         mock_inbox.assert_not_called()
+
+
+class TestTerminalIdAlias:
+    """`terminal_id` is accepted as an alias for `receiver_id`.
+
+    Everything around this tool teaches the other name: the assign result says
+    "terminal <id>", the injected prompt says "send results back to terminal
+    <id>", and the neighbouring answer_user_prompt tool takes terminal_id. A
+    codex worker followed that wording, got "1 validation error for
+    call[send_message]", and gave up — its supervisor waited out the full
+    360s for a callback that was never re-sent (matrix case CX-to-CX).
+    """
+
+    @patch("cli_agent_orchestrator.mcp_server.server._send_message_impl")
+    def test_terminal_id_is_routed_like_receiver_id(self, mock_impl):
+        import asyncio
+
+        from cli_agent_orchestrator.mcp_server.server import send_message
+
+        mock_impl.return_value = {"success": True}
+        asyncio.run(send_message(message="MTX_OK", receiver_id=None, terminal_id="supervisor-1"))
+
+        mock_impl.assert_called_once_with("supervisor-1", "MTX_OK")
+
+    @patch("cli_agent_orchestrator.mcp_server.server._send_message_impl")
+    def test_receiver_id_still_works(self, mock_impl):
+        import asyncio
+
+        from cli_agent_orchestrator.mcp_server.server import send_message
+
+        mock_impl.return_value = {"success": True}
+        asyncio.run(send_message(message="MTX_OK", receiver_id="supervisor-1", terminal_id=None))
+
+        mock_impl.assert_called_once_with("supervisor-1", "MTX_OK")
+
+    @patch("cli_agent_orchestrator.mcp_server.server._send_message_impl")
+    def test_neither_still_means_reply_to_the_recorded_caller(self, mock_impl):
+        import asyncio
+
+        from cli_agent_orchestrator.mcp_server.server import send_message
+
+        mock_impl.return_value = {"success": True}
+        asyncio.run(send_message(message="MTX_OK", receiver_id=None, terminal_id=None))
+
+        mock_impl.assert_called_once_with(None, "MTX_OK")
+
+    @patch("cli_agent_orchestrator.mcp_server.server._send_message_impl")
+    def test_two_different_addresses_is_an_error_not_a_guess(self, mock_impl):
+        """Silently picking one could deliver the result to the wrong terminal."""
+        import asyncio
+
+        from cli_agent_orchestrator.mcp_server.server import send_message
+
+        result = asyncio.run(send_message(message="MTX_OK", receiver_id="a", terminal_id="b"))
+
+        assert result["success"] is False
+        assert "aliases" in result["error"]
+        mock_impl.assert_not_called()
+
+    @patch("cli_agent_orchestrator.mcp_server.server._send_message_impl")
+    def test_same_address_twice_is_fine(self, mock_impl):
+        import asyncio
+
+        from cli_agent_orchestrator.mcp_server.server import send_message
+
+        mock_impl.return_value = {"success": True}
+        asyncio.run(send_message(message="MTX_OK", receiver_id="same", terminal_id="same"))
+
+        mock_impl.assert_called_once_with("same", "MTX_OK")

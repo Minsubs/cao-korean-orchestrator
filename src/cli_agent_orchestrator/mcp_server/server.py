@@ -1173,6 +1173,10 @@ async def send_message(
             "this one via handoff/assign (the recorded caller)."
         ),
     ),
+    terminal_id: Optional[str] = Field(
+        default=None,
+        description="Alias for receiver_id.",
+    ),
 ) -> Dict[str, Any]:
     """Send a message to another terminal's inbox.
 
@@ -1183,14 +1187,34 @@ async def send_message(
     the terminal that created this one via handoff/assign. This is the
     reliable way to send results back to your supervisor.
 
+    ``terminal_id`` is accepted as an alias because everything around this tool
+    teaches that name: the assign result says "terminal <id>", the injected
+    prompt says "send results back to terminal <id>", and the neighbouring
+    answer_user_prompt tool takes terminal_id. A worker that followed that
+    wording got "1 validation error for call[send_message]" and gave up, losing
+    the callback its supervisor was waiting for (measured: matrix case
+    CX-to-CX). Accepting the obvious synonym costs nothing and removes a whole
+    class of lost callbacks.
+
     Args:
         message: Message content to send
         receiver_id: Terminal ID of the receiver (optional, defaults to the recorded caller)
+        terminal_id: Same thing under the name the rest of CAO uses
 
     Returns:
         Dict with success status and message details
     """
-    return _send_message_impl(receiver_id, message)
+    if receiver_id and terminal_id and receiver_id != terminal_id:
+        # Two different addresses in one call is a mistake, not a synonym —
+        # picking one silently could deliver to the wrong terminal.
+        return {
+            "success": False,
+            "error": (
+                f"receiver_id ({receiver_id}) and terminal_id ({terminal_id}) name "
+                "different terminals. They are aliases for the same argument; pass one."
+            ),
+        }
+    return _send_message_impl(receiver_id or terminal_id, message)
 
 
 @mcp.tool()
