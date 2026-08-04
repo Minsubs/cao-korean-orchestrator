@@ -589,7 +589,10 @@ class AntigravityCliProvider(BaseProvider):
         # gates cluster on launches that follow another one closely, and a fresh
         # launch is usually clean, so one retry converts most of them into a
         # working terminal instead of a failed session.
-        if self._account_gate_present():
+        #
+        # Watching beats glancing — see _gate_appears_during_launch. A single
+        # read lands before the banner is drawn and reports a clean pane.
+        if self._gate_appears_during_launch():
             logger.warning(
                 "Antigravity account-eligibility gate on terminal %s at launch — "
                 "restarting the CLI once",
@@ -600,10 +603,46 @@ class AntigravityCliProvider(BaseProvider):
                 raise TimeoutError(
                     "Antigravity CLI initialization timed out after the account-gate restart"
                 )
-            self._require_account_verified()
+            if self._gate_appears_during_launch():
+                logger.error(
+                    "Antigravity account-eligibility gate still up after a restart "
+                    "on terminal %s",
+                    self.terminal_id,
+                )
+                raise AntigravityAccountVerificationError(self.ACCOUNT_GATE_MESSAGE)
 
         self._initialized = True
         return True
+
+    #: How long to keep watching a freshly launched pane for the gate banner,
+    #: and how often to look. Class attributes so tests can shrink both instead
+    #: of patching the clock.
+    LAUNCH_TURN_WAIT_S = 20.0
+    GATE_POLL_S = 2.0
+
+    def _gate_appears_during_launch(self) -> bool:
+        """Watch a freshly launched pane for the gate banner, not just glance.
+
+        A single read cannot work here, and that was measured twice before this
+        loop existed. agy reports its idle status bar *before* it contacts the
+        backend, so a check made the instant readiness is reported sees a pane
+        where the banner does not exist yet — the first attempt read clean and
+        the next paste was still discarded, and the second attempt (wait for the
+        launch turn, then read) still never fired for a worker whose own log
+        shows the banner and exactly one agy launch. agy runs full-screen, so
+        the pane holds the current frame rather than a scrollback: whatever the
+        one read misses is gone.
+
+        So poll instead, and leave the moment the banner shows up — a gated
+        launch pays no extra wait, and a healthy one costs this window once.
+        """
+        deadline = time.monotonic() + self.LAUNCH_TURN_WAIT_S
+        while True:
+            if self._account_gate_present():
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(self.GATE_POLL_S)
 
     def _quit_cli(self) -> None:
         """Send agy's exit command and give the pane a moment to fall back to a
@@ -657,34 +696,6 @@ class AntigravityCliProvider(BaseProvider):
             )
             return self.ACCOUNT_GATE_MESSAGE
         return None
-
-    #: How long to keep re-reading the pane before calling the gate permanent.
-    #: A class attribute so a test can drive it to 0 without patching the clock.
-    ACCOUNT_GATE_WAIT_S = 30.0
-
-    def _require_account_verified(self, timeout: Optional[float] = None) -> None:
-        """Refuse a terminal that is already sitting behind the gate at launch.
-
-        Bounded wait rather than an instant refusal: the banner is sometimes a
-        transient re-check that clears on its own within a few seconds. When it is
-        still there at the deadline, raising beats returning a terminal that
-        silently eats the first task pasted into it (measured: a 300s
-        worker-created timeout with no error anywhere).
-        """
-        if timeout is None:
-            timeout = self.ACCOUNT_GATE_WAIT_S
-        deadline = time.monotonic() + timeout
-        while True:
-            if not self._account_gate_present():
-                return
-            if time.monotonic() >= deadline:
-                logger.error(
-                    "Antigravity account-eligibility gate still up after %.0fs for terminal %s",
-                    timeout,
-                    self.terminal_id,
-                )
-                raise AntigravityAccountVerificationError(self.ACCOUNT_GATE_MESSAGE)
-            time.sleep(2.0)
 
     # ------------------------------------------------------------------ #
     # Status detection
@@ -902,6 +913,24 @@ class AntigravityCliProvider(BaseProvider):
     # ------------------------------------------------------------------ #
     # Lifecycle
     # ------------------------------------------------------------------ #
+
+    @property
+    def accepts_input_while_processing(self) -> bool:
+        """agy reads input typed while a turn is running.
+
+        Measured, not assumed: with the CLI busy on a `sleep 40` shell turn, a
+        second prompt was pasted in and both answers came out — the original
+        marker and the mid-turn one. Only true after initialization, because a
+        launching CLI reports PROCESSING before its input box exists (and a paste
+        into agy's account-eligibility gate is discarded — see
+        ACCOUNT_GATE_PATTERN, which input_block_reason() covers separately).
+
+        This is what lets a supervisor waiting on its own worker receive that
+        worker's callback: without it, an agy supervisor that stays PROCESSING
+        while awaiting a callback and the callback that can only be delivered to
+        a ready terminal wait for each other forever (matrix case AG-to-AG).
+        """
+        return self._initialized
 
     def exit_cli(self) -> str:
         """Get the command to exit agy. ``/quit`` is the slash command."""

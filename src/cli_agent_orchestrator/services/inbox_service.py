@@ -10,6 +10,7 @@ from itertools import groupby
 from cli_agent_orchestrator.backends.base import TerminalNotFoundError
 from cli_agent_orchestrator.clients.database import (
     get_pending_messages,
+    get_terminal_metadata,
     list_pending_receiver_ids_by_provider,
     list_pending_receiver_ids_older_than,
     update_message_status,
@@ -55,6 +56,47 @@ class InboxService:
             except Exception as e:
                 logger.error(f"Error in InboxService: {e}")
 
+    def _is_awaited_worker_callback(self, terminal_id: str, messages) -> bool:
+        """Whether these messages are the callback a busy supervisor is waiting for.
+
+        Delivery normally needs the recipient IDLE/COMPLETED, and that deadlocks a
+        supervisor which stays PROCESSING *because* it is waiting: measured on
+        matrix case AG-to-AG — the worker's callback POST returned 200, the
+        supervisor's last status event was `processing`, no event ever followed, and
+        the message sat PENDING until the case timed out at 360s. Both sides waited
+        for each other.
+
+        Opening the gate only for this exact shape keeps the guard everywhere else:
+        every message in the batch must come from a terminal this one spawned
+        (`caller_id`), and the provider must be one that actually reads input typed
+        mid-turn. For agy that was measured directly — a prompt pasted during a
+        `sleep 40` turn was answered along with the original one.
+        """
+        try:
+            provider = provider_manager.get_provider(terminal_id)
+        except Exception:
+            # Unknown/torn-down terminal: no provider, so no exemption. Never let
+            # this lookup turn a skipped delivery into an error.
+            return False
+        if (
+            provider is None
+            or getattr(provider, "accepts_input_while_processing", False) is not True
+        ):
+            return False
+        for message in messages:
+            sender_id = getattr(message, "sender_id", None)
+            if not sender_id:
+                return False
+            sender = get_terminal_metadata(sender_id)
+            if not sender or sender.get("caller_id") != terminal_id:
+                return False
+        logger.info(
+            "Delivering worker callback to terminal %s while it is processing — it is "
+            "waiting on this callback",
+            terminal_id,
+        )
+        return True
+
     def deliver_pending(
         self,
         terminal_id: str,
@@ -90,6 +132,8 @@ class InboxService:
                 eager_eligible = provider is not None and getattr(
                     provider, "accepts_input_while_processing", False
                 )
+            if not eager_eligible and status == TerminalStatus.PROCESSING:
+                eager_eligible = self._is_awaited_worker_callback(terminal_id, messages)
             if not eager_eligible:
                 return
 
