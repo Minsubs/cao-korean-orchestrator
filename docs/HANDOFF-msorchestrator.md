@@ -972,5 +972,80 @@ uv tool install --reinstall .    # --reinstall 없으면 같은 버전은 no-op
 agy 게이트는 환경 상태다. 걸린 터미널은 회복되지 않으니 **닫고 새로 만든다**(직접 `agy` 실행은 정상이며,
 관측상 첫 실행은 깨끗하고 짧은 간격의 후속 실행이 걸렸다 — 상관이며 인과로 확인된 것은 아니다).
 
+### 0.23. 2026-08-04 매트릭스 재검증 — agy 게이트의 정체와 콜백 교착 (Claude Opus, 백그라운드 잡)
+
+사용자 요청으로 현재 빌드에서 9케이스를 다시 돌렸다. **6/9**, 실패 3건이 전부 **agy 가 워커일 때**로 갈렸다
+(agy 가 감독인 `AG-to-CX`·`AG-to-CL` 은 통과). 여기서 두 갈래가 나왔다: 게이트의 정체 규명과, **게이트와 무관한
+새 결함 1건**.
+
+#### 머지된 PR
+
+| PR | 내용 |
+|---|---|
+| #46 | 게이트로 뜬 CLI 를 `/quit` 후 1회 재기동 |
+| #47 | 대기 중인 감독에게 워커 콜백 전달(교착 해소) + agy `accepts_input_while_processing` |
+
+#### agy 계정 게이트의 정체 (agy 자체 로그)
+
+사용자가 "WSL 에서 `agy` 직접 실행은 정상"이라고 확인해 준 것이 방향을 바로잡았다. `~/.gemini/antigravity-cli/log/` 에
+답이 있었다.
+
+```
+W cache.go:56] Cache(loadCodeAssistResponse): Singleflight refresh failed:
+   error getting token source: You are not logged into Antigravity.
+```
+
+- 게이트 세션은 `loadCodeAssist` 를 **140회** 호출(정상 세션 6~12회) — 해소되지 않는 재시도 루프
+- 저 토큰 오류 자체는 **정상 세션에도 시작 후 ~1초간** 찍힌다. 차이는 **빠져나오느냐**뿐
+- `agy` 에 인증 상태를 물을 서브커맨드는 없다 → 화면 배너가 유일한 신호
+- 즉 설치·로그인 문제가 아니다. 계정이 아니라 **그 인스턴스**에 붙는다
+
+**처리**: ①기동 시 감지 → `/quit` + 1회 재기동(#46) ②전송 시점 409(#44, 실기동 검증됨) ③걸린 터미널은 닫고 새로
+만들기 ④반복되면 재로그인 또는 기동 간격 두기.
+
+**감지 시점으로 두 번 헛발질했다** — 준비 신호 직후 1회 읽기, 부트 턴 이후 1회 읽기 둘 다 깨끗하게 읽혔다. agy 는
+백엔드 접속 **전에** `│ Idle │` 를 띄우고, 전체화면 TUI 라 pane 에는 **현재 프레임만** 남는다. 그래서 지금은
+**20초 관측 창**(2초 폴링, 발견 즉시 탈출)이다. 이 경로는 아직 실기동에서 발동을 보지 못했다 — 이후 실행에서
+게이트가 재현되지 않았기 때문이며, **검증된 것은 ②** 다.
+
+#### 콜백 교착 — 게이트와 무관한 새 결함 (#47)
+
+`AG-to-AG` 실패에는 배너가 없었다(해당 실행 터미널 전부 0). 로그가 정확히 말했다.
+
+- 워커가 `send_message` 실제 호출 → `POST /terminals/9501ae51/inbox/messages` **200 OK**
+- `Delivered …` 로그 **없음** → PENDING 방치
+- 감독 상태: `11:01:36 idle` → `11:01:58 processing` → **이후 전이 없음**
+
+전달 조건은 수신자 `idle/completed` 인데, 감독은 **콜백을 기다리느라** `processing` 을 유지한다. 서로 기다리는
+교착이다. 기존 `EAGER_INBOX_DELIVERY` 는 기본 off 이고 켜면 모든 provider·모든 메시지에 영향을 주므로,
+**교착 형태 하나만** 열었다: 수신자 `processing` + 배치의 모든 메시지가 자기가 만든 워커(`caller_id`) 발신 +
+provider 가 실측으로 mid-turn 입력을 읽음. 그 외(무관 발신자, `waiting_user_answer`, 배치에 외부인 혼입,
+발신자 레코드 없음, 조회 실패)는 기존 busy 가드 유지.
+
+agy 플래그는 **실측**으로 켰다: `sleep 40` 셸 턴으로 busy 상태를 만들고 두 번째 프롬프트를 붙여넣으니
+`SLEEP_DONE` 과 `MIDTURN_OK` 가 **둘 다** 나왔다.
+
+**결정적 재현으로 검증**: agy 감독을 busy 로 만들고 `caller_id` 가 있는 워커 명의로 콜백을 mid-turn 전송 →
+
+```
+Delivering worker callback to terminal 9565a590 while it is processing — it is waiting on this callback
+Delivered 1 message(s) to terminal 9565a590
+```
+
+이후 agy 워커 3케이스(`CX-to-AG`, `CL-to-AG`, `AG-to-AG`) **3/3 통과**, `AG-to-AG` 는 최초 통과.
+다만 그 3/3 실행에서는 예외 경로가 **발동하지 않았다**(감독이 마침 한가했다) — 통과 자체는 수정의 증거가 아니고,
+증거는 위 결정적 재현이다. 교착은 콜백 도착 타이밍에 따라 간헐적이다.
+
+#### CI 가 잡아낸 것
+
+`_is_awaited_worker_callback` 이 발신자 터미널 레코드를 조회하는데, **terminals 테이블이 없는 CI 환경**에서
+그 쿼리가 예외를 던져 무관한 eager-delivery 테스트를 3개 파이썬 버전에서 함께 무너뜨렸다. 로컬은 테이블이 있어
+통과했다. 이 조회는 가드를 **완화할지만** 정하므로 실패 = 완화 없음으로 바꿨다(회귀 테스트 포함).
+
+#### 이 시점 상태 (0.23)
+
+`origin/main` = `b792dde`. 백엔드 **4859 passed / 21 skipped**(성능 예산 테스트 1건이 부하로 3.7s/1s 초과 →
+단독 재실행 7 passed, 변경 무관). 로컬 WSL 서버는 이 커밋으로 재설치했고, 인스톨러는 여전히 재빌드 불필요다.
+
 ## 7. 데이터/저장 규약 (프런트 로컬)
 `cao:theme`(라이트 기본), `cao:projects:v1`, `cao:hidden-providers:v1`(기본 [kiro_cli,kimi_cli,cursor_cli,hermes]), `cao:workbench:v1:<session>`, `cao:workspace:team-roster:v1:<session>`, `cao:workspace:delegation-history:v1:<session>`, `cao:env-profiles:v1`, `cao:usage:claude-limits-optin:v1`, `cao:pending-select-session`(sessionStorage). 세션명은 서버 규칙 `^[A-Za-z0-9_][A-Za-z0-9_-]{0,59}$`(cao- 프리픽스는 표시에서만 숨김 — displayName.ts).
