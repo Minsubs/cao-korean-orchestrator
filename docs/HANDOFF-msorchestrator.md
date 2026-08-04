@@ -1042,10 +1042,35 @@ Delivered 1 message(s) to terminal 9565a590
 그 쿼리가 예외를 던져 무관한 eager-delivery 테스트를 3개 파이썬 버전에서 함께 무너뜨렸다. 로컬은 테이블이 있어
 통과했다. 이 조회는 가드를 **완화할지만** 정하므로 실패 = 완화 없음으로 바꿨다(회귀 테스트 포함).
 
+#### `send_message` 인자 이름 때문에 버려진 콜백 (#49)
+
+교착을 고친 뒤 돌린 전체 실행은 **8/9**, 남은 실패 `CX-to-CX` 는 회귀가 아니라 워커의 호출 실수였다.
+
+```
+• Called cao-mcp-server.send_message({"terminal_id":"04cc6106","message":"MTX_CX_CX_CB_OK"})
+  └ 1 validation error for call[send_message]
+```
+
+재시도하지 않아 감독은 360초를 그대로 기다렸다. 그런데 **그 이름은 CAO 가 가르친 것**이다 — assign 결과가
+"terminal `<id>`", 배정 워커에 주입되는 프롬프트가 "send results back to **terminal** `<id>` using send_message",
+바로 아래 정의된 `answer_user_prompt` 의 인자도 `terminal_id`. `receiver_id` 만 예외였다. 그래서 별칭으로 받되,
+**서로 다른 주소를 둘 다 주면 오류**로 돌려준다(추측하면 엉뚱한 터미널로 결과가 간다).
+
 #### 이 시점 상태 (0.23)
 
-`origin/main` = `b792dde`. 백엔드 **4859 passed / 21 skipped**(성능 예산 테스트 1건이 부하로 3.7s/1s 초과 →
-단독 재실행 7 passed, 변경 무관). 로컬 WSL 서버는 이 커밋으로 재설치했고, 인스톨러는 여전히 재빌드 불필요다.
+`origin/main` = `508568b`(#49 까지). 백엔드 **4866 passed / 21 skipped**, 웹 **720 passed**, electron **196**.
+로컬 WSL 서버는 이 커밋으로 재설치했고, 인스톨러는 여전히 재빌드 불필요다.
+
+**최종 확인 — 단일 실행에서 9/9.**
+
+| 감독 ↓ / 워커 → | codex | claude_code | antigravity_cli |
+|---|---|---|---|
+| **codex** | PASS (cb 104) | PASS (cb 105) | PASS (cb 106) |
+| **claude_code** | PASS (cb 107) | PASS (cb 108) | PASS (cb 109) |
+| **antigravity_cli** | PASS (cb 110) | PASS (cb 111) | PASS (cb 112) |
+
+콜백 메시지 ID 가 104~112 로 연속이고 모든 케이스에서 `final=MTX_*_FIN_OK` 를 확인했다 — 즉 assign 수신증이
+아니라 **실제 왕복**이 통과 근거다. `AG-to-AG` 는 이 라운드 이전까지 한 번도 통과한 적이 없었다.
 
 ## 7. 데이터/저장 규약 (프런트 로컬)
 `cao:theme`(라이트 기본), `cao:projects:v1`, `cao:hidden-providers:v1`(기본 [kiro_cli,kimi_cli,cursor_cli,hermes]), `cao:workbench:v1:<session>`, `cao:workspace:team-roster:v1:<session>`, `cao:workspace:delegation-history:v1:<session>`, `cao:env-profiles:v1`, `cao:usage:claude-limits-optin:v1`, `cao:pending-select-session`(sessionStorage). 세션명은 서버 규칙 `^[A-Za-z0-9_][A-Za-z0-9_-]{0,59}$`(cao- 프리픽스는 표시에서만 숨김 — displayName.ts).
