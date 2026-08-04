@@ -594,8 +594,52 @@ class AntigravityCliProvider(BaseProvider):
         self._initialized = True
         return True
 
+    ACCOUNT_GATE_MESSAGE = (
+        "Antigravity CLI is parked on its account-eligibility check "
+        '("We\'re finishing verifying your account eligibility") and silently '
+        "discards anything pasted into it — the launch prompt still ran, but no "
+        "later task will. Running `agy` by hand works; this terminal will not "
+        "recover. Close it and start a new one."
+    )
+
+    def _account_gate_present(self, tail_only: bool = False) -> bool:
+        """Whether the account-eligibility banner is on the pane right now.
+
+        ``tail_only`` bounds the scan to the footer window so that a banner which
+        has scrolled out of view (real output arrived after it) stops counting —
+        otherwise a terminal that recovered would be blocked for its whole life by
+        a line sitting in its scrollback. The launch-time check wants the whole
+        history: at that point the pane holds nothing but launch output.
+        """
+        try:
+            output = get_backend().get_history(self.session_name, self.window_name)
+        except Exception:  # a pane read must never be the thing that breaks input
+            return False
+        clean = strip_terminal_escapes(output or "")
+        if tail_only:
+            clean = clean[-FOOTER_TAIL_WINDOW:]
+        return bool(re.search(ACCOUNT_GATE_PATTERN, clean))
+
+    def input_block_reason(self) -> Optional[str]:
+        """Block pasted input while the account-eligibility gate is up.
+
+        The launch-time check below cannot be the only one: agy shows "│ Idle │"
+        for a moment before it contacts the backend, so initialize() can pass
+        *before* the banner is ever drawn (measured — the check ran clean and the
+        very next paste was still dropped). This runs on the send path, which is
+        the moment the work would be lost, so the caller gets a 409 with the
+        reason instead of waiting for a turn that will never start.
+        """
+        if self._account_gate_present(tail_only=True):
+            logger.warning(
+                "Antigravity account-eligibility gate is up on terminal %s — refusing input",
+                self.terminal_id,
+            )
+            return self.ACCOUNT_GATE_MESSAGE
+        return None
+
     def _require_account_verified(self, timeout: float = 30.0) -> None:
-        """Refuse a terminal that is sitting behind the account-eligibility gate.
+        """Refuse a terminal that is already sitting behind the gate at launch.
 
         Bounded wait rather than an instant refusal: the banner is sometimes a
         transient re-check that clears on its own within a few seconds. When it is
@@ -605,9 +649,7 @@ class AntigravityCliProvider(BaseProvider):
         """
         deadline = time.monotonic() + timeout
         while True:
-            output = get_backend().get_history(self.session_name, self.window_name)
-            clean = strip_terminal_escapes(output or "")
-            if not re.search(ACCOUNT_GATE_PATTERN, clean):
+            if not self._account_gate_present():
                 return
             if time.monotonic() >= deadline:
                 logger.error(
@@ -615,13 +657,7 @@ class AntigravityCliProvider(BaseProvider):
                     timeout,
                     self.terminal_id,
                 )
-                raise AntigravityAccountVerificationError(
-                    "Antigravity CLI is still verifying the Google account "
-                    '("We\'re finishing verifying your account eligibility") and '
-                    "silently discards any task sent to it in this state. Run `agy` "
-                    "in a terminal until it starts normally (`/usage` re-syncs the "
-                    "plan), then create the session again."
-                )
+                raise AntigravityAccountVerificationError(self.ACCOUNT_GATE_MESSAGE)
             time.sleep(2.0)
 
     # ------------------------------------------------------------------ #

@@ -867,6 +867,22 @@ def send_input(
                 f"sending {orchestration_value} input."
             )
 
+        # Providers that can look ready and still throw pasted input away get to
+        # say so here — the one point where refusing costs a 409 with a reason
+        # instead of a task that vanishes and a caller waiting on a turn that
+        # will never run (measured on agy's account-eligibility gate).
+        if provider is not None:
+            try:
+                block_reason = provider.input_block_reason()
+            except Exception as exc:  # never let the guard itself break input
+                logger.warning("input_block_reason failed for %s: %s", terminal_id, exc)
+                block_reason = None
+            # Only a non-empty string is a reason. Same defensiveness as the
+            # `is True` check above: a stand-in object must not be able to block
+            # every paste by being merely truthy.
+            if isinstance(block_reason, str) and block_reason:
+                raise TerminalInputBlockedError(block_reason)
+
         # Inject memory context into the very first user message after init.
         # Phase 1 wires injection inline for every provider. The Kiro
         # AgentSpawn hook will replace this path once the plugin
