@@ -579,3 +579,182 @@ class TestRun:
                 pass
 
         mock_to_thread.assert_awaited_once_with(svc.deliver_pending, "abc123", registry=None)
+
+
+class TestAwaitedWorkerCallback:
+    """A supervisor that stays PROCESSING *because* it is waiting for its
+    worker's callback must still receive it.
+
+    Measured on matrix case AG-to-AG: the worker called send_message, the API
+    accepted it (POST .../inbox/messages -> 200), the supervisor's last status
+    event was `processing`, no event ever followed, and the message sat PENDING
+    until the case timed out at 360s. Delivery needs IDLE/COMPLETED and the
+    supervisor was waiting for the delivery — both sides waiting for each other.
+
+    The exception is deliberately narrow: only messages from terminals this one
+    spawned, only for providers that were measured to read input typed mid-turn.
+    """
+
+    @patch("cli_agent_orchestrator.services.inbox_service.get_terminal_metadata")
+    @patch("cli_agent_orchestrator.services.inbox_service.update_message_status")
+    @patch("cli_agent_orchestrator.services.inbox_service.terminal_service")
+    @patch("cli_agent_orchestrator.services.inbox_service.provider_manager")
+    @patch("cli_agent_orchestrator.services.inbox_service.status_monitor")
+    @patch("cli_agent_orchestrator.services.inbox_service.get_pending_messages")
+    def test_worker_callback_reaches_a_waiting_supervisor(
+        self, mock_get, mock_monitor, mock_pm, mock_term_svc, mock_update, mock_meta
+    ):
+        mock_get.return_value = [_make_message()]
+        mock_monitor.get_status.return_value = TerminalStatus.PROCESSING
+        provider = MagicMock()
+        provider.accepts_input_while_processing = True
+        mock_pm.get_provider.return_value = provider
+        mock_meta.return_value = {"caller_id": "term-1"}  # sender was spawned by term-1
+
+        with patch("cli_agent_orchestrator.services.inbox_service.EAGER_INBOX_DELIVERY", False):
+            InboxService().deliver_pending("term-1")
+
+        mock_term_svc.send_input.assert_called_once()
+
+    @patch("cli_agent_orchestrator.services.inbox_service.get_terminal_metadata")
+    @patch("cli_agent_orchestrator.services.inbox_service.update_message_status")
+    @patch("cli_agent_orchestrator.services.inbox_service.terminal_service")
+    @patch("cli_agent_orchestrator.services.inbox_service.provider_manager")
+    @patch("cli_agent_orchestrator.services.inbox_service.status_monitor")
+    @patch("cli_agent_orchestrator.services.inbox_service.get_pending_messages")
+    def test_unrelated_sender_still_waits_for_a_ready_terminal(
+        self, mock_get, mock_monitor, mock_pm, mock_term_svc, mock_update, mock_meta
+    ):
+        """Only the deadlock shape is exempt. A message from someone this
+        terminal did not spawn is ordinary traffic and keeps the busy-guard."""
+        mock_get.return_value = [_make_message()]
+        mock_monitor.get_status.return_value = TerminalStatus.PROCESSING
+        provider = MagicMock()
+        provider.accepts_input_while_processing = True
+        mock_pm.get_provider.return_value = provider
+        mock_meta.return_value = {"caller_id": "somebody-else"}
+
+        with patch("cli_agent_orchestrator.services.inbox_service.EAGER_INBOX_DELIVERY", False):
+            InboxService().deliver_pending("term-1")
+
+        mock_term_svc.send_input.assert_not_called()
+
+    @patch("cli_agent_orchestrator.services.inbox_service.get_terminal_metadata")
+    @patch("cli_agent_orchestrator.services.inbox_service.update_message_status")
+    @patch("cli_agent_orchestrator.services.inbox_service.terminal_service")
+    @patch("cli_agent_orchestrator.services.inbox_service.provider_manager")
+    @patch("cli_agent_orchestrator.services.inbox_service.status_monitor")
+    @patch("cli_agent_orchestrator.services.inbox_service.get_pending_messages")
+    def test_provider_that_drops_midturn_input_is_not_exempted(
+        self, mock_get, mock_monitor, mock_pm, mock_term_svc, mock_update, mock_meta
+    ):
+        """Pasting into a CLI that discards mid-turn input loses the callback
+        silently, which is worse than the deadlock."""
+        mock_get.return_value = [_make_message()]
+        mock_monitor.get_status.return_value = TerminalStatus.PROCESSING
+        provider = MagicMock()
+        provider.accepts_input_while_processing = False
+        mock_pm.get_provider.return_value = provider
+        mock_meta.return_value = {"caller_id": "term-1"}
+
+        with patch("cli_agent_orchestrator.services.inbox_service.EAGER_INBOX_DELIVERY", False):
+            InboxService().deliver_pending("term-1")
+
+        mock_term_svc.send_input.assert_not_called()
+
+    @patch("cli_agent_orchestrator.services.inbox_service.get_terminal_metadata")
+    @patch("cli_agent_orchestrator.services.inbox_service.update_message_status")
+    @patch("cli_agent_orchestrator.services.inbox_service.terminal_service")
+    @patch("cli_agent_orchestrator.services.inbox_service.provider_manager")
+    @patch("cli_agent_orchestrator.services.inbox_service.status_monitor")
+    @patch("cli_agent_orchestrator.services.inbox_service.get_pending_messages")
+    def test_waiting_user_answer_is_not_exempted(
+        self, mock_get, mock_monitor, mock_pm, mock_term_svc, mock_update, mock_meta
+    ):
+        """A terminal parked on an approval prompt would read the callback as the
+        answer to that prompt — the deadlock exception is PROCESSING only."""
+        mock_get.return_value = [_make_message()]
+        mock_monitor.get_status.return_value = TerminalStatus.WAITING_USER_ANSWER
+        provider = MagicMock()
+        provider.accepts_input_while_processing = True
+        mock_pm.get_provider.return_value = provider
+        mock_meta.return_value = {"caller_id": "term-1"}
+
+        with patch("cli_agent_orchestrator.services.inbox_service.EAGER_INBOX_DELIVERY", False):
+            InboxService().deliver_pending("term-1")
+
+        mock_term_svc.send_input.assert_not_called()
+
+    @patch("cli_agent_orchestrator.services.inbox_service.get_terminal_metadata")
+    @patch("cli_agent_orchestrator.services.inbox_service.update_message_status")
+    @patch("cli_agent_orchestrator.services.inbox_service.terminal_service")
+    @patch("cli_agent_orchestrator.services.inbox_service.provider_manager")
+    @patch("cli_agent_orchestrator.services.inbox_service.status_monitor")
+    @patch("cli_agent_orchestrator.services.inbox_service.get_pending_messages")
+    def test_a_batch_with_one_outsider_is_not_exempted(
+        self, mock_get, mock_monitor, mock_pm, mock_term_svc, mock_update, mock_meta
+    ):
+        """Every message in the batch has to be an awaited callback; one stranger
+        makes the whole paste ordinary traffic again."""
+        first = _make_message(id=1)
+        second = _make_message(id=2)
+        second.sender_id = "outsider"
+        mock_get.return_value = [first, second]
+        mock_monitor.get_status.return_value = TerminalStatus.PROCESSING
+        provider = MagicMock()
+        provider.accepts_input_while_processing = True
+        mock_pm.get_provider.return_value = provider
+        mock_meta.side_effect = lambda tid: (
+            {"caller_id": "term-1"} if tid == "sender-1" else {"caller_id": "nobody"}
+        )
+
+        with patch("cli_agent_orchestrator.services.inbox_service.EAGER_INBOX_DELIVERY", False):
+            InboxService().deliver_pending("term-1", num_messages=0)
+
+        mock_term_svc.send_input.assert_not_called()
+
+    @patch("cli_agent_orchestrator.services.inbox_service.get_terminal_metadata")
+    @patch("cli_agent_orchestrator.services.inbox_service.update_message_status")
+    @patch("cli_agent_orchestrator.services.inbox_service.terminal_service")
+    @patch("cli_agent_orchestrator.services.inbox_service.provider_manager")
+    @patch("cli_agent_orchestrator.services.inbox_service.status_monitor")
+    @patch("cli_agent_orchestrator.services.inbox_service.get_pending_messages")
+    def test_missing_sender_record_is_not_exempted(
+        self, mock_get, mock_monitor, mock_pm, mock_term_svc, mock_update, mock_meta
+    ):
+        mock_get.return_value = [_make_message()]
+        mock_monitor.get_status.return_value = TerminalStatus.PROCESSING
+        provider = MagicMock()
+        provider.accepts_input_while_processing = True
+        mock_pm.get_provider.return_value = provider
+        mock_meta.return_value = None
+
+        with patch("cli_agent_orchestrator.services.inbox_service.EAGER_INBOX_DELIVERY", False):
+            InboxService().deliver_pending("term-1")
+
+        mock_term_svc.send_input.assert_not_called()
+
+    @patch("cli_agent_orchestrator.services.inbox_service.get_terminal_metadata")
+    @patch("cli_agent_orchestrator.services.inbox_service.update_message_status")
+    @patch("cli_agent_orchestrator.services.inbox_service.terminal_service")
+    @patch("cli_agent_orchestrator.services.inbox_service.provider_manager")
+    @patch("cli_agent_orchestrator.services.inbox_service.status_monitor")
+    @patch("cli_agent_orchestrator.services.inbox_service.get_pending_messages")
+    def test_a_broken_terminal_lookup_is_not_an_error(
+        self, mock_get, mock_monitor, mock_pm, mock_term_svc, mock_update, mock_meta
+    ):
+        """The lookup only decides whether to *relax* the guard, so a database
+        that cannot answer means "no exemption", never a failed delivery. CI
+        caught this: with no terminals table the query raised and took an
+        unrelated eager-delivery test down with it."""
+        mock_get.return_value = [_make_message()]
+        mock_monitor.get_status.return_value = TerminalStatus.PROCESSING
+        provider = MagicMock()
+        provider.accepts_input_while_processing = True
+        mock_pm.get_provider.return_value = provider
+        mock_meta.side_effect = RuntimeError("no such table: terminals")
+
+        with patch("cli_agent_orchestrator.services.inbox_service.EAGER_INBOX_DELIVERY", False):
+            InboxService().deliver_pending("term-1")
+
+        mock_term_svc.send_input.assert_not_called()

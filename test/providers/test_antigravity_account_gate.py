@@ -56,42 +56,40 @@ def test_pattern_matches_the_live_banner():
     assert not re.search(ACCOUNT_GATE_PATTERN, READY_PANE)
 
 
-def test_ready_pane_passes_without_waiting():
+def test_launch_watch_leaves_immediately_when_the_banner_shows():
+    """A gated launch pays no extra wait — the watch exits on the first sighting."""
+    provider = make_provider()
     with (
         patch("cli_agent_orchestrator.providers.antigravity_cli.get_backend") as backend,
         patch("cli_agent_orchestrator.providers.antigravity_cli.time.sleep") as sleep,
     ):
-        backend.return_value.get_history.return_value = READY_PANE
-        make_provider()._require_account_verified(timeout=30.0)
+        backend.return_value.get_history.return_value = GATED_PANE
+        assert provider._gate_appears_during_launch() is True
     sleep.assert_not_called()
 
 
-def test_gate_that_clears_lets_initialization_continue():
-    # The banner is sometimes a transient re-check, so this must be a bounded
-    # wait rather than an instant refusal.
-    panes = [GATED_PANE, GATED_PANE, READY_PANE]
-    with (
-        patch("cli_agent_orchestrator.providers.antigravity_cli.get_backend") as backend,
-        patch("cli_agent_orchestrator.providers.antigravity_cli.time.sleep"),
-    ):
-        backend.return_value.get_history.side_effect = panes
-        make_provider()._require_account_verified(timeout=30.0)
+def test_launch_watch_catches_a_banner_drawn_after_the_first_read():
+    """The reason this is a loop and not a read.
+
+    agy reports its idle status bar before it contacts the backend, so the first
+    read lands on a pane where the banner does not exist yet. Two earlier
+    attempts (read at readiness; read after the launch turn) both reported clean
+    for terminals whose own logs show the banner — a full-screen TUI keeps only
+    the current frame, so a missed moment is gone for good.
+    """
+    provider = make_provider()
+    provider.GATE_POLL_S = 0.01
+    with patch("cli_agent_orchestrator.providers.antigravity_cli.get_backend") as backend:
+        backend.return_value.get_history.side_effect = [READY_PANE, READY_PANE, GATED_PANE]
+        assert provider._gate_appears_during_launch() is True
 
 
-def test_gate_that_never_clears_raises_with_the_operator_action():
-    with (
-        patch("cli_agent_orchestrator.providers.antigravity_cli.get_backend") as backend,
-        patch("cli_agent_orchestrator.providers.antigravity_cli.time.sleep"),
-    ):
-        backend.return_value.get_history.return_value = GATED_PANE
-        with pytest.raises(AntigravityAccountVerificationError) as excinfo:
-            make_provider()._require_account_verified(timeout=0.0)
-
-    message = str(excinfo.value)
-    assert "verifying" in message.lower()
-    # The message has to say what to do, not just what happened: the gate needs a
-    # human to finish signing in.
-    assert "agy" in message
+def test_launch_watch_gives_up_on_a_healthy_pane():
+    provider = make_provider()
+    provider.LAUNCH_TURN_WAIT_S = 0.0
+    with patch("cli_agent_orchestrator.providers.antigravity_cli.get_backend") as backend:
+        backend.return_value.get_history.return_value = READY_PANE
+        assert provider._gate_appears_during_launch() is False
 
 
 def test_error_is_a_provider_error_so_existing_handlers_still_catch_it():
@@ -180,7 +178,7 @@ def test_initialize_restarts_the_cli_once_when_it_launches_gated():
     terminal instead of a failed session.
     """
     provider = make_provider()
-    provider.ACCOUNT_GATE_WAIT_S = 0.0
+    provider.LAUNCH_TURN_WAIT_S = 0.0
     # gate seen at launch -> restart -> clean afterwards
     result, backend = _run_initialize(provider, [GATED_PANE, READY_PANE])
 
@@ -195,7 +193,7 @@ def test_initialize_refuses_when_the_restart_is_gated_too():
     """Two gated launches in a row is not a transient — fail with the reason
     instead of handing back a worker that ignores its task."""
     provider = make_provider()
-    provider.ACCOUNT_GATE_WAIT_S = 0.0
+    provider.LAUNCH_TURN_WAIT_S = 0.0
     result, _ = _run_initialize(provider, GATED_PANE)
 
     assert isinstance(result, AntigravityAccountVerificationError)
@@ -204,8 +202,24 @@ def test_initialize_refuses_when_the_restart_is_gated_too():
 
 def test_initialize_does_not_restart_a_clean_launch():
     provider = make_provider()
+    provider.LAUNCH_TURN_WAIT_S = 0.0
     result, backend = _run_initialize(provider, READY_PANE)
 
     assert result is True
     sent = [call.args[2] for call in backend.return_value.send_keys.call_args_list]
     assert sent == ["agy"], "a healthy launch must not be restarted"
+
+
+def test_initialize_catches_a_gate_that_appears_after_readiness():
+    """End to end over the exact live failure: the pane reads clean when agy
+    reports ready, the banner lands a moment later, and the CLI is relaunched."""
+    provider = make_provider()
+    provider.LAUNCH_TURN_WAIT_S = 0.2
+    provider.GATE_POLL_S = 0.01
+    # clean, clean, gated  -> restart -> clean
+    result, backend = _run_initialize(provider, [READY_PANE, READY_PANE, GATED_PANE, READY_PANE])
+
+    assert result is True
+    sent = [call.args[2] for call in backend.return_value.send_keys.call_args_list]
+    assert sent.count("agy") == 2
+    assert "/quit" in sent
