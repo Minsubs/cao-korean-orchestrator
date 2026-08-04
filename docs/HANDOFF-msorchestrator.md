@@ -857,7 +857,8 @@ Working directory does not exist: \\wsl.localhost\ubuntu\home\...\i-oneNGS
 |---|---|
 | #40 | claude 첫 실행 온보딩을 60초 타임아웃 대신 원인으로 알림 |
 | #41 | 상태 모니터가 관측하지 못한 턴의 응답도 표시(채팅 무한 대기 제거) |
-| #42 | agy 계정 확인 게이트에 갇힌 터미널 거부 + 죽은 pane 워치독 해제 |
+| #42 | agy 계정 확인 게이트에 갇힌 터미널 거부(기동 시점) + 죽은 pane 워치독 해제 |
+| #44 | 같은 게이트를 **전송 시점**에 확인 — #42 만으로는 안 걸린다 |
 
 #### 1. claude 워커·감독이 매번 60초 타임아웃 (#40)
 
@@ -922,8 +923,22 @@ composer 에 한 번 찍히고 사라지며 턴이 아예 돌지 않는다. 같�
 
 재실행의 `CL-to-AG` 실패도 같은 원인이었다(워커 `1dce4b40`: 배너 있음, 725 tok, 콜백 미전송).
 배너는 pane 이 idle 이 된 뒤에도 **스스로 사라지지 않는다** → 기다리면 되는 게 아니라 사람이 처리할 게이트다.
-`initialize()` 에서 짧게 기다려 본 뒤 남아 있으면 조치를 담아 실패시킨다. 배정 경로도 같은 검사를 지나므로
-**일을 못 받는 워커가 만들어지지 않는다.**
+`initialize()` 에서 짧게 기다려 본 뒤 남아 있으면 조치를 담아 실패시킨다.
+
+**그런데 기동 시점 검사만으로는 안 걸린다 (#44).** 사용자가 "WSL 에서 agy 실행은 정상"이라고 확인해 준 것이
+조사를 바로잡았다 — 게이트는 설치·로그인 문제가 아니다. 새 코드로 재실행하니 배너가 또 떴는데도 세션이 정상 생성됐고,
+확인해 보니
+
+- 서버는 editable 설치라 새 코드를 쓰고 있었고,
+- **살아 있는 게이트 pane 에 정규식을 직접 걸면 `gate=True`** (감지는 맞다)
+
+즉 **시점이 틀렸다.** agy 는 백엔드에 접속하기 전 `│ Idle │` 를 잠깐 보여주고, `initialize()` 는 그 순간 통과해
+**배너가 그려지기 전에** 검사를 끝낸다. 그래서 검사를 **일을 넘기는 순간**으로 옮겼다:
+`BaseProvider.input_block_reason()` 훅을 `send_input` 이 붙여넣기 직전 호출하고, agy 는 footer 창(2KB)만 스캔해
+이유를 돌려준다 → `TerminalInputBlockedError` → **409**. 세션 첫 지시·assign·inbox 콜백이 전부 이 경로다.
+pane 읽기 실패는 전송을 막지 않고, 문자열만 이유로 인정한다(옆 `is True` 검사와 같은 방어).
+
+실기동 확인: 게이트 터미널 `3a37b98c`(상태 `idle`) → **409 + 원인 문구**, 정상 codex 터미널 → **200**.
 
 #### 4. 죽은 pane 을 영원히 찌르던 워치독 (#42)
 
@@ -940,11 +955,22 @@ composer 에 한 번 찍히고 사라지며 턴이 아예 돌지 않는다. 같�
 
 #### 이 시점 상태
 
-`origin/main` = `1ac3556`(#41 까지). PR #42 는 CI 대기.
-백엔드 **4844 passed / 21 skipped**, 웹 **720 passed / 92 files**, providers+fifo **1088 passed**, tsc 0.
+`origin/main` = `473fc1e`(#44 까지 전부 머지).
+백엔드 **4851 passed / 21 skipped**, 웹 **720 passed / 92 files**, electron **196**, tsc 0.
 
-**남은 것**: 코드 서명 없음, macOS 미검증, 인스톨러·로컬 WSL 서버는 #39~#42 반영 재빌드 필요.
-agy 게이트는 환경 상태이므로 재현 시 `agy` 를 직접 한 번 실행해 확인을 끝내야 한다.
+**인스톨러는 재빌드하지 않았다 — 필요 없다.** `git diff 55b81a0..main -- electron/` 이 비어 있다. 이번 수정은
+서버(python)와 웹 UI 뿐이고 데스크톱 셸은 웹을 서버에서 불러오므로, **로컬 WSL 서버만** 갱신하면 된다:
+
+```
+cd web && npm run build          # 웹 번들은 gitignore 대상 — 반드시 먼저
+uv tool install --reinstall .    # --reinstall 없으면 같은 버전은 no-op
+```
+
+갱신 후 설치본으로 확인: `GET /` → 200, 게이트 터미널 입력 → 409, 정상 터미널 입력 → 200.
+
+**남은 것**: 코드 서명 없음(다른 PC SmartScreen 경고), macOS 미검증.
+agy 게이트는 환경 상태다. 걸린 터미널은 회복되지 않으니 **닫고 새로 만든다**(직접 `agy` 실행은 정상이며,
+관측상 첫 실행은 깨끗하고 짧은 간격의 후속 실행이 걸렸다 — 상관이며 인과로 확인된 것은 아니다).
 
 ## 7. 데이터/저장 규약 (프런트 로컬)
 `cao:theme`(라이트 기본), `cao:projects:v1`, `cao:hidden-providers:v1`(기본 [kiro_cli,kimi_cli,cursor_cli,hermes]), `cao:workbench:v1:<session>`, `cao:workspace:team-roster:v1:<session>`, `cao:workspace:delegation-history:v1:<session>`, `cao:env-profiles:v1`, `cao:usage:claude-limits-optin:v1`, `cao:pending-select-session`(sessionStorage). 세션명은 서버 규칙 `^[A-Za-z0-9_][A-Za-z0-9_-]{0,59}$`(cao- 프리픽스는 표시에서만 숨김 — displayName.ts).
