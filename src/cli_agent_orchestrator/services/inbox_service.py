@@ -87,7 +87,13 @@ class InboxService:
             sender_id = getattr(message, "sender_id", None)
             if not sender_id:
                 return False
-            sender = get_terminal_metadata(sender_id)
+            try:
+                sender = get_terminal_metadata(sender_id)
+            except Exception:
+                # Unreadable terminal record: no proof this is an awaited
+                # callback, so fall back to the normal busy-guard rather than
+                # letting a lookup failure become a delivery error.
+                return False
             if not sender or sender.get("caller_id") != terminal_id:
                 return False
         logger.info(

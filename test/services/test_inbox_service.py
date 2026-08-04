@@ -733,3 +733,28 @@ class TestAwaitedWorkerCallback:
             InboxService().deliver_pending("term-1")
 
         mock_term_svc.send_input.assert_not_called()
+
+    @patch("cli_agent_orchestrator.services.inbox_service.get_terminal_metadata")
+    @patch("cli_agent_orchestrator.services.inbox_service.update_message_status")
+    @patch("cli_agent_orchestrator.services.inbox_service.terminal_service")
+    @patch("cli_agent_orchestrator.services.inbox_service.provider_manager")
+    @patch("cli_agent_orchestrator.services.inbox_service.status_monitor")
+    @patch("cli_agent_orchestrator.services.inbox_service.get_pending_messages")
+    def test_a_broken_terminal_lookup_is_not_an_error(
+        self, mock_get, mock_monitor, mock_pm, mock_term_svc, mock_update, mock_meta
+    ):
+        """The lookup only decides whether to *relax* the guard, so a database
+        that cannot answer means "no exemption", never a failed delivery. CI
+        caught this: with no terminals table the query raised and took an
+        unrelated eager-delivery test down with it."""
+        mock_get.return_value = [_make_message()]
+        mock_monitor.get_status.return_value = TerminalStatus.PROCESSING
+        provider = MagicMock()
+        provider.accepts_input_while_processing = True
+        mock_pm.get_provider.return_value = provider
+        mock_meta.side_effect = RuntimeError("no such table: terminals")
+
+        with patch("cli_agent_orchestrator.services.inbox_service.EAGER_INBOX_DELIVERY", False):
+            InboxService().deliver_pending("term-1")
+
+        mock_term_svc.send_input.assert_not_called()
