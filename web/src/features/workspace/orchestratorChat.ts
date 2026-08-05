@@ -153,6 +153,25 @@ interface StoredChat {
   workspaceMessages?: StoredChatMessage[]
   lastOutput: string
   workspacePendingReply?: WorkspacePendingReply | null
+  /**
+   * Supervisor terminal id of the session instance this transcript belongs to.
+   *
+   * The key is the session *name*, and names get reused — so a new session
+   * called `cao-test` used to inherit the transcript of the dead one before it,
+   * including its errors. Measured: a failed first message from a previous
+   * `cao-test` reappeared as the first entry of a freshly created one, reading
+   * as a live 500 while that session's own inputs had all succeeded (server log
+   * showed no failure at all, and the terminal was at generation 6/6). The
+   * restored `workspacePendingReply` also pointed at a terminal that no longer
+   * existed.
+   *
+   * Terminal ids are per-instance, so comparing this against the live
+   * supervisor tells a reload (same instance — keep the history) apart from a
+   * same-named replacement (different instance — drop it). Absent in payloads
+   * written before this existed; those adopt the live id rather than being
+   * discarded, so an upgrade does not wipe real history.
+   */
+  workspaceSupervisorId?: string
 }
 
 export interface WorkspacePendingReply {
@@ -180,6 +199,8 @@ export function loadStoredChat(sessionName: string): {
   entries: ChatEntry[]
   lastOutput: string
   pendingReply: WorkspacePendingReply | null
+  /** Which session instance wrote this, when known — see StoredChat.workspaceSupervisorId. */
+  supervisorId: string | null
 } {
   try {
     const parsed = JSON.parse(window.localStorage.getItem(storageKey(sessionName)) || '{}') as Partial<StoredChat>
@@ -247,9 +268,22 @@ export function loadStoredChat(sessionName: string): {
       entries,
       lastOutput: typeof parsed.lastOutput === 'string' ? parsed.lastOutput : '',
       pendingReply,
+      supervisorId:
+        typeof parsed.workspaceSupervisorId === 'string' && parsed.workspaceSupervisorId
+          ? parsed.workspaceSupervisorId
+          : null,
     }
   } catch {
-    return { entries: [], lastOutput: '', pendingReply: null }
+    return { entries: [], lastOutput: '', pendingReply: null, supervisorId: null }
+  }
+}
+
+/** Forget a session name's transcript entirely (a same-named replacement session). */
+export function clearStoredChat(sessionName: string): void {
+  try {
+    window.localStorage.removeItem(storageKey(sessionName))
+  } catch {
+    // Nothing to do — the in-memory state is reset by the caller regardless.
   }
 }
 
@@ -258,6 +292,7 @@ export function saveStoredChat(
   entries: ChatEntry[],
   lastOutput: string,
   pendingReply: WorkspacePendingReply | null,
+  supervisorId?: string | null,
 ): void {
   try {
     const existing = JSON.parse(window.localStorage.getItem(storageKey(sessionName)) || '{}') as Record<string, unknown>
@@ -279,6 +314,9 @@ export function saveStoredChat(
       workspaceMessages,
       lastOutput,
       workspacePendingReply: pendingReply,
+      // Only stamp it when known; an unknown supervisor must not overwrite a
+      // good stamp with nothing, or the next load would adopt whatever it finds.
+      ...(supervisorId ? { workspaceSupervisorId: supervisorId } : {}),
     }))
   } catch {
     // Chat remains usable in-memory even when storage is disabled or full.
