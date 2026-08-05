@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildAgentReportCounts,
   applyUiEventToCards,
   applyUiEvents,
   buildCardFromTerminalCreated,
@@ -169,11 +170,13 @@ describe('threadReducer: REST seed ↔ event merge', () => {
 })
 
 describe('threadReducer: buildThreadItems (chat + cards + system lines + inner-message groups)', () => {
-  it('places a card at a fixed position (first-seen) that later updates in place, not a new item', () => {
+  it('leaves delegation cards out — they belong to the work queue', () => {
+    // With a team of three, every turn added a card plus a report line per
+    // worker and the orchestrator's actual answer scrolled away. The cards are
+    // not dropped, they moved: the agent panel's queue renders this same data.
     const card: DelegationCard = { ...buildCardFromTerminalCreated({ terminal_id: 'aaaaaaaa', agent_name: 'sonnet', provider: 'claude_code', session_id: 's1' }, 1000), status: 'processing' }
     const items = buildThreadItems({ events: [], chat: [], cards: { aaaaaaaa: card } })
-    expect(items).toHaveLength(1)
-    expect(items[0]).toMatchObject({ kind: 'card', id: 'aaaaaaaa', ts: 1000 })
+    expect(items).toEqual([])
   })
 
   it('renders session_created/session_killed as system lines', () => {
@@ -186,33 +189,34 @@ describe('threadReducer: buildThreadItems (chat + cards + system lines + inner-m
     expect((items[0] as any).text).toContain('login-retry-fix')
   })
 
-  it('groups consecutive send_message events into one folded inner-message group', () => {
+  it('leaves agent-to-agent messages out of the thread', () => {
     const events: UiEvent[] = [
       ev(1, 'message_sent', { sender: 'a', receiver: 'b', message: 'm1', orchestration_type: 'send_message', session_id: 's1' }, '2026-07-17T00:00:01Z'),
       ev(2, 'message_sent', { sender: 'b', receiver: 'a', message: 'm2', orchestration_type: 'send_message', session_id: 's1' }, '2026-07-17T00:00:02Z'),
     ]
-    const items = buildThreadItems({ events, chat: [], cards: {} })
-    expect(items).toHaveLength(1)
-    expect(items[0].kind).toBe('inner-group')
-    if (items[0].kind === 'inner-group') expect(items[0].messages).toHaveLength(2)
+    expect(buildThreadItems({ events, chat: [], cards: {} })).toEqual([])
   })
 
-  it('breaks the inner-message run when a card/system line is interleaved', () => {
-    // Card's firstSeenAt sits exactly between the two send_message events'
-    // timestamps, so it must split one 2-message group into two 1-message groups.
-    const card: DelegationCard = buildCardFromTerminalCreated(
-      { terminal_id: 'aaaaaaaa', agent_name: 'sonnet', provider: 'claude_code', session_id: 's1' },
-      Date.parse('2026-07-17T00:00:02Z'),
-    )
+  it('counts those messages per sender so the queue can still show who reported', () => {
+    // The information is not discarded with the thread block — "did this agent
+    // report back" is exactly what the queue is asked.
     const events: UiEvent[] = [
       ev(1, 'message_sent', { sender: 'a', receiver: 'b', message: 'm1', orchestration_type: 'send_message', session_id: 's1' }, '2026-07-17T00:00:01Z'),
-      ev(2, 'message_sent', { sender: 'b', receiver: 'a', message: 'm2', orchestration_type: 'send_message', session_id: 's1' }, '2026-07-17T00:00:03Z'),
+      ev(2, 'message_sent', { sender: 'a', receiver: 'b', message: 'm2', orchestration_type: 'send_message', session_id: 's1' }, '2026-07-17T00:00:02Z'),
+      ev(3, 'message_sent', { sender: 'b', receiver: 'a', message: 'm3', orchestration_type: 'send_message', session_id: 's1' }, '2026-07-17T00:00:03Z'),
     ]
-    const items = buildThreadItems({ events, chat: [], cards: { aaaaaaaa: card } })
-    expect(items.map(i => i.kind)).toEqual(['inner-group', 'card', 'inner-group'])
+    expect(buildAgentReportCounts(events)).toEqual({ a: 2, b: 1 })
   })
 
-  it('interleaves chat entries and cards by timestamp', () => {
+  it('counts only worker reports, not assign/handoff traffic', () => {
+    const events: UiEvent[] = [
+      ev(1, 'message_sent', { sender: 'sup', receiver: 'w', message: 'do it', orchestration_type: 'assign', session_id: 's1' }, '2026-07-17T00:00:01Z'),
+      ev(2, 'message_sent', { sender: 'w', receiver: 'sup', message: 'done', orchestration_type: 'send_message', session_id: 's1' }, '2026-07-17T00:00:02Z'),
+    ]
+    expect(buildAgentReportCounts(events)).toEqual({ w: 1 })
+  })
+
+  it('keeps chat and system lines in timestamp order, cards notwithstanding', () => {
     const card: DelegationCard = buildCardFromTerminalCreated({ terminal_id: 'aaaaaaaa', agent_name: 'sonnet', provider: 'claude_code', session_id: 's1' }, 2000)
     const items = buildThreadItems({
       events: [],
@@ -222,6 +226,6 @@ describe('threadReducer: buildThreadItems (chat + cards + system lines + inner-m
       ],
       cards: { aaaaaaaa: card },
     })
-    expect(items.map(i => i.id)).toEqual(['c1', 'aaaaaaaa', 'c2'])
+    expect(items.map(i => i.id)).toEqual(['c1', 'c2'])
   })
 })
