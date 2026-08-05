@@ -4,6 +4,7 @@ import { apiUi, type TerminalDetail } from '../../api.ui'
 import { useStore } from '../../store'
 import {
   formatOrchestratorOutput,
+  clearStoredChat,
   loadStoredChat,
   nextChatId,
   saveStoredChat,
@@ -76,6 +77,9 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
   const storedSupervisorOutputRef = useRef('')
   const skipPersistForSessionRef = useRef<string | null>(null)
   const rosterBackfillSessionRef = useRef<string | null>(null)
+  // Which session instance the loaded transcript came from, so a same-named
+  // replacement session can be told apart from a reload of the same one.
+  const storedSupervisorIdRef = useRef<string | null>(null)
   // Latest card/status snapshot for the pending-reply effect, which must not
   // re-subscribe (and restart its poll) every time a status tick arrives.
   const cardsRef = useRef<DelegationCard[]>([])
@@ -92,6 +96,7 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
       return
     }
     const stored = loadStoredChat(sessionName)
+    storedSupervisorIdRef.current = stored.supervisorId
     skipPersistForSessionRef.current = sessionName
     setChatEntries(stored.entries)
     storedSupervisorOutputRef.current = stored.lastOutput
@@ -106,6 +111,33 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
     rosterBackfillSessionRef.current = null
   }, [sessionName])
 
+  // A session name can be reused, and the transcript is keyed by that name — so
+  // once the live supervisor is known, a transcript written by a *different*
+  // instance has to go. Measured: a new `cao-test` opened with the previous
+  // one's failed first message on screen (a tmux paste error naming a window
+  // that no longer existed), while its own inputs had all succeeded. The stale
+  // `pendingReply` restored with it also pointed at a terminal that was gone,
+  // leaving the composer stuck in "sending".
+  useEffect(() => {
+    if (!sessionName || !supervisorTerminalId) return
+    const storedId = storedSupervisorIdRef.current
+    if (storedId === supervisorTerminalId) return
+    if (storedId === null) {
+      // Either a fresh transcript or one written before the stamp existed —
+      // adopt this instance rather than discarding real history.
+      storedSupervisorIdRef.current = supervisorTerminalId
+      return
+    }
+    storedSupervisorIdRef.current = supervisorTerminalId
+    clearStoredChat(sessionName)
+    setChatEntries([])
+    setPendingReply(null)
+    setSending(false)
+    setComposerTargetId(supervisorTerminalId)
+    lastOutputRef.current = {}
+    storedSupervisorOutputRef.current = ''
+  }, [sessionName, supervisorTerminalId])
+
   // Keep Workspace-specific target/pending metadata in the shared storage
   // object while preserving the classic modal's supervisor-only fields.
   useEffect(() => {
@@ -119,6 +151,7 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
       chatEntries,
       lastOutputRef.current[supervisorTerminalId ?? ''] || storedSupervisorOutputRef.current,
       pendingReply,
+      supervisorTerminalId,
     )
   }, [sessionName, chatEntries, supervisorTerminalId, pendingReply])
 
