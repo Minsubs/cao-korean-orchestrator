@@ -108,7 +108,6 @@ from cli_agent_orchestrator.services.fifo_reader import fifo_manager
 from cli_agent_orchestrator.services.herdr_inbox_registry import set_herdr_inbox_service
 from cli_agent_orchestrator.services.herdr_inbox_service import HerdrInboxService
 from cli_agent_orchestrator.services.inbox_service import inbox_service
-from cli_agent_orchestrator.services.worker_alert_service import worker_alert_service
 from cli_agent_orchestrator.services.install_service import (
     InstallResult,
     install_agent,
@@ -126,6 +125,7 @@ from cli_agent_orchestrator.services.ui_event_service import RING_CAPACITY as UI
 from cli_agent_orchestrator.services.ui_event_service import (
     UI_EVENT_TYPES,
 )
+from cli_agent_orchestrator.services.worker_alert_service import worker_alert_service
 from cli_agent_orchestrator.utils.agent_profiles import load_agent_profile, resolve_provider
 from cli_agent_orchestrator.utils.logging import setup_logging
 from cli_agent_orchestrator.utils.skills import (
