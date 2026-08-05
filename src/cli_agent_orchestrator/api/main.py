@@ -125,6 +125,7 @@ from cli_agent_orchestrator.services.ui_event_service import RING_CAPACITY as UI
 from cli_agent_orchestrator.services.ui_event_service import (
     UI_EVENT_TYPES,
 )
+from cli_agent_orchestrator.services.worker_alert_service import worker_alert_service
 from cli_agent_orchestrator.utils.agent_profiles import load_agent_profile, resolve_provider
 from cli_agent_orchestrator.utils.logging import setup_logging
 from cli_agent_orchestrator.utils.skills import (
@@ -561,10 +562,16 @@ async def lifespan(app: FastAPI):
     status_monitor_task = asyncio.create_task(status_monitor.run())
     log_writer_task = asyncio.create_task(log_writer.run())
     inbox_service_task = asyncio.create_task(inbox_service.run(registry))
+    # Tells a supervisor when one of its workers gets stuck on a prompt or errors
+    # out — otherwise it waits for a callback that will never come, and the user
+    # only ever sees the queue state, never a word from the orchestrator.
+    worker_alert_task = asyncio.create_task(worker_alert_service.run())
     # Additive UI event consumer (Phase 2 chat workspace). Independent of the
     # default-off MCP Apps event pipeline; always on.
     ui_event_task = asyncio.create_task(ui_event_consumer())
-    logger.info("Event bus consumers started (StatusMonitor, LogWriter, InboxService, UiEvents)")
+    logger.info(
+        "Event bus consumers started (StatusMonitor, LogWriter, InboxService, WorkerAlerts, UiEvents)"
+    )
 
     # Give consumers one loop turn to register their subscriptions, then
     # reconnect output monitoring for tmux panes that survived a server
@@ -616,6 +623,7 @@ async def lifespan(app: FastAPI):
     status_monitor_task.cancel()
     log_writer_task.cancel()
     inbox_service_task.cancel()
+    worker_alert_task.cancel()
     ui_event_task.cancel()
     # Cancel daemon on shutdown
     daemon_task.cancel()
@@ -625,6 +633,7 @@ async def lifespan(app: FastAPI):
             status_monitor_task,
             log_writer_task,
             inbox_service_task,
+            worker_alert_task,
             ui_event_task,
             daemon_task,
             return_exceptions=True,

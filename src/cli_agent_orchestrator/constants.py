@@ -142,6 +142,12 @@ PIPE_LIVENESS_MAX_REARM_FAILURES = _env_int("CAO_PIPE_LIVENESS_MAX_REARM_FAILURE
 # Bounded separately from the re-arm failures above because it is a different
 # class: there is nothing to re-arm, the target is simply gone.
 PIPE_LIVENESS_MAX_PROBE_FAILURES = _env_int("CAO_PIPE_LIVENESS_MAX_PROBE_FAILURES", 3)
+
+# How long a worker must stay stuck before its supervisor is told (see
+# services/worker_alert_service.py). Not zero: an approval picker can appear and
+# resolve within a second or two, and an orchestrator that gets told about
+# every flicker learns to ignore the notices.
+WORKER_ALERT_GRACE_SECONDS = _env_positive_float("CAO_WORKER_ALERT_GRACE_SECONDS", 15.0)
 # Cold-start stall deadline (harness-control#93): the divergence check above
 # can ONLY ever catch a pipe that WAS delivering and then went stale — it
 # requires a change from an established "healthy" baseline. A pipe that has
