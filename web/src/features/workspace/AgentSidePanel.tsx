@@ -14,7 +14,7 @@ import { roleBadgeFor } from './roleLabel'
 import { InlineUsageBar } from '../usage/InlineUsageBar'
 import { useUsageAccounts } from '../usage/useUsageAccounts'
 import { isTeamWorking, sessionStatusMap } from './agentGrouping'
-import { instructionSummary } from './instructionSummary'
+import { instructionSummary, stripInstructionPlumbing } from './instructionSummary'
 import { workerStateFor, type WorkerState } from './orchestrationProgress'
 import { RoleBoard, type AgentVizItem } from './RoleBoard'
 import { DelegationHierarchy } from './DelegationHierarchy'
@@ -28,6 +28,12 @@ interface AgentSidePanelProps {
   terminalStatuses: Record<string, string>
   /** Session's own (supervisor terminal's) working directory — prefills the [+] modal's directory field. */
   sessionWorkingDirectory: string | null
+  /**
+   * terminalId → how many results that agent has reported back
+   * (buildAgentReportCounts). The thread no longer shows agent-to-agent
+   * messages, so this is where "did it actually report" is answered.
+   */
+  reportCounts?: Record<string, number>
   /** Phase 2d (spec §2d): terminalId → remaining-context percentage (from useContextGauges in Workspace.tsx). A missing entry renders no gauge at all — never a placeholder. */
   gauges?: Record<string, number | null>
   onMessageTarget: (id: string) => void
@@ -57,6 +63,55 @@ function QueueStateIcon({ state }: { state: WorkerState }) {
   if (state === 'done') return <Check size={15} className="mt-0.5 shrink-0 text-[var(--text-3)]" />
   if (state === 'waiting') return <Clock size={15} className="mt-0.5 shrink-0 text-[var(--text-3)]" />
   return <Loader2 size={15} className="mt-0.5 shrink-0 animate-spin text-[var(--info)]" />
+}
+
+/** One delegated task in the work queue.
+ *
+ * Carries what the thread's delegation card used to: the instruction (summarised,
+ * expandable — a truncated 배정 line loses the part that says what the agent was
+ * actually told), the state, and whether the agent has reported back. */
+function QueueRow({
+  card,
+  state,
+  reportCount,
+}: {
+  card: DelegationCard
+  state: WorkerState
+  reportCount: number
+}) {
+  const [showFull, setShowFull] = useState(false)
+  const summary = instructionSummary(card.instruction)
+  const fullText = stripInstructionPlumbing(card.instruction)
+  const title = summary.text || profileLabel(card.agentName ?? '') || card.terminalId.slice(0, 8)
+  return (
+    <div
+      data-testid={`queue-row-${card.terminalId}`}
+      data-state={state}
+      className={`flex items-start gap-2.5 rounded-xl border px-2.5 py-2 ${
+        state === 'done' ? 'border-[var(--border-soft)] opacity-70' : 'border-[var(--border)]'
+      }`}
+    >
+      <QueueStateIcon state={state} />
+      <div className="min-w-0 flex-1">
+        <div className={`text-xs font-semibold text-[var(--text)] ${showFull ? 'whitespace-pre-wrap break-words' : 'truncate'}`}>
+          {showFull ? fullText : title}
+        </div>
+        <div className="text-[10.5px] text-[var(--text-3)]">
+          {card.agentName ? profileLabel(card.agentName) : card.terminalId.slice(0, 8)} · {QUEUE_STATE_LABEL[state]}
+          {reportCount > 0 ? ` · 보고 ${reportCount}건` : state === 'done' ? ' · 보고 없음' : ''}
+        </div>
+        {summary.truncated && (
+          <button
+            type="button"
+            onClick={() => setShowFull(v => !v)}
+            className="mt-1 text-[10.5px] font-semibold text-[var(--text-3)] hover:text-[var(--text)]"
+          >
+            {showFull ? '요약 보기' : '전체 보기'}
+          </button>
+        )}
+      </div>
+    </div>
+  )
 }
 
 function resolveStatus(id: string, fallback: string | null, terminalStatuses: Record<string, string>): string | null {
@@ -93,6 +148,7 @@ export function AgentSidePanel({
   terminalStatuses,
   sessionWorkingDirectory,
   gauges = {},
+  reportCounts = {},
   onMessageTarget,
   onOpenTerminal,
   onOpenOutput,
@@ -298,24 +354,12 @@ export function AgentSidePanel({
                 진행 중 {queueActiveCount} · 전체 {queueItems.length}
               </p>
               {queueItems.map(({ card, state }) => (
-                <div
+                <QueueRow
                   key={card.terminalId}
-                  data-testid={`queue-row-${card.terminalId}`}
-                  data-state={state}
-                  className={`flex items-start gap-2.5 rounded-xl border px-2.5 py-2 ${
-                    state === 'done' ? 'border-[var(--border-soft)] opacity-70' : 'border-[var(--border)]'
-                  }`}
-                >
-                  <QueueStateIcon state={state} />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-xs font-semibold text-[var(--text)]">
-                      {instructionSummary(card.instruction).text || profileLabel(card.agentName ?? '') || card.terminalId.slice(0, 8)}
-                    </div>
-                    <div className="text-[10.5px] text-[var(--text-3)]">
-                      {card.agentName ? profileLabel(card.agentName) : card.terminalId.slice(0, 8)} · {QUEUE_STATE_LABEL[state]}
-                    </div>
-                  </div>
-                </div>
+                  card={card}
+                  state={state}
+                  reportCount={reportCounts[card.terminalId] ?? 0}
+                />
               ))}
             </div>
           )

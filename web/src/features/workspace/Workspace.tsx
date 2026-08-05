@@ -419,6 +419,7 @@ export function Workspace({
           terminalStatuses={workspaceSession.terminalStatuses}
           sessionWorkingDirectory={sessionWorkingDirectory}
           gauges={gauges}
+          reportCounts={workspaceSession.reportCounts}
           onMessageTarget={id => workspaceSession.setComposerTarget(id)}
           onOpenTerminal={id => openInWorkbench(id, 'term')}
           onOpenOutput={id => openInWorkbench(id, 'output')}

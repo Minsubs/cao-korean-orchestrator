@@ -246,12 +246,44 @@ interface Positionable {
     | { kind: 'inner'; message: InnerMessage }
 }
 
+/**
+ * How many results each agent has reported back (worker -> caller send_message).
+ *
+ * These used to be rendered in the thread as `inner-group` blocks. They are not
+ * any more — the thread is the conversation with the orchestrator, and one line
+ * per worker per turn buried it — so the fact still has to reach the work queue,
+ * where "did this agent actually report back" is the question being asked.
+ */
+export function buildAgentReportCounts(events: UiEvent[]): Record<string, number> {
+  const counts: Record<string, number> = {}
+  events.forEach(event => {
+    if (event.type !== 'message_sent') return
+    const detail = event.detail as unknown as MessageSentDetail
+    if (detail.orchestration_type !== 'send_message') return
+    const sender = detail.sender
+    if (!sender) return
+    counts[sender] = (counts[sender] ?? 0) + 1
+  })
+  return counts
+}
+
+/**
+ * The thread is the conversation: the user's prompts, the orchestrator's
+ * answers, and session-level notices.
+ *
+ * Delegation cards and agent-to-agent messages are deliberately absent. With a
+ * team of three every turn added a card plus a report line per worker, and the
+ * orchestrator's actual answer — the thing being read — got pushed off screen.
+ * That state belongs where it can be scanned instead of scrolled: the work
+ * queue in the agent panel, which renders the same DelegationCard data plus
+ * buildAgentReportCounts above.
+ */
 export function buildThreadItems(params: {
   events: UiEvent[]
   chat: ChatEntry[]
   cards: Record<string, DelegationCard>
 }): ThreadItem[] {
-  const { events, chat, cards } = params
+  const { events, chat } = params
   const items: Positionable[] = []
 
   chat.forEach((entry, index) => items.push({ ts: entry.ts, sortKey: index, render: { kind: 'chat', entry } }))
@@ -264,50 +296,19 @@ export function buildThreadItems(params: {
     } else if (event.type === 'session_killed') {
       const d = event.detail as unknown as SessionKilledDetail
       items.push({ ts, sortKey: event.id, render: { kind: 'system', id: `sys-${event.id}`, text: `세션 ${d.session_name}을(를) 종료했어요` } })
-    } else if (event.type === 'message_sent') {
-      const d = event.detail as unknown as MessageSentDetail
-      if (d.orchestration_type === 'send_message') {
-        items.push({
-          ts,
-          sortKey: event.id,
-          render: { kind: 'inner', message: { id: `msg-${event.id}`, sender: d.sender, receiver: d.receiver, message: d.message, ts } },
-        })
-      }
     }
-  })
-
-  // One "first appearance" slot per card, fixed at its original position; the
-  // (possibly since-updated) card object is read fresh each call.
-  Object.values(cards).forEach(card => {
-    items.push({ ts: card.firstSeenAt, sortKey: -1, render: { kind: 'card-first', card } })
   })
 
   items.sort((a, b) => (a.ts - b.ts) || (a.sortKey - b.sortKey))
 
   const result: ThreadItem[] = []
-  let runningInner: InnerMessage[] = []
-  const flushInner = () => {
-    if (runningInner.length === 0) return
-    const first = runningInner[0]
-    result.push({ kind: 'inner-group', id: `inner-${first.id}`, ts: first.ts, messages: runningInner })
-    runningInner = []
-  }
-
   for (const item of items) {
-    if (item.render.kind === 'inner') {
-      runningInner.push(item.render.message)
-      continue
-    }
-    flushInner()
     if (item.render.kind === 'chat') {
       result.push({ kind: 'chat', id: item.render.entry.id, ts: item.ts, entry: item.render.entry })
     } else if (item.render.kind === 'system') {
       result.push({ kind: 'system', id: item.render.id, ts: item.ts, text: item.render.text })
-    } else {
-      result.push({ kind: 'card', id: item.render.card.terminalId, ts: item.ts, card: item.render.card })
     }
   }
-  flushInner()
 
   return result
 }

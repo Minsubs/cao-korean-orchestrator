@@ -11,7 +11,7 @@ import {
   WAITING_MESSAGE,
   type WorkspacePendingReply,
 } from './orchestratorChat'
-import { applyUiEvents, buildThreadItems, filterUiEventsForSession, mergeSeededCard, seedCardFromTerminalMeta, withCallerNames } from './threadReducer'
+import { applyUiEvents, buildAgentReportCounts, buildThreadItems, filterUiEventsForSession, mergeSeededCard, seedCardFromTerminalMeta, withCallerNames } from './threadReducer'
 import { computeOrchestrationProgress, summarizeOrchestration, type OrchestrationSummary } from './orchestrationProgress'
 import { classifyOrchestrationError, pendingTimeoutMessage, type ClassifiedError } from './orchestrationError'
 import {
@@ -35,6 +35,8 @@ export interface WorkspaceSessionState {
   cards: DelegationCard[]
   teamRoster: TeamRosterProfile[]
   threadItems: ThreadItem[]
+  /** terminalId → results reported back, for the work queue (the thread no longer shows them). */
+  reportCounts: Record<string, number>
   locations: Record<string, string | null>
   terminalStatuses: Record<string, string>
   chatEntries: ChatEntry[]
@@ -322,6 +324,14 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
     return buildThreadItems({ events: relevantEvents, chat: chatEntries, cards: cardsRecord })
   }, [events, chatEntries, cardsRecord, sessionIdValue, sessionName, terminals])
 
+  // Same session filter as the thread: an agent's reports belong to the queue
+  // now that the thread carries only the conversation.
+  const reportCounts = useMemo(() => {
+    const sessionIds = new Set([sessionIdValue, sessionName].filter((v): v is string => !!v))
+    const knownTerminalIds = new Set(terminals.map(t => t.id))
+    return buildAgentReportCounts(filterUiEventsForSession(events, sessionIds, knownTerminalIds))
+  }, [events, sessionIdValue, sessionName, terminals])
+
   const replaceChatEntry = useCallback(
     (id: string, content: string, raw?: string, progress?: OrchestrationSummary) => {
       setChatEntries(current =>
@@ -557,6 +567,7 @@ export function useWorkspaceSession(sessionName: string | null, events: UiEvent[
     cards,
     teamRoster,
     threadItems,
+    reportCounts,
     locations,
     terminalStatuses,
     chatEntries,
